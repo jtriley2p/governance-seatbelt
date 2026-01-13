@@ -19,7 +19,6 @@ export type SourcifyMatch = 'exact_match' | 'match' | 'no_match' | 'error';
 export type SourcifyVerification =
   | { status: 'verified'; match: 'exact_match' | 'partial_match' }
   | { status: 'unverified' };
-
 // In-memory cache for Sourcify verification results
 const sourcifyCache: Record<string, SourcifyCheckResult> = {};
 

@@ -292,13 +292,13 @@ describe('Cross-Chain Integration Tests', () => {
         expect(Array.isArray(result.result.warnings)).toBe(true);
         expect(Array.isArray(result.result.errors)).toBe(true);
       }
-    });
+    }, 120000); // External API calls can be slow/rate-limited in CI
 
     test('should include cross-chain information in check results', async () => {
       const crossChainResult = await getArbDistroCrossChainResult();
 
       // Only run checks if we have destination simulations
-
+      // Ensure destinations (when present) don't break checks
       if (
         crossChainResult.destinationSimulations &&
         crossChainResult.destinationSimulations.length > 0
