@@ -25,6 +25,7 @@ import { useMemo, useState } from 'react';
 import { AddressLabel, useAddressLabel } from './AddressLabel';
 import { CallGroupedView } from './CallGroupedView';
 import { DecisionHeader } from './DecisionHeader';
+import { PermissionsDiff } from './PermissionsDiff';
 
 // --- Explorer URL helpers ---
 
@@ -583,6 +584,7 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
                     coverage={check.checkId ? coverageByCheckId.get(check.checkId) : undefined}
                     stateChanges={report.stateChanges}
                     metadata={report.metadata}
+                    permissionsDiff={report.permissionsDiff}
                   />
                 ))
               )}
@@ -604,17 +606,21 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
   );
 }
 
+type PermissionsDiffItem = NonNullable<StructuredSimulationReport['permissionsDiff']>[number];
+
 // Helper components
 function ExpandableCheckItem({
   check,
   coverage,
   stateChanges,
   metadata,
+  permissionsDiff,
 }: {
   check: SimulationCheck;
   coverage?: CheckCoverage;
   stateChanges?: SimulationStateChange[];
   metadata?: StructuredSimulationReport['metadata'];
+  permissionsDiff?: PermissionsDiffItem[];
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -629,8 +635,15 @@ function ExpandableCheckItem({
           ? `Inferred: ${coverage.skipReason}`
           : null;
 
+  // Check if this is a permission changes check
+  const isPermissionChangesCheck = check.title.toLowerCase().includes('permission changes');
+
   const isExpandable = Boolean(
-    check.details || check.skipReason || coverage?.skipReason || check.checkId,
+    check.details ||
+      check.skipReason ||
+      coverage?.skipReason ||
+      check.checkId ||
+      isPermissionChangesCheck,
   );
 
   const getStatusIcon = () => {
@@ -988,6 +1001,8 @@ function ExpandableCheckItem({
     );
   }, [check.details, isStateChangesCheck, stateChanges, metadata]);
 
+  const effectiveMetadata = metadata || { proposalId: '', proposer: '' as `0x${string}` };
+
   return (
     <div className="border border-muted rounded-md overflow-hidden">
       <button
@@ -1047,10 +1062,21 @@ function ExpandableCheckItem({
             <div className="mt-4">
               <p className="text-muted-foreground italic">{secondaryLine}</p>
             </div>
+          ) : isPermissionChangesCheck ? (
+            <div className="mt-4">
+              {permissionsDiff && permissionsDiff.length > 0 ? (
+                <PermissionsDiff items={permissionsDiff} />
+              ) : (
+                <div className="flex items-center justify-center p-6 text-muted-foreground">
+                  <InfoIcon className="h-4 w-4 mr-2" />
+                  <span>No permission changes detected</span>
+                </div>
+              )}
+            </div>
           ) : isStateChangesCheck ? (
             <div className="mt-4">
               {stateChanges && stateChanges.length > 0 ? (
-                <StateChanges stateChanges={stateChanges} />
+                <StateChanges stateChanges={stateChanges} metadata={effectiveMetadata} />
               ) : (
                 <div className="flex items-center justify-center p-6 text-muted-foreground">
                   <InfoIcon className="h-4 w-4 mr-2" />

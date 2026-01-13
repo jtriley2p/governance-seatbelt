@@ -138,7 +138,34 @@ export type CheckResult = {
   warnings: Message[];
   errors: Message[];
   skipped?: { reason: string };
+  permissionsDiff?: PermissionsDiffItem[];
 };
+
+export type PermissionsDiffItem =
+  | {
+      kind: 'ownership_transferred';
+      contractAddress: Address;
+      contractName?: string;
+      previous?: Address;
+      next: Address;
+      via: 'event' | 'state_diff' | 'event+state_diff';
+    }
+  | {
+      kind: 'role_granted' | 'role_revoked';
+      contractAddress: Address;
+      contractName?: string;
+      role: { id: Hex; name: string | null };
+      account: Address;
+      sender: Address;
+    }
+  | {
+      kind: 'timelock_admin_changed' | 'timelock_pending_admin_changed';
+      contractAddress: Address;
+      contractName?: string;
+      previous?: Address;
+      next: Address;
+      via: 'event' | 'state_diff' | 'event+state_diff';
+    };
 
 export interface ProposalData {
   // biome-ignore lint/suspicious/noExplicitAny: TODO: Properly type governor
@@ -637,6 +664,7 @@ export interface StructuredSimulationReport {
   checks: SimulationCheck[];
   stateChanges: SimulationStateChange[];
   events: SimulationEvent[];
+  permissionsDiff?: PermissionsDiffItem[];
   calldata?: SimulationCalldata;
   coverage?: CoverageData;
   metadata: {
