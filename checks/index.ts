@@ -3,6 +3,7 @@ import { checkDecodeCalldata } from './check-decode-calldata';
 import { checkEthBalanceChanges } from './check-eth-balance-changes';
 import { checkLogs } from './check-logs';
 import { checkPermissionDiff } from './check-permission-diff';
+import { checkProxyResolution } from './check-proxy-resolution';
 import { checkSlither } from './check-slither';
 import { checkSolc } from './check-solc';
 import { checkStateChanges } from './check-state-changes';
@@ -24,6 +25,7 @@ const ALL_CHECKS: {
   checkDecodeCalldata,
   checkLogs,
   checkPermissionDiff,
+  checkProxyResolution,
   checkTargetsVerifiedOnBlockExplorer,
   checkTouchedContractsVerifiedOnBlockExplorer,
   checkTargetsNoSelfdestruct,

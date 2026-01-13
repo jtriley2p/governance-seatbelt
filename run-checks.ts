@@ -206,6 +206,8 @@ export async function runChecksForChain(
   const CHAIN_AGNOSTIC_CHECK_IDS = [
     'checkStateChanges',
     'checkLogs',
+    'checkProxyResolution',
+    'checkPermissionDiff',
     'checkEthBalanceChanges',
     'checkTreasuryMovement',
     'checkDecodeCalldata',

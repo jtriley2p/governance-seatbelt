@@ -7,7 +7,7 @@ function readSimulationResults() {
   try {
     const filePath = path.join(process.cwd(), 'public', 'simulation-results.json');
     const fileContents = fs.readFileSync(filePath, 'utf8');
-    return JSON.parse(fileContents);
+    return JSON.parse(fileContents) as unknown;
   } catch (error) {
     console.error('Error reading simulation results:', error);
     return null;

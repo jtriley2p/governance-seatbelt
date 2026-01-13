@@ -14,12 +14,15 @@ export interface SourcifyCheckResult {
   status: SourcifyVerificationStatus;
 }
 
+export type SourcifyMatch = 'exact_match' | 'match' | 'no_match' | 'error';
+
+export type SourcifyVerification =
+  | { status: 'verified'; match: 'exact_match' | 'partial_match' }
+  | { status: 'unverified' };
+
 // In-memory cache for Sourcify verification results
 const sourcifyCache: Record<string, SourcifyCheckResult> = {};
 
-/**
- * Get cache key for Sourcify verification
- */
 function getCacheKey(address: string, chainId: number): string {
   return `${chainId}:${getAddress(address)}`;
 }
@@ -37,20 +40,9 @@ export class SourcifyClient {
   private static readonly BASE_URL = 'https://sourcify.dev/server';
   private static readonly TIMEOUT_MS = 10000;
 
-  /**
-   * Check if a contract is verified on Sourcify.
-   *
-   * @param address - Contract address to check
-   * @param chainId - Chain ID where the contract is deployed
-   * @returns Verification result with status
-   */
   static async isContractVerified(address: string, chainId: number): Promise<SourcifyCheckResult> {
     const cacheKey = getCacheKey(address, chainId);
-
-    // Check in-memory cache first
-    if (sourcifyCache[cacheKey]) {
-      return sourcifyCache[cacheKey];
-    }
+    if (sourcifyCache[cacheKey]) return sourcifyCache[cacheKey];
 
     try {
       const checksummedAddress = getAddress(address);
@@ -61,9 +53,7 @@ export class SourcifyClient {
 
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          Accept: 'application/json',
-        },
+        headers: { Accept: 'application/json' },
         signal: controller.signal,
       });
 
@@ -77,9 +67,6 @@ export class SourcifyClient {
       }
 
       const data = await response.json();
-
-      // Parse the response
-      // Format: [{ address: "0x...", chainIds: [{ chainId: "1", status: "perfect" }] }]
       const result = SourcifyClient.parseResponse(data, chainId);
       sourcifyCache[cacheKey] = result;
       return result;
@@ -89,15 +76,13 @@ export class SourcifyClient {
       } else {
         console.warn(`Sourcify API error for ${address} on chain ${chainId}:`, error);
       }
+
       const result: SourcifyCheckResult = { verified: false, status: 'error' };
       sourcifyCache[cacheKey] = result;
       return result;
     }
   }
 
-  /**
-   * Parse the Sourcify API response.
-   */
   private static parseResponse(data: unknown, chainId: number): SourcifyCheckResult {
     if (!Array.isArray(data) || data.length === 0) {
       return { verified: false, status: 'false' };
@@ -108,7 +93,6 @@ export class SourcifyClient {
       return { verified: false, status: 'false' };
     }
 
-    // Find the status for the requested chain
     const chainResult = addressResult.chainIds.find(
       (c: { chainId: string; status: string }) => String(c.chainId) === String(chainId),
     );
@@ -119,7 +103,6 @@ export class SourcifyClient {
 
     const status = chainResult.status as SourcifyVerificationStatus;
 
-    // 'perfect' and 'partial' are both considered verified
     if (status === 'perfect' || status === 'partial') {
       return { verified: true, status };
     }
@@ -127,12 +110,37 @@ export class SourcifyClient {
     return { verified: false, status: 'false' };
   }
 
-  /**
-   * Clear the in-memory cache (useful for testing).
-   */
   static clearCache(): void {
     for (const key of Object.keys(sourcifyCache)) {
       delete sourcifyCache[key];
     }
   }
+}
+
+export async function getSourcifyMatch(address: string, chainId: number): Promise<SourcifyMatch> {
+  const result = await SourcifyClient.isContractVerified(address, chainId);
+
+  if (result.status === 'perfect') return 'exact_match';
+  if (result.status === 'partial') return 'match';
+  if (result.status === 'error') return 'error';
+  return 'no_match';
+}
+
+export async function getSourcifyVerification(
+  address: string,
+  chainId: number,
+): Promise<SourcifyVerification> {
+  const result = await SourcifyClient.isContractVerified(address, chainId);
+
+  if (result.status === 'perfect') return { status: 'verified', match: 'exact_match' };
+  if (result.status === 'partial') return { status: 'verified', match: 'partial_match' };
+  return { status: 'unverified' };
+}
+
+export async function isContractVerifiedOnSourcify(
+  address: string,
+  chainId: number,
+): Promise<boolean> {
+  const result = await SourcifyClient.isContractVerified(address, chainId);
+  return result.verified;
 }
