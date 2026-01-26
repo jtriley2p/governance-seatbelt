@@ -796,7 +796,7 @@ export interface FrontendData {
     description: string;
   };
   report: {
-    status: 'success' | 'warning' | 'error';
+    status: 'success' | 'warning' | 'error' | 'inconclusive';
     summary: string;
     markdownReport: string;
     structuredReport?: StructuredSimulationReport;
