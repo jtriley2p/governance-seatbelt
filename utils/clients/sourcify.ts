@@ -120,7 +120,6 @@ export class SourcifyClient {
     if (data.match === 'exact_match' || data.match === 'match') {
       return { verified: true, status: data.match };
     }
-
     return { verified: false, status: 'no_match' };
   }
 
