@@ -3,12 +3,12 @@ import { SchemaValidationError, parseWithSchema, z } from '../validation/zod';
 
 /**
  * Sourcify verification status values.
- * - 'perfect': Full match - all source files and metadata match
- * - 'partial': Partial match - source code matches but metadata may differ
- * - 'false': Not verified on Sourcify
+ * - 'exact_match': Full match - all source files and metadata match
+ * - 'match': Partial match - source code matches but metadata may differ
+ * - 'no_match': Not verified on Sourcify
  * - 'error': API error occurred during check
  */
-export type SourcifyVerificationStatus = 'perfect' | 'partial' | 'false' | 'error';
+export type SourcifyVerificationStatus = 'exact_match' | 'match' | 'no_match' | 'error';
 
 export interface SourcifyCheckResult {
   verified: boolean;
@@ -23,32 +23,16 @@ export type SourcifyVerification =
 // In-memory cache for Sourcify verification results
 const sourcifyCache: Record<string, SourcifyCheckResult> = {};
 
-const sourcifyResponseSchema = z.array(
-  z
-    .object({
-      /**
-       * Sourcify responses differ depending on verification status:
-       * - Verified: includes `chainIds: [{ chainId, status, ... }]`
-       * - Unverified: can omit `chainIds` and return a top-level `status: "false"`
-       *
-       * We accept both shapes to avoid noisy schema validation errors.
-       */
-      chainIds: z
-        .array(
-          z
-            .object({
-              chainId: z.union([z.string(), z.number()]),
-              status: z.string(),
-            })
-            .passthrough(),
-        )
-        .optional(),
-      status: z.string().optional(),
-    })
-    .passthrough(),
-);
-
-type SourcifyResponse = z.infer<typeof sourcifyResponseSchema>;
+const sourcifyV2LookupResponseSchema = z
+  .object({
+    match: z.string().nullable(),
+    creationMatch: z.string().nullable().optional(),
+    runtimeMatch: z.string().nullable().optional(),
+    verifiedAt: z.string().optional(),
+    chainId: z.union([z.string(), z.number()]),
+    address: z.string(),
+  })
+  .passthrough();
 
 function getCacheKey(address: string, chainId: number): string {
   return `${chainId}:${getAddress(address)}`;
@@ -57,14 +41,14 @@ function getCacheKey(address: string, chainId: number): string {
 /**
  * Sourcify API client for checking contract verification status.
  *
- * Uses the Sourcify check-all-by-addresses endpoint which is efficient
- * for simple verification status checks without retrieving full source code.
+ * Uses the Sourcify v2 contract lookup endpoint which is efficient for simple verification status
+ * checks without retrieving full source code.
  *
- * @see https://docs.sourcify.dev/docs/api/server/check-all-by-addresses/
+ * @see https://docs.sourcify.dev/docs/api/
  */
 // biome-ignore lint/complexity/noStaticOnlyClass: Consistent with BlockExplorerFactory pattern
 export class SourcifyClient {
-  private static readonly BASE_URL = 'https://sourcify.dev/server';
+  private static readonly BASE_URL = 'https://sourcify.dev/server/v2';
   private static readonly TIMEOUT_MS = 10000;
 
   static async isContractVerified(address: string, chainId: number): Promise<SourcifyCheckResult> {
@@ -73,7 +57,7 @@ export class SourcifyClient {
 
     try {
       const checksummedAddress = getAddress(address);
-      const url = `${SourcifyClient.BASE_URL}/check-all-by-addresses?addresses=${checksummedAddress}&chainIds=${chainId}`;
+      const url = `${SourcifyClient.BASE_URL}/contract/${chainId}/${checksummedAddress}`;
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), SourcifyClient.TIMEOUT_MS);
@@ -86,6 +70,18 @@ export class SourcifyClient {
 
       clearTimeout(timeoutId);
 
+      if (response.status === 404) {
+        const rawData = await response.json();
+        const data = parseWithSchema(
+          sourcifyV2LookupResponseSchema,
+          rawData,
+          'Sourcify v2 contract lookup response',
+        );
+        const result = SourcifyClient.parseV2LookupResponse(data);
+        sourcifyCache[cacheKey] = result;
+        return result;
+      }
+
       if (!response.ok) {
         console.warn(`Sourcify API returned status ${response.status} for ${address}`);
         const result: SourcifyCheckResult = { verified: false, status: 'error' };
@@ -95,11 +91,11 @@ export class SourcifyClient {
 
       const rawData = await response.json();
       const data = parseWithSchema(
-        sourcifyResponseSchema,
+        sourcifyV2LookupResponseSchema,
         rawData,
-        'Sourcify check-all-by-addresses response',
+        'Sourcify v2 contract lookup response',
       );
-      const result = SourcifyClient.parseResponse(data, chainId);
+      const result = SourcifyClient.parseV2LookupResponse(data);
       sourcifyCache[cacheKey] = result;
       return result;
     } catch (error) {
@@ -118,43 +114,14 @@ export class SourcifyClient {
     }
   }
 
-  private static parseResponse(data: unknown, chainId: number): SourcifyCheckResult {
-    if (!Array.isArray(data) || data.length === 0) {
-      return { verified: false, status: 'false' };
+  private static parseV2LookupResponse(
+    data: z.infer<typeof sourcifyV2LookupResponseSchema>,
+  ): SourcifyCheckResult {
+    if (data.match === 'exact_match' || data.match === 'match') {
+      return { verified: true, status: data.match };
     }
 
-    const addressResult = (data as SourcifyResponse)[0];
-    if (!addressResult) return { verified: false, status: 'false' };
-
-    // Preferred format (when `chainIds` is present)
-    if (Array.isArray(addressResult.chainIds)) {
-      const chainResult = addressResult.chainIds.find(
-        (c: { chainId: string | number; status: string }) => String(c.chainId) === String(chainId),
-      );
-
-      if (!chainResult) return { verified: false, status: 'false' };
-
-      const status = chainResult.status as SourcifyVerificationStatus;
-
-      if (status === 'perfect' || status === 'partial') {
-        return { verified: true, status };
-      }
-
-      if (status === 'error') {
-        return { verified: false, status: 'error' };
-      }
-
-      return { verified: false, status: 'false' };
-    }
-
-    // Fallback format (top-level `status` when `chainIds` is absent)
-    if (addressResult.status === 'perfect' || addressResult.status === 'partial') {
-      return { verified: true, status: addressResult.status };
-    }
-    if (addressResult.status === 'error') {
-      return { verified: false, status: 'error' };
-    }
-    return { verified: false, status: 'false' };
+    return { verified: false, status: 'no_match' };
   }
 
   static clearCache(): void {
@@ -167,10 +134,8 @@ export class SourcifyClient {
 export async function getSourcifyMatch(address: string, chainId: number): Promise<SourcifyMatch> {
   const result = await SourcifyClient.isContractVerified(address, chainId);
 
-  if (result.status === 'perfect') return 'exact_match';
-  if (result.status === 'partial') return 'match';
   if (result.status === 'error') return 'error';
-  return 'no_match';
+  return result.status;
 }
 
 export async function getSourcifyVerification(
@@ -179,8 +144,8 @@ export async function getSourcifyVerification(
 ): Promise<SourcifyVerification> {
   const result = await SourcifyClient.isContractVerified(address, chainId);
 
-  if (result.status === 'perfect') return { status: 'verified', match: 'exact_match' };
-  if (result.status === 'partial') return { status: 'verified', match: 'partial_match' };
+  if (result.status === 'exact_match') return { status: 'verified', match: 'exact_match' };
+  if (result.status === 'match') return { status: 'verified', match: 'partial_match' };
   return { status: 'unverified' };
 }
 

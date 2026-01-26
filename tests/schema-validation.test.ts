@@ -77,16 +77,13 @@ describe('Schema validation at API boundaries', () => {
     const originalFetch = globalThis.fetch;
     SourcifyClient.clearCache();
 
-    SourcifyClient.clearCache();
-
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ not: 'an array' }), {
+      new Response(JSON.stringify({ not: 'a v2 response' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })) as typeof fetch;
 
     try {
-      SourcifyClient.clearCache();
       await expect(
         SourcifyClient.isContractVerified('0x0000000000000000000000000000000000000001', 1),
       ).rejects.toBeInstanceOf(SchemaValidationError);
