@@ -14,6 +14,7 @@ import {
   ShieldCheckIcon,
   XCircleIcon,
 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { buildBlockLink } from './StructuredReport';
 
 interface DecisionHeaderProps {
@@ -22,7 +23,10 @@ interface DecisionHeaderProps {
 
 export function DecisionHeader({ report }: DecisionHeaderProps) {
   const checks = report.checks ?? [];
-  const ranChecks = checks.length;
+  const skippedChecks = checks.filter((check) => check.status === 'skipped');
+  const skippedCount = skippedChecks.length;
+  const totalChecks = checks.length;
+  const ranChecks = Math.max(0, totalChecks - skippedCount);
 
   const warningCount = checks.filter((check) => check.status === 'warning').length;
   const failureCount = checks.filter((check) => check.status === 'failed').length;
@@ -41,6 +45,23 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
   const tenderlyUrl = report.metadata.tenderlyUrl;
 
   const repoName = repoUrl ? repoUrl.split('/').slice(-2).join('/') : 'Repository';
+
+  const statusExplanation =
+    report.status === 'warning' && warningCount > 0
+      ? `Warnings in ${warningCount} check${warningCount === 1 ? '' : 's'}`
+      : report.status === 'error' && failureCount > 0
+        ? `Failed ${failureCount} check${failureCount === 1 ? '' : 's'}`
+        : skippedCount > 0
+          ? `${skippedCount} check${skippedCount === 1 ? ' was' : 's were'} skipped (not applicable)`
+          : null;
+
+  const statusExplanationDetails =
+    skippedCount > 0
+      ? skippedChecks
+          .slice(0, 10)
+          .map((c) => `${c.title}${c.skipReason ? ` — ${c.skipReason}` : ''}`)
+          .join('\n')
+      : null;
 
   return (
     <div className="rounded-lg border border-border/60 overflow-hidden mb-4">
@@ -85,16 +106,32 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
                 {report.summary.split('. ')[0]}
               </p>
             )}
+            {statusExplanation ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="inline-flex items-center gap-1 text-xs text-muted-foreground w-fit cursor-help">
+                      <HelpCircleIcon className="h-3.5 w-3.5" />
+                      <span>{statusExplanation}</span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-sm whitespace-pre-line">
+                    {statusExplanationDetails ??
+                      'This status is derived from check results. Skipped checks usually indicate the check was not applicable to this proposal.'}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : null}
           </div>
         </div>
       </div>
 
-      {/* Stats grid - responsive: 2 cols on mobile, 4 cols on md+ */}
+      {/* Stats grid - responsive: 2 cols on mobile, 4 cols on lg+ */}
       <div className="grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-border/60">
         {/* Checks */}
         <StatItem icon={<ShieldCheckIcon className="h-4 w-4" />} label="Checks">
           <span className="text-sm font-medium">{ranChecks} executed</span>
-          {warningCount > 0 || failureCount > 0 ? (
+          {warningCount > 0 || failureCount > 0 || skippedCount > 0 ? (
             <div className="flex gap-1 flex-wrap">
               {warningCount > 0 && (
                 <Badge
@@ -110,6 +147,14 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
                   className="bg-red-100 text-red-800 hover:bg-red-100 border-red-200 h-5 px-1.5 text-[10px]"
                 >
                   {failureCount} fail
+                </Badge>
+              )}
+              {skippedCount > 0 && (
+                <Badge
+                  variant="secondary"
+                  className="bg-slate-200 text-slate-800 hover:bg-slate-200 border-slate-300 h-5 px-1.5 text-[10px]"
+                >
+                  {skippedCount} skipped
                 </Badge>
               )}
             </div>
@@ -132,7 +177,7 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
         {/* Network */}
         <StatItem icon={<GlobeIcon className="h-4 w-4" />} label="Network">
           <span className="text-sm font-medium">{report.metadata.chainName || 'Ethereum'}</span>
-          {blockNumber && blockNumber !== 'unknown' && (
+          {blockNumber && blockNumber !== 'unknown' ? (
             <a
               href={buildBlockLink(blockNumber, report.metadata)}
               target="_blank"
@@ -142,7 +187,7 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
               Block {blockNumber}
               <ExternalLinkIcon className="h-3 w-3" />
             </a>
-          )}
+          ) : null}
         </StatItem>
 
         {/* Simulation */}
@@ -174,9 +219,9 @@ function StatItem({
   label,
   children,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="p-3 sm:p-4 flex flex-col gap-2">

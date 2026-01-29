@@ -3,6 +3,7 @@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type {
   CrossChainMessagePreview,
   Proposal,
@@ -15,6 +16,7 @@ import {
   ArrowRightIcon,
   CheckCircleIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
   ChevronUpIcon,
   ExternalLinkIcon,
   InfoIcon,
@@ -69,16 +71,72 @@ function isPlaceholderAddress(
   );
 }
 
+function getAddressLabel(
+  address: string,
+  metadata: StructuredSimulationReport['metadata'],
+): string | null {
+  if (!metadata.addressLabels) return null;
+  const normalizedAddress = address.toLowerCase();
+  for (const [addr, labelInfo] of Object.entries(metadata.addressLabels)) {
+    if (addr.toLowerCase() === normalizedAddress) {
+      return labelInfo.label;
+    }
+  }
+  return null;
+}
+
 // --- Simulation warning components ---
 
 function SimulationPlaceholderBadge({ className }: { className?: string }) {
   return (
     <Badge
       variant="outline"
-      className={`bg-orange-100 text-orange-800 border-orange-300 text-xs ${className || ''}`}
+      className={`bg-slate-100 text-slate-600 border-slate-300 text-xs ${className || ''}`}
     >
       Simulation Placeholder
     </Badge>
+  );
+}
+
+// --- Chain Logo Component ---
+// Official logos stored in /public/chain-logos/
+// Sources:
+// - Ethereum: https://github.com/0xa3k5/web3icons
+// - Optimism: https://github.com/0xa3k5/web3icons
+// - Base: https://github.com/base/brand-kit (The Square)
+// - Arbitrum: https://github.com/0xa3k5/web3icons
+
+function ChainLogo({ chainId, size = 20 }: { chainId: number; size?: number }) {
+  // Map chain IDs to logo file paths
+  const logoFiles: Record<number, string> = {
+    1: '/chain-logos/ethereum.svg',
+    10: '/chain-logos/optimism.svg',
+    8453: '/chain-logos/base.svg',
+    42161: '/chain-logos/arbitrum.svg',
+  };
+
+  const logoPath = logoFiles[chainId];
+
+  if (!logoPath) {
+    // Fallback: generic chain icon with chain ID
+    return (
+      <div
+        className="rounded-full bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground"
+        style={{ width: size, height: size }}
+      >
+        {chainId}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={logoPath}
+      alt={`Chain ${chainId} logo`}
+      width={size}
+      height={size}
+      className="shrink-0"
+    />
   );
 }
 
@@ -293,24 +351,40 @@ function StateChanges({ stateChanges, metadata }: StateChangesProps) {
   // Create a default metadata for backwards compatibility
   const effectiveMetadata = metadata || { proposalId: '', proposer: '' as `0x${string}` };
 
+  // Calculate summary stats
+  const groupedChanges = stateChanges.reduce<Record<string, SimulationStateChange[]>>(
+    (acc, change) => {
+      const contractName = change.contract;
+      const key = `${contractName}|${change.contractAddress || ''}`;
+      if (!acc[key]) {
+        acc[key] = [];
+      }
+      acc[key].push(change);
+      return acc;
+    },
+    {},
+  );
+
+  const contractCount = Object.keys(groupedChanges).length;
+  const slotCount = stateChanges.length;
+
   return (
     <div className="space-y-6">
+      {/* Summary header */}
+      <div className="flex items-center gap-4 text-sm text-muted-foreground pb-2 border-b border-muted">
+        <span>
+          <strong className="text-foreground">{contractCount}</strong>{' '}
+          {contractCount === 1 ? 'contract' : 'contracts'} modified
+        </span>
+        <span>•</span>
+        <span>
+          <strong className="text-foreground">{slotCount}</strong>{' '}
+          {slotCount === 1 ? 'storage slot' : 'storage slots'} changed
+        </span>
+      </div>
+
       {/* Group state changes by contract */}
-      {Object.entries(
-        stateChanges.reduce<Record<string, SimulationStateChange[]>>((acc, change) => {
-          // Contract always exists on change but may be generic
-          const contractName = change.contract;
-
-          // We'll keep the original contract name in the key for grouping
-          const key = `${contractName}|${change.contractAddress || ''}`;
-
-          if (!acc[key]) {
-            acc[key] = [];
-          }
-          acc[key].push(change);
-          return acc;
-        }, {}),
-      ).map(([contractKey, changes]) => {
+      {Object.entries(groupedChanges).map(([contractKey, changes]) => {
         const [contractName, contractAddress] = contractKey.split('|');
         return (
           <div key={contractKey} className="space-y-3">
@@ -706,8 +780,9 @@ function CrossChainChecksSummary({ messages }: { messages: CrossChainMessagePrev
         {summary.chains.map((chain) => (
           <div key={chain.chainId} className="border border-border/50 rounded-md p-3 bg-muted/20">
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="text-sm font-medium">
-                {chain.chainName} ({chain.chainId})
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <ChainLogo chainId={chain.chainId} size={18} />
+                {chain.chainName}
               </div>
               <div className="flex items-center gap-2">
                 {chain.bridgeType ? (
@@ -782,8 +857,9 @@ function CrossChainPreview({ messages }: { messages: CrossChainMessagePreview[] 
         return (
           <div key={chainId} className="border border-muted rounded-md p-4 bg-card">
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="font-semibold">
-                {chainName} ({chainId})
+              <div className="flex items-center gap-2 font-semibold">
+                <ChainLogo chainId={chainId} size={20} />
+                {chainName}
               </div>
               {bridgeType ? (
                 <Badge variant="outline" className="text-xs">
@@ -872,6 +948,26 @@ export function StructuredReport({ report }: StructuredReportProps) {
     report.metadata.simulationBlockNumber || report.metadata.blockNumber || 'unknown';
   const timestamp = report.metadata.simulationTimestamp || report.metadata.timestamp || '0';
 
+  const mainChainId = report.metadata.chainId ?? 1;
+  const chainReports = report.chainReports?.length
+    ? report.chainReports
+    : [
+        {
+          chainId: mainChainId,
+          chainName: report.metadata.chainName || 'Ethereum',
+          blockExplorerBaseUrl: report.metadata.blockExplorerBaseUrl,
+          status:
+            report.status === 'error'
+              ? 'error'
+              : report.status === 'warning'
+                ? 'warning'
+                : 'success',
+          checks: report.checks,
+          stateChanges: report.stateChanges,
+          events: report.events,
+        },
+      ];
+
   return (
     <div className="w-full space-y-4">
       <DecisionHeader report={report} />
@@ -938,15 +1034,22 @@ export function StructuredReport({ report }: StructuredReportProps) {
               <MetadataItem label="Network">{report.metadata.chainName || 'Ethereum'}</MetadataItem>
               <MetadataItem label="Proposer" fullWidth>
                 <div className="flex items-center gap-2 flex-wrap">
+                  {getAddressLabel(report.metadata.proposer, report.metadata) && (
+                    <span className="font-medium text-sm">
+                      {getAddressLabel(report.metadata.proposer, report.metadata)}
+                    </span>
+                  )}
                   <a
                     href={buildAddressLink(report.metadata.proposer, report.metadata)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="font-mono text-xs hover:underline inline-flex items-center gap-1 break-all"
+                    className="font-mono text-xs hover:underline inline-flex items-center gap-1 break-all text-muted-foreground"
                   >
-                    <span className="hidden sm:inline">{report.metadata.proposer}</span>
+                    <span className="hidden sm:inline">
+                      {report.metadata.proposer.slice(0, 6)}...{report.metadata.proposer.slice(-4)}
+                    </span>
                     <span className="sm:hidden">
-                      {report.metadata.proposer.slice(0, 10)}...{report.metadata.proposer.slice(-8)}
+                      {report.metadata.proposer.slice(0, 6)}...{report.metadata.proposer.slice(-4)}
                     </span>
                     <ExternalLinkIcon className="h-3 w-3 shrink-0" />
                   </a>
@@ -956,16 +1059,20 @@ export function StructuredReport({ report }: StructuredReportProps) {
               {report.metadata.executor && (
                 <MetadataItem label={getExecutorLabel(report.metadata.simulationType)} fullWidth>
                   <div className="flex items-center gap-2 flex-wrap">
+                    {getAddressLabel(report.metadata.executor, report.metadata) && (
+                      <span className="font-medium text-sm">
+                        {getAddressLabel(report.metadata.executor, report.metadata)}
+                      </span>
+                    )}
                     <a
                       href={buildAddressLink(report.metadata.executor, report.metadata)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-mono text-xs hover:underline inline-flex items-center gap-1 break-all"
+                      className="font-mono text-xs hover:underline inline-flex items-center gap-1 break-all text-muted-foreground"
                     >
-                      <span className="hidden sm:inline">{report.metadata.executor}</span>
-                      <span className="sm:hidden">
-                        {report.metadata.executor.slice(0, 10)}...
-                        {report.metadata.executor.slice(-8)}
+                      <span>
+                        {report.metadata.executor.slice(0, 6)}...
+                        {report.metadata.executor.slice(-4)}
                       </span>
                       <ExternalLinkIcon className="h-3 w-3 shrink-0" />
                     </a>
@@ -975,19 +1082,25 @@ export function StructuredReport({ report }: StructuredReportProps) {
               )}
               {report.metadata.governorAddress && (
                 <MetadataItem label="Governor" fullWidth>
-                  <a
-                    href={buildAddressLink(report.metadata.governorAddress, report.metadata)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-mono text-xs hover:underline inline-flex items-center gap-1 break-all"
-                  >
-                    <span className="hidden sm:inline">{report.metadata.governorAddress}</span>
-                    <span className="sm:hidden">
-                      {report.metadata.governorAddress.slice(0, 10)}...
-                      {report.metadata.governorAddress.slice(-8)}
-                    </span>
-                    <ExternalLinkIcon className="h-3 w-3 shrink-0" />
-                  </a>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {getAddressLabel(report.metadata.governorAddress, report.metadata) && (
+                      <span className="font-medium text-sm">
+                        {getAddressLabel(report.metadata.governorAddress, report.metadata)}
+                      </span>
+                    )}
+                    <a
+                      href={buildAddressLink(report.metadata.governorAddress, report.metadata)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-xs hover:underline inline-flex items-center gap-1 break-all text-muted-foreground"
+                    >
+                      <span>
+                        {report.metadata.governorAddress.slice(0, 6)}...
+                        {report.metadata.governorAddress.slice(-4)}
+                      </span>
+                      <ExternalLinkIcon className="h-3 w-3 shrink-0" />
+                    </a>
+                  </div>
                 </MetadataItem>
               )}
             </div>
@@ -998,22 +1111,112 @@ export function StructuredReport({ report }: StructuredReportProps) {
           {report.crossChain?.messages?.length ? (
             <CrossChainChecksSummary messages={report.crossChain.messages} />
           ) : null}
-          {report.checks.length === 0 ? (
-            <div className="flex items-center justify-center p-4 sm:p-6 text-muted-foreground bg-muted/50 rounded-lg text-sm">
-              <InfoIcon className="h-4 w-4 mr-2 shrink-0" />
-              <span>No checks found in the report</span>
-            </div>
-          ) : (
-            <ChecksSection
-              checks={report.checks}
-              stateChanges={report.stateChanges}
-              metadata={report.metadata}
-            />
-          )}
+          {chainReports.map((chainReport) => {
+            const isMainChain = chainReport.chainId === mainChainId;
+            const effectiveMetadata = {
+              ...report.metadata,
+              chainId: chainReport.chainId,
+              chainName: chainReport.chainName,
+              blockExplorerBaseUrl:
+                chainReport.blockExplorerBaseUrl || report.metadata.blockExplorerBaseUrl,
+            };
+
+            return (
+              <section
+                key={`chain-checks-${chainReport.chainId}`}
+                className="rounded-lg border border-border/60 bg-card/50 p-4 sm:p-6 space-y-4"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <h3 className="flex items-center gap-2 text-base sm:text-lg font-semibold">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="flex items-center gap-2 cursor-default">
+                          <ChainLogo chainId={chainReport.chainId} size={24} />
+                          {chainReport.chainName}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>Chain ID: {chainReport.chainId}</TooltipContent>
+                    </Tooltip>
+                    {isMainChain && (
+                      <Badge variant="secondary" className="text-xs font-normal">
+                        main chain
+                      </Badge>
+                    )}
+                  </h3>
+                  <Badge
+                    variant="outline"
+                    className={
+                      chainReport.status === 'error'
+                        ? 'bg-red-100 text-red-800 border-red-300'
+                        : chainReport.status === 'warning'
+                          ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                          : 'bg-green-100 text-green-800 border-green-300'
+                    }
+                  >
+                    {chainReport.status === 'error'
+                      ? 'Errors'
+                      : chainReport.status === 'warning'
+                        ? 'Warnings'
+                        : 'Passed'}
+                  </Badge>
+                </div>
+
+                {chainReport.checks.length === 0 ? (
+                  <div className="flex items-center justify-center p-4 sm:p-6 text-muted-foreground bg-muted/50 rounded-lg text-sm">
+                    <InfoIcon className="h-4 w-4 mr-2 shrink-0" />
+                    <span>No checks found for this chain</span>
+                  </div>
+                ) : (
+                  <ChecksSection
+                    checks={chainReport.checks}
+                    stateChanges={chainReport.stateChanges}
+                    metadata={effectiveMetadata}
+                  />
+                )}
+              </section>
+            );
+          })}
         </TabsContent>
 
-        <TabsContent value="state-changes" className="mt-4">
-          <StateChanges stateChanges={report.stateChanges} metadata={report.metadata} />
+        <TabsContent value="state-changes" className="mt-4 space-y-4">
+          {chainReports.map((chainReport) => {
+            const isMainChain = chainReport.chainId === mainChainId;
+            const effectiveMetadata = {
+              ...report.metadata,
+              chainId: chainReport.chainId,
+              chainName: chainReport.chainName,
+              blockExplorerBaseUrl:
+                chainReport.blockExplorerBaseUrl || report.metadata.blockExplorerBaseUrl,
+            };
+
+            return (
+              <section
+                key={`chain-state-changes-${chainReport.chainId}`}
+                className="rounded-lg border border-border/60 bg-card/50 p-4 sm:p-6 space-y-4"
+              >
+                <h3 className="flex items-center gap-2 text-base sm:text-lg font-semibold">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="flex items-center gap-2 cursor-default">
+                        <ChainLogo chainId={chainReport.chainId} size={24} />
+                        {chainReport.chainName}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>Chain ID: {chainReport.chainId}</TooltipContent>
+                  </Tooltip>
+                  {isMainChain && (
+                    <Badge variant="secondary" className="text-xs font-normal">
+                      main chain
+                    </Badge>
+                  )}
+                </h3>
+                <StateChanges
+                  stateChanges={chainReport.stateChanges}
+                  metadata={effectiveMetadata}
+                />
+              </section>
+            );
+          })}
         </TabsContent>
       </Tabs>
     </div>
@@ -1113,6 +1316,317 @@ function ChecksSection({ checks, stateChanges, metadata }: ChecksSectionProps) {
   );
 }
 
+// Security analysis output parser for Slither/Solc
+interface ParsedSecurityFinding {
+  severity: 'high' | 'medium' | 'low' | 'info' | 'optimization';
+  title: string;
+  description: string;
+  location?: string;
+}
+
+interface ParsedSecurityOutput {
+  summary: {
+    contractsAnalyzed: number;
+    highCount: number;
+    mediumCount: number;
+    lowCount: number;
+    infoCount: number;
+  };
+  findings: ParsedSecurityFinding[];
+  rawOutput: string;
+}
+
+function parseSecurityOutput(details: string): ParsedSecurityOutput {
+  const findings: ParsedSecurityFinding[] = [];
+  const lines = details.split('\n');
+
+  // Count contracts analyzed - look for "Compiler warnings for" pattern
+  const contractMatches = details.match(/Compiler warnings for/g);
+  const contractsAnalyzed = contractMatches?.length || 0;
+
+  // Find actual slither findings (they have patterns like "Reference:" or detector names)
+  let highCount = 0;
+  let mediumCount = 0;
+  let lowCount = 0;
+  let infoCount = 0;
+
+  // Look for severity indicators in slither output
+  const highPattern = /Impact: High|severity: High/gi;
+  const mediumPattern = /Impact: Medium|severity: Medium/gi;
+  const lowPattern = /Impact: Low|severity: Low/gi;
+
+  highCount = (details.match(highPattern) || []).length;
+  mediumCount = (details.match(mediumPattern) || []).length;
+  lowCount = (details.match(lowPattern) || []).length;
+
+  // Count INFO messages (excluding CryticCompile noise)
+  const infoLines = lines.filter(
+    (line) =>
+      line.includes('INFO:') &&
+      !line.includes('CryticCompile') &&
+      !line.includes('Slither:') &&
+      !line.includes('Detectors:'),
+  );
+  infoCount = infoLines.length;
+
+  return {
+    summary: {
+      contractsAnalyzed,
+      highCount,
+      mediumCount,
+      lowCount,
+      infoCount,
+    },
+    findings,
+    rawOutput: details,
+  };
+}
+
+function SecurityAnalysisOutput({
+  details,
+  checkTitle,
+}: {
+  details: string;
+  checkTitle: string;
+}) {
+  const [showRawOutput, setShowRawOutput] = useState(false);
+  const parsed = useMemo(() => parseSecurityOutput(details), [details]);
+
+  const isSlither = checkTitle.toLowerCase().includes('slither');
+  const isSolc = checkTitle.toLowerCase().includes('solc');
+  const toolName = isSlither ? 'Slither' : isSolc ? 'Solc' : 'Security Analysis';
+
+  const { summary } = parsed;
+  const hasFindings = summary.highCount + summary.mediumCount + summary.lowCount > 0;
+
+  return (
+    <div className="space-y-4">
+      {/* Summary Card */}
+      <div className="bg-muted/30 rounded-lg p-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <ShieldCheckIcon className="h-5 w-5 text-muted-foreground" />
+            <span className="text-sm font-medium">{toolName} Analysis</span>
+          </div>
+          <div className="flex flex-wrap gap-3 text-sm">
+            <span className="text-muted-foreground">
+              {summary.contractsAnalyzed} contract{summary.contractsAnalyzed !== 1 ? 's' : ''}{' '}
+              analyzed
+            </span>
+            {!hasFindings && (
+              <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300">
+                No issues found
+              </Badge>
+            )}
+            {summary.highCount > 0 && <Badge variant="destructive">{summary.highCount} High</Badge>}
+            {summary.mediumCount > 0 && (
+              <Badge variant="outline" className="bg-orange-100 text-orange-800 border-orange-300">
+                {summary.mediumCount} Medium
+              </Badge>
+            )}
+            {summary.lowCount > 0 && (
+              <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-300">
+                {summary.lowCount} Low
+              </Badge>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Raw Output Toggle */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowRawOutput(!showRawOutput)}
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {showRawOutput ? (
+            <ChevronDownIcon className="h-4 w-4" />
+          ) : (
+            <ChevronRightIcon className="h-4 w-4" />
+          )}
+          <span>{showRawOutput ? 'Hide' : 'View'} raw output</span>
+        </button>
+        {showRawOutput && (
+          <div className="mt-3 max-h-96 overflow-auto rounded-md bg-muted/50 p-3">
+            <pre className="text-xs font-mono whitespace-pre-wrap break-all text-muted-foreground">
+              {parsed.rawOutput}
+            </pre>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Events display component for cleaner event rendering
+interface ParsedEvent {
+  contractName: string;
+  contractAddress?: string;
+  events: Array<{
+    name: string;
+    params: Array<{ name: string; value: string }>;
+  }>;
+}
+
+function parseEventsFromDetails(details: string): ParsedEvent[] {
+  const lines = details.split('\n').filter((line) => line.trim());
+  const result: ParsedEvent[] = [];
+  let currentContract: ParsedEvent | null = null;
+
+  for (const line of lines) {
+    // Remove **Info**: prefix if present
+    const cleanLine = line.replace(/^\*\*Info\*\*:\s*/, '').trim();
+
+    // Check if this is a contract header (e.g., "Proxy at `0x...`" or "ContractName at 0x...")
+    const contractMatch = cleanLine.match(
+      /^([A-Za-z0-9_]+(?:\s*\([^)]+\))?)\s+at\s+[`']?(0x[a-fA-F0-9]{40})[`']?/,
+    );
+    if (contractMatch) {
+      if (currentContract) {
+        result.push(currentContract);
+      }
+      currentContract = {
+        contractName: contractMatch[1].trim(),
+        contractAddress: contractMatch[2],
+        events: [],
+      };
+      continue;
+    }
+
+    // Check if this is an event line (e.g., "    `EventName(param: value, ...)`")
+    // Handles both backtick-wrapped and plain formats
+    const eventMatch = cleanLine.match(/^\s*`?(\w+)\((.+)\)`?\s*$/);
+    if (eventMatch && currentContract) {
+      const eventName = eventMatch[1];
+      const paramsString = eventMatch[2];
+
+      // Parse parameters - handle comma-separated key:value pairs
+      const params: Array<{ name: string; value: string }> = [];
+      if (paramsString.trim()) {
+        // Split by comma followed by a parameter name (word followed by colon)
+        const paramParts = paramsString.split(/,\s*(?=[a-zA-Z_]\w*:)/);
+        for (const part of paramParts) {
+          const paramMatch = part.match(/^(\w+):\s*(.+)$/);
+          if (paramMatch) {
+            params.push({ name: paramMatch[1], value: paramMatch[2].trim() });
+          }
+        }
+      }
+
+      currentContract.events.push({ name: eventName, params });
+    }
+  }
+
+  if (currentContract) {
+    result.push(currentContract);
+  }
+
+  return result;
+}
+
+function truncateHex(value: string, maxLength = 20): string {
+  if (!value.startsWith('0x') || value.length <= maxLength) return value;
+  return `${value.slice(0, 10)}...${value.slice(-8)}`;
+}
+
+function isHexValue(value: string): boolean {
+  return /^0x[a-fA-F0-9]+$/.test(value);
+}
+
+function EventsDisplay({
+  details,
+  metadata,
+}: {
+  details: string;
+  metadata?: StructuredSimulationReport['metadata'];
+}) {
+  const parsedEvents = useMemo(() => parseEventsFromDetails(details), [details]);
+  const effectiveMetadata = metadata || { proposalId: '', proposer: '' as `0x${string}` };
+
+  if (parsedEvents.length === 0) {
+    return <p className="text-muted-foreground text-sm">No events to display</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {parsedEvents.map((contract, contractIndex) => (
+        <div key={`contract-${contract.contractAddress || contractIndex}`} className="space-y-3">
+          {/* Contract Header */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium text-sm">{contract.contractName}</span>
+            {contract.contractAddress && (
+              <a
+                href={buildAddressLink(contract.contractAddress, effectiveMetadata)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-xs bg-muted/50 px-2 py-0.5 rounded hover:underline inline-flex items-center gap-1 text-muted-foreground"
+              >
+                {contract.contractAddress.slice(0, 6)}...{contract.contractAddress.slice(-4)}
+                <ExternalLinkIcon className="h-3 w-3" />
+              </a>
+            )}
+          </div>
+
+          {/* Events */}
+          <div className="space-y-2 pl-4 border-l-2 border-muted">
+            {contract.events.map((event, eventIndex) => (
+              <div
+                key={`event-${contractIndex}-${eventIndex}`}
+                className="bg-muted/30 rounded-md p-3"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {event.name}
+                  </Badge>
+                </div>
+                {event.params.length > 0 && (
+                  <div className="space-y-1">
+                    {event.params.map((param, paramIndex) => {
+                      const isLongHex = isHexValue(param.value) && param.value.length > 42;
+                      const displayValue = isLongHex ? truncateHex(param.value) : param.value;
+                      const isAddress = isHexValue(param.value) && param.value.length === 42;
+
+                      return (
+                        <div
+                          key={`param-${contractIndex}-${eventIndex}-${paramIndex}`}
+                          className="flex items-start gap-2 text-sm"
+                        >
+                          <span className="text-muted-foreground min-w-[100px] flex-shrink-0">
+                            {param.name}:
+                          </span>
+                          {isAddress ? (
+                            <a
+                              href={buildAddressLink(param.value, effectiveMetadata)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-mono text-xs hover:underline inline-flex items-center gap-1 text-blue-600"
+                            >
+                              {truncateHex(param.value, 16)}
+                              <ExternalLinkIcon className="h-3 w-3" />
+                            </a>
+                          ) : (
+                            <span
+                              className={`font-mono text-xs break-all ${isLongHex ? 'text-muted-foreground' : ''}`}
+                              title={isLongHex ? param.value : undefined}
+                            >
+                              {displayValue}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Helper components
 function ExpandableCheckItem({
   check,
@@ -1140,14 +1654,55 @@ function ExpandableCheckItem({
 
   const getStatusBadge = () => {
     if (check.status === 'warning') {
-      return (
+      const hasWarningMessages = check.warnings && check.warnings.length > 0;
+      const warningBadge = (
         <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-300">
           Warning
         </Badge>
       );
+
+      // If there are warning messages, wrap in tooltip
+      if (hasWarningMessages) {
+        return (
+          <Tooltip>
+            <TooltipTrigger asChild>{warningBadge}</TooltipTrigger>
+            <TooltipContent
+              side="left"
+              className="max-w-xs bg-yellow-50 text-yellow-900 border-yellow-200"
+            >
+              <ul className="list-disc list-inside space-y-1 text-xs">
+                {check.warnings!.map((warning, idx) => (
+                  <li key={`tooltip-warning-${idx}`}>{warning}</li>
+                ))}
+              </ul>
+            </TooltipContent>
+          </Tooltip>
+        );
+      }
+
+      return warningBadge;
     }
     if (check.status === 'failed') {
-      return <Badge variant="destructive">Failed</Badge>;
+      const hasErrorMessages = check.errors && check.errors.length > 0;
+      const failedBadge = <Badge variant="destructive">Failed</Badge>;
+
+      // If there are error messages, wrap in tooltip
+      if (hasErrorMessages) {
+        return (
+          <Tooltip>
+            <TooltipTrigger asChild>{failedBadge}</TooltipTrigger>
+            <TooltipContent side="left" className="max-w-xs bg-red-50 text-red-900 border-red-200">
+              <ul className="list-disc list-inside space-y-1 text-xs">
+                {check.errors!.map((error, idx) => (
+                  <li key={`tooltip-error-${idx}`}>{error}</li>
+                ))}
+              </ul>
+            </TooltipContent>
+          </Tooltip>
+        );
+      }
+
+      return failedBadge;
     }
     if (check.status === 'skipped') {
       return (
@@ -1170,13 +1725,22 @@ function ExpandableCheckItem({
   // Check if this is a state changes check
   const isStateChangesCheck = check.title.toLowerCase().includes('state changes');
 
-  // Check if this is a verification check (touched or targets verified on block explorer)
-  const isVerificationCheck = check.title.toLowerCase().includes('verified on block explorer');
+  // Check if this is a verification check (touched or targets verified on Sourcify/block explorer)
+  const isVerificationCheck =
+    check.title.toLowerCase().includes('verified on sourcify') ||
+    check.title.toLowerCase().includes('verified on block explorer');
   // Check if this is a proxy resolution check
   const isProxyResolutionCheck = check.title.toLowerCase().includes('proxy implementation');
 
   // Check if this is a treasury movement check
   const isTreasuryMovementCheck = check.title.toLowerCase().includes('treasury movement');
+
+  // Check if this is a security analysis check (slither/solc)
+  const isSecurityCheck =
+    check.title.toLowerCase().includes('slither') || check.title.toLowerCase().includes('solc');
+
+  // Check if this is an events check
+  const isEventsCheck = check.title.toLowerCase().includes('events emitted');
 
   // Parse treasury movement data if applicable
   const treasuryData = useMemo(() => {
@@ -1196,6 +1760,16 @@ function ExpandableCheckItem({
   const FormattedDetails = useMemo(() => {
     if (!check.details) return null;
 
+    // Use SecurityAnalysisOutput for slither/solc checks
+    if (isSecurityCheck) {
+      return <SecurityAnalysisOutput details={check.details} checkTitle={check.title} />;
+    }
+
+    // Use EventsDisplay for events checks
+    if (isEventsCheck) {
+      return <EventsDisplay details={check.details} metadata={metadata} />;
+    }
+
     // Pre-process the raw details to remove all instances of "**Info**:" and similar patterns
     let preprocessedDetails = check.details;
 
@@ -1205,7 +1779,7 @@ function ExpandableCheckItem({
       '$1',
     );
 
-    // Then remove all other variations of Info prefixes
+    // Then remove all other variations of Info/Warning prefixes
     preprocessedDetails = preprocessedDetails
       .replace(/\*\*Info\*\*:/g, '')
       .replace(/\*\*Warnings\*\*:/g, '')
@@ -1214,7 +1788,11 @@ function ExpandableCheckItem({
       .replace(/^- \*\*Info\*\*:/gm, '')
       .replace(/^-\s*\*\*Info\*\*:/gm, '')
       .replace(/^-\s*Info:/gm, '')
-      .replace(/^-\s*/gm, '');
+      .replace(/^-\s*/gm, '')
+      // Remove "Warning:" prefix from lines (we show warning status via badge)
+      .replace(/^Warning:\s*/gm, '')
+      // Remove redundant "(simulation placeholder)" text since we show the badge
+      .replace(/\s*\(simulation placeholder\)/g, '');
 
     // Remove all markdown formatting
     const cleanedDetails = preprocessedDetails.replace(/\*\*([^*]+)\*\*:/g, '$1:');
@@ -1235,12 +1813,14 @@ function ExpandableCheckItem({
     return (
       <>
         {lines.map((line: string, index: number) => {
-          // Final cleanup for any remaining Info prefixes
+          // Final cleanup for any remaining Info/Warning prefixes
           let processedLine = line
             .replace(/^\*\*Info\*\*:\s*/, '')
             .replace(/^\*\*Info\*\*:\s*-\s*/, '')
             .replace(/^Info:\s*/, '')
-            .replace(/^Info\s*-\s*/, '');
+            .replace(/^Info\s*-\s*/, '')
+            .replace(/^Warning:\s*/, '')
+            .replace(/\s*\(simulation placeholder\)/g, '');
 
           // Remove "Info:" if it appears at the beginning of a line
           processedLine = processedLine
@@ -1295,13 +1875,18 @@ function ExpandableCheckItem({
           const parts: React.ReactNode[] = [];
           let lastIndex = 0;
 
-          // Check if this is a target line with contract status
+          // Check if this is a target line with contract status (verification or selfdestruct checks)
           const isTargetLine =
             processedLine.includes('Contract (verified)') ||
             processedLine.includes('EOA (verification not applicable)') ||
             processedLine.includes('Contract (looks safe)') ||
             processedLine.includes('Contract (unverified)') ||
-            processedLine.includes('Trusted contract');
+            processedLine.includes('Trusted contract') ||
+            processedLine.includes('Contract (with DELEGATECALL)') ||
+            processedLine.includes('Contract (with SELFDESTRUCT)') ||
+            processedLine.includes('EOA (may have code later)') ||
+            processedLine.includes(': EOA') ||
+            processedLine.includes('Trusted contract (not checked)');
 
           if (isTargetLine) {
             // Extract target address from markdown link format [address](url) or backtick format
@@ -1315,45 +1900,153 @@ function ExpandableCheckItem({
 
             if (targetMatch) {
               const address = targetMatch[1];
-              // Get the contract status
+              // Get the contract status - handle both verification and selfdestruct checks
               let status = 'Unknown';
               if (processedLine.includes('Contract (verified)')) status = 'Verified';
               else if (processedLine.includes('Contract (unverified)')) status = 'Unverified';
               else if (processedLine.includes('EOA (verification not applicable)')) status = 'EOA';
               else if (processedLine.includes('Contract (looks safe)')) status = 'Looks Safe';
+              else if (processedLine.includes('Trusted contract (not checked)')) status = 'Trusted';
               else if (processedLine.includes('Trusted contract')) status = 'Trusted';
+              else if (processedLine.includes('Contract (with DELEGATECALL)'))
+                status = 'Contract (with DELEGATECALL)';
+              else if (processedLine.includes('Contract (with SELFDESTRUCT)'))
+                status = 'Contract (with SELFDESTRUCT)';
+              else if (processedLine.includes('EOA (may have code later)'))
+                status = 'EOA (may have code later)';
+              else if (processedLine.includes(': EOA')) status = 'EOA';
 
               // Determine status badge color
               const statusColor =
                 status === 'Verified' || status === 'Looks Safe' || status === 'Trusted'
                   ? 'bg-green-100 text-green-800 border-green-300'
-                  : status === 'Unverified'
+                  : status === 'Unverified' || status === 'Contract (with SELFDESTRUCT)'
                     ? 'bg-red-100 text-red-800 border-red-300'
-                    : 'bg-gray-100 text-gray-700 border-gray-300';
+                    : status === 'Contract (with DELEGATECALL)' ||
+                        status === 'EOA (may have code later)'
+                      ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                      : 'bg-gray-100 text-gray-700 border-gray-300';
 
-              // Format the target with proper styling
+              // Format the target with proper styling - badges right-aligned
               return (
-                <div key={`target-${address}`} className="mb-2">
-                  <div className="flex items-center flex-wrap gap-2 p-2 bg-muted/30 rounded-md">
+                <div key={`target-${address}-${index}`} className="mb-2">
+                  <div className="flex items-center justify-between gap-2 p-2 bg-muted/30 rounded-md">
                     <a
                       href={buildAddressLink(address, effectiveMetadata)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-mono text-xs hover:underline inline-flex items-center gap-1"
+                      className="font-mono text-xs hover:underline inline-flex items-center gap-1 min-w-0 truncate"
                     >
                       {address}
-                      <ExternalLinkIcon className="h-3 w-3" />
+                      <ExternalLinkIcon className="h-3 w-3 shrink-0" />
                     </a>
-                    {isPlaceholderAddress(address, effectiveMetadata) && (
-                      <SimulationPlaceholderBadge />
-                    )}
-                    <Badge variant="outline" className={`text-xs ${statusColor}`}>
-                      {status}
-                    </Badge>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isPlaceholderAddress(address, effectiveMetadata) && (
+                        <SimulationPlaceholderBadge />
+                      )}
+                      <Badge variant="outline" className={`text-xs ${statusColor}`}>
+                        {status}
+                      </Badge>
+                    </div>
                   </div>
                 </div>
               );
             }
+          }
+
+          // Check if this is a decoded calldata line (from check-decode-calldata)
+          const isDecodedCalldataLine =
+            processedLine.includes('calls `') &&
+            processedLine.includes('` on ') &&
+            (processedLine.includes('(decoded from ABI)') ||
+              processedLine.includes('(decoded from signature)'));
+
+          if (isDecodedCalldataLine) {
+            // Parse the line: `0xAddress` calls `functionName(args)` on ContractName at `0xTarget` (decoded from ...)
+            const callerMatch = processedLine.match(/`(0x[a-fA-F0-9]{40})`\s*calls/);
+            const functionMatch = processedLine.match(/calls\s*`([^`]+)`\s*on/);
+            const targetMatch = processedLine.match(/on\s+(\S+)\s+at\s+`(0x[a-fA-F0-9]{40})`/);
+            const decodedFromMatch = processedLine.match(/\((decoded from [^)]+)\)/);
+
+            const caller = callerMatch?.[1];
+            const functionCall = functionMatch?.[1];
+            const contractName = targetMatch?.[1];
+            const targetAddress = targetMatch?.[2];
+            const decodedFrom = decodedFromMatch?.[1] || 'decoded';
+
+            // Truncate long function calls (especially hex args)
+            const truncateFunctionCall = (fn: string) => {
+              if (fn.length <= 60) return fn;
+              // Find the function name and opening paren
+              const parenIndex = fn.indexOf('(');
+              if (parenIndex === -1) return `${fn.slice(0, 60)}...`;
+              const fnName = fn.slice(0, parenIndex);
+              const args = fn.slice(parenIndex + 1, -1);
+              // Truncate each arg if it's a long hex string
+              const truncatedArgs = args.split(', ').map((arg) => {
+                if (arg.startsWith('0x') && arg.length > 20) {
+                  return `${arg.slice(0, 10)}...${arg.slice(-6)}`;
+                }
+                return arg;
+              });
+              return `${fnName}(${truncatedArgs.join(', ')})`;
+            };
+
+            return (
+              <div key={`calldata-${index}`} className="mb-2">
+                <div className="flex items-start justify-between gap-3 p-3 bg-muted/30 rounded-md">
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {caller && (
+                        <a
+                          href={buildAddressLink(caller, effectiveMetadata)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded hover:underline inline-flex items-center gap-1"
+                        >
+                          {caller.slice(0, 10)}...{caller.slice(-8)}
+                          <ExternalLinkIcon className="h-3 w-3" />
+                        </a>
+                      )}
+                      <span className="text-muted-foreground text-sm">calls</span>
+                      {functionCall && (
+                        <code className="font-mono text-xs bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded break-all">
+                          {truncateFunctionCall(functionCall)}
+                        </code>
+                      )}
+                    </div>
+                    {(contractName || targetAddress) && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
+                        <span>on</span>
+                        {contractName && (
+                          <span className="font-medium text-foreground">{contractName}</span>
+                        )}
+                        {targetAddress && (
+                          <>
+                            <span>at</span>
+                            <a
+                              href={buildAddressLink(targetAddress, effectiveMetadata)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-mono text-xs hover:underline inline-flex items-center gap-1"
+                            >
+                              {targetAddress.slice(0, 10)}...{targetAddress.slice(-8)}
+                              <ExternalLinkIcon className="h-3 w-3" />
+                            </a>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className="text-xs bg-green-100 text-green-800 border-green-300 shrink-0"
+                  >
+                    {decodedFrom}
+                  </Badge>
+                </div>
+              </div>
+            );
           }
 
           // Check if this is an event line
@@ -1497,10 +2190,7 @@ function ExpandableCheckItem({
             (parts.length === 1 && typeof parts[0] === 'string' && !processedLine.includes('`'))
           ) {
             return (
-              <div
-                key={`info-${processedLine.substring(0, 30).replace(/\s+/g, '-')}`}
-                className="mb-3"
-              >
+              <div key={`info-line-${index}`} className="mb-3">
                 <p className="text-muted-foreground">{parts.length > 0 ? parts : processedLine}</p>
               </div>
             );
@@ -1514,7 +2204,15 @@ function ExpandableCheckItem({
         })}
       </>
     );
-  }, [check.details, isStateChangesCheck, stateChanges, metadata]);
+  }, [
+    check.details,
+    check.title,
+    isStateChangesCheck,
+    isSecurityCheck,
+    isEventsCheck,
+    stateChanges,
+    metadata,
+  ]);
 
   // Status-based styling
   const getStatusStyles = () => {
@@ -1572,6 +2270,43 @@ function ExpandableCheckItem({
       </button>
       {isExpanded && (check.details || check.skipReason || isTreasuryMovementCheck) && (
         <div className="px-3 pb-4 sm:px-4 sm:pb-4 sm:pl-12 text-sm border-t border-muted/50 bg-background/50">
+          {/* Show warning/error reason at the top if it's a meaningful summary (not just listing items) */}
+          {check.status === 'warning' &&
+            check.warnings &&
+            check.warnings.length > 0 &&
+            // Only show if warnings are short summaries, not long lists of items
+            check.warnings.some((w) => !w.includes('0x') && w.length < 200) && (
+              <div className="mt-4 mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                <div className="flex items-start gap-2">
+                  <AlertTriangleIcon className="h-4 w-4 text-yellow-600 mt-0.5 shrink-0" />
+                  <div className="text-yellow-800 text-sm">
+                    <span className="font-medium">Why this check has warnings:</span>
+                    <ul className="mt-1 list-disc list-inside space-y-1">
+                      {check.warnings
+                        .filter((w) => !w.includes('0x') && w.length < 200)
+                        .map((w, i) => (
+                          <li key={`reason-${i}`}>{w}</li>
+                        ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+          {check.status === 'failed' && check.errors && check.errors.length > 0 && (
+            <div className="mt-4 mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+              <div className="flex items-start gap-2">
+                <AlertTriangleIcon className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
+                <div className="text-red-800 text-sm">
+                  <span className="font-medium">Why this check failed:</span>
+                  <ul className="mt-1 list-disc list-inside space-y-1">
+                    {check.errors.map((e, i) => (
+                      <li key={`error-${i}`}>{e}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
           {check.status === 'skipped' && check.skipReason ? (
             <div className="mt-4">
               <p className="text-muted-foreground italic">{check.skipReason}</p>
@@ -1635,9 +2370,17 @@ function StateChangeItem({
   const oldValueCleaned = cleanValue(stateChange.oldValue);
   const newValueCleaned = cleanValue(stateChange.newValue);
 
+  const isHex32 = (value: string) => /^0x[0-9a-fA-F]{64}$/.test(value);
+  const isDecimalInteger = (value: string) => /^-?\d+$/.test(value);
+
+  const isUniswapV3Slot0Change =
+    stateChange.contract.toLowerCase().includes('uniswapv3pool') &&
+    isHex32(oldValueCleaned) &&
+    isHex32(newValueCleaned) &&
+    /^0x0{64}$/i.test(stateChange.key);
+
   // Determine if the change is a simple value change or a complex one
-  const isNumericChange =
-    !Number.isNaN(Number(oldValueCleaned)) && !Number.isNaN(Number(newValueCleaned));
+  const isNumericChange = isDecimalInteger(oldValueCleaned) && isDecimalInteger(newValueCleaned);
   const isAddressChange = oldValueCleaned.startsWith('0x') && newValueCleaned.startsWith('0x');
   const isBooleanChange =
     (oldValueCleaned === 'true' || oldValueCleaned === 'false') &&
@@ -1645,6 +2388,46 @@ function StateChangeItem({
 
   // Calculate difference for numeric values
   const getDifference = () => {
+    // Special-case: Uniswap V3 Pool `slot0` packing can be decoded for a readable delta (feeProtocol/unlocked).
+    if (isUniswapV3Slot0Change) {
+      try {
+        const oldSlot0 = BigInt(oldValueCleaned);
+        const newSlot0 = BigInt(newValueCleaned);
+
+        const feeProtocolOld = Number((oldSlot0 >> 232n) & 0xffn);
+        const feeProtocolNew = Number((newSlot0 >> 232n) & 0xffn);
+
+        // Uniswap V3 packs feeProtocol0 in the low 4 bits and feeProtocol1 in the high 4 bits.
+        const feeProtocol0Old = feeProtocolOld & 0x0f;
+        const feeProtocol1Old = feeProtocolOld >> 4;
+        const feeProtocol0New = feeProtocolNew & 0x0f;
+        const feeProtocol1New = feeProtocolNew >> 4;
+
+        const unlockedOld = ((oldSlot0 >> 240n) & 0xffn) === 1n;
+        const unlockedNew = ((newSlot0 >> 240n) & 0xffn) === 1n;
+
+        return (
+          <div className="bg-muted p-3 rounded-md mt-4 space-y-2">
+            <div className="text-sm flex items-center justify-between">
+              <span className="text-muted-foreground">Decoded (Uniswap V3 slot0)</span>
+            </div>
+            <div className="text-xs font-mono">
+              feeProtocol (raw): {feeProtocolOld} → {feeProtocolNew}
+            </div>
+            <div className="text-xs font-mono">
+              feeProtocol (token0, token1): ({feeProtocol0Old}, {feeProtocol1Old}) → (
+              {feeProtocol0New}, {feeProtocol1New})
+            </div>
+            <div className="text-xs font-mono">
+              unlocked: {String(unlockedOld)} → {String(unlockedNew)}
+            </div>
+          </div>
+        );
+      } catch {
+        // fall through to generic rendering
+      }
+    }
+
     if (isNumericChange) {
       try {
         // Parse the values as BigInt to handle very large numbers
@@ -1791,6 +2574,16 @@ function StateChangeItem({
       );
     }
 
+    // Avoid misleading diffs for raw storage slots (hex32 values).
+    if (isHex32(oldValueCleaned) && isHex32(newValueCleaned)) {
+      return (
+        <div className="bg-muted p-3 rounded-md mt-4">
+          <div className="text-sm text-muted-foreground">Change</div>
+          <div className="font-medium text-xs">Storage slot value changed</div>
+        </div>
+      );
+    }
+
     // For other types of changes, show a generic difference indicator
     return (
       <div className="bg-muted p-3 rounded-md mt-4">
@@ -1809,33 +2602,16 @@ function StateChangeItem({
         aria-expanded={isExpanded}
       >
         <div className="flex items-start gap-2">
-          {stateChange.key.startsWith('0x') && (
+          {isHex32(stateChange.key) ? (
             <div className="text-xs bg-muted-foreground/10 px-2 py-1 rounded text-muted-foreground">
-              Balance
+              {isUniswapV3Slot0Change ? 'slot0' : 'Slot'}
             </div>
-          )}
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <code className="text-xs bg-muted-foreground/20 px-2 py-1 rounded">
-            {stateChange.key.startsWith('0x') ? (
-              <a
-                href={buildAddressLink(stateChange.key, effectiveMetadata)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:underline inline-flex items-center"
-                onClick={(e) => e.stopPropagation()} // Prevent toggling when clicking the link
-              >
-                {stateChange.key}
-                <ExternalLinkIcon className="h-3 w-3 ml-1" />
-              </a>
-            ) : (
-              stateChange.key
-            )}
+            {stateChange.key}
           </code>
-          {stateChange.key.startsWith('0x') &&
-            isPlaceholderAddress(stateChange.key, effectiveMetadata) && (
-              <SimulationPlaceholderBadge />
-            )}
           {isExpanded ? (
             <ChevronUpIcon className="h-4 w-4 text-muted-foreground" />
           ) : (

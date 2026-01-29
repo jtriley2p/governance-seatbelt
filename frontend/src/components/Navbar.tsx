@@ -1,15 +1,29 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { walletConnectEnabled } from '@/config';
 import { useSimulationResults } from '@/hooks/use-simulation-results';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { CheckCircleIcon, FileTextIcon, PlayIcon, SendIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { type ReactNode, useCallback } from 'react';
+import { useAccount, useConnect, useDisconnect } from 'wagmi';
 import type { SimulationType } from './ProposalCard';
 
 export function Navbar() {
   const pathname = usePathname();
   const { data: simulationData } = useSimulationResults();
+
+  const { isConnected, address } = useAccount();
+  const { connect, connectors, isPending } = useConnect();
+  const { disconnect } = useDisconnect();
+
+  const connectInjected = useCallback(() => {
+    const injected = connectors.find((c) => c.id === 'injected') ?? connectors[0];
+    if (!injected) return;
+    connect({ connector: injected });
+  }, [connect, connectors]);
 
   const simulationType: SimulationType =
     simulationData?.report.structuredReport?.metadata.simulationType || 'new';
@@ -58,7 +72,30 @@ export function Navbar() {
           </div>
 
           <div className="flex items-center">
-            <ConnectButton />
+            {walletConnectEnabled ? (
+              <ConnectButton />
+            ) : isConnected ? (
+              <div className="flex items-center gap-2">
+                <div className="text-xs text-muted-foreground font-mono">
+                  {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : 'Connected'}
+                </div>
+                <Button variant="outline" size="sm" onClick={() => disconnect()}>
+                  Disconnect
+                </Button>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                onClick={connectInjected}
+                disabled={isPending || connectors.length === 0}
+              >
+                {connectors.length === 0
+                  ? 'No wallet'
+                  : isPending
+                    ? 'Connecting…'
+                    : 'Connect Wallet'}
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -73,7 +110,7 @@ function NavLink({
 }: {
   href: string;
   active: boolean;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <Link

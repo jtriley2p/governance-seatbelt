@@ -17,6 +17,11 @@ const decodedFunctionCache: Record<string, { name: string; args: unknown[] }> = 
 // If decoding becomes a bottleneck, tune this constant.
 const DECODE_CONCURRENCY = 2;
 
+const KNOWN_ABI_ITEMS_BY_SELECTOR: Record<string, string> = {
+  [toFunctionSelector('sendMessage(address,bytes,uint32)')]:
+    'function sendMessage(address target, bytes message, uint32 gasLimit)',
+};
+
 async function mapWithConcurrency<T, R>(
   items: readonly T[],
   concurrency: number,
@@ -49,21 +54,15 @@ async function mapWithConcurrency<T, R>(
  */
 export const checkDecodeCalldata: ProposalCheck = {
   name: 'Decodes target calldata into a human-readable format',
-  async checkProposal(proposal, sim, deps, l2Simulations) {
+  async checkProposal(proposal, sim, deps, _l2Simulations) {
     const warnings: string[] = [];
 
     // Check if we're running on L2 and have cross-chain message data available
     const isL2Chain = deps.chainConfig?.chainId !== 1;
-    const hasL2Data = l2Simulations && l2Simulations.length > 0;
 
-    if (isL2Chain && hasL2Data) {
-      // Handle L2 cross-chain calldata decoding
-      return await handleL2CrossChainCalldata(
-        l2Simulations,
-        sim,
-        warnings,
-        deps.chainConfig.chainId,
-      );
+    if (isL2Chain) {
+      // Handle L2 calldata decoding (destination simulation for this chain only)
+      return await handleL2CrossChainCalldata(sim, warnings, deps.chainConfig.chainId);
     }
 
     // Handle regular L1 calldata decoding (existing logic)
@@ -132,27 +131,15 @@ export const checkDecodeCalldata: ProposalCheck = {
  * Handle L2 cross-chain calldata decoding using the actual L2 execution data
  */
 async function handleL2CrossChainCalldata(
-  l2Simulations: Array<{ chainId: number; sim: TenderlySimulation }>,
   sim: TenderlySimulation,
   warnings: string[],
   chainId: number,
 ) {
-  // We need to access the destination simulations to get l2Params
-  // Since l2Simulations doesn't include l2Params, we need to get it from the global result
-  // For now, let's extract L2 calldata from the simulation traces and decode what we can find
-
   const allL2Calls: DecodedCall[] = [];
 
-  // Extract calls from all L2 simulations
-  for (const l2Sim of l2Simulations) {
-    if (l2Sim.sim?.transaction?.transaction_info?.call_trace?.calls) {
-      // Find calls that aren't just system calls
-      const meaningfulCalls = extractMeaningfulL2Calls(
-        l2Sim.sim.transaction.transaction_info.call_trace,
-      );
-      allL2Calls.push(...meaningfulCalls);
-    }
-  }
+  // Extract calls from this destination simulation only
+  const trace = sim.transaction.transaction_info.call_trace;
+  if (trace) allL2Calls.push(...extractMeaningfulL2Calls(trace));
 
   if (allL2Calls.length === 0) {
     warnings.push('No meaningful L2 execution calls found in cross-chain simulation');
@@ -317,7 +304,7 @@ function getDescription(contractIdentifier: string, sig: string, call: DecodedCa
 /**
  * Format arguments for human-readable display
  */
-function formatArgs(args: unknown[]): string {
+function formatArgs(args: readonly unknown[]): string {
   if (!args.length) return '';
 
   // If there's only one argument and it's undefined, return an empty string
@@ -383,6 +370,7 @@ async function prettifyCalldata(
   }
 
   // Try to decode using Etherscan ABI first
+  let abiDecodeError: string | null = null;
   try {
     const decoded = await BlockExplorerFactory.decodeFunctionWithAbi(
       target,
@@ -408,14 +396,38 @@ async function prettifyCalldata(
       return description;
     }
 
-    warnings.push(
-      `Failed to decode function with selector ${selector} for contract ${target} using Etherscan ABI`,
-    );
+    abiDecodeError = `Failed to decode function with selector ${selector} for contract ${target} using block explorer ABI`;
   } catch (error) {
     console.warn(`Failed to decode using Etherscan ABI for ${target}:`, error);
-    warnings.push(
-      `Error decoding function with selector ${selector} for contract ${target}: ${error}`,
-    );
+    abiDecodeError = `Error decoding function with selector ${selector} for contract ${target}: ${error}`;
+  }
+
+  // Fallback: decode using known function signatures (useful for proxies where ABI lookup fails)
+  const knownAbiItem = KNOWN_ABI_ITEMS_BY_SELECTOR[selector];
+  if (knownAbiItem) {
+    try {
+      const parsed = parseAbiItem(knownAbiItem);
+      if (parsed.type !== 'function') {
+        throw new Error(`Known ABI item for selector ${selector} is not a function`);
+      }
+      const { args } = decodeFunctionData({
+        abi: [parsed],
+        data: call.input as `0x${string}`,
+      });
+
+      const fnName = parsed.name;
+      decodedFunctionCache[cacheKey] = { name: fnName, args: Array.from(args) };
+
+      let description = `\`${call.from}\` calls \`${fnName}(`;
+      const formattedArgs = formatArgs(args);
+      if (formattedArgs) description += formattedArgs;
+      description += `)\` on ${contractIdentifier} (decoded from signature)`;
+      return description;
+    } catch (error) {
+      warnings.push(
+        `Error decoding function with selector ${selector} for contract ${target} using known signature: ${error}`,
+      );
+    }
   }
 
   // Handle token-related actions
@@ -424,6 +436,8 @@ async function prettifyCalldata(
     const { symbol, decimals } = await fetchTokenMetadata(call.to as `0x${string}`);
     return TOKEN_HANDLERS[selector](call, decimals || 0, symbol ?? null, contractIdentifier);
   }
+
+  if (abiDecodeError) warnings.push(abiDecodeError);
 
   // Generic handling for non-token actions
   const sig = getSignature(call);
