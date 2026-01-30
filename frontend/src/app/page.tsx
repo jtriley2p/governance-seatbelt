@@ -128,7 +128,7 @@ function ReportSection() {
       <ProposalSummary proposal={proposalData} simulationType={simulationType} />
 
       {report.structuredReport ? (
-        <StructuredReport report={report.structuredReport} />
+        <StructuredReport report={report.structuredReport} proposal={proposalData} />
       ) : (
         <Alert>
           <InfoIcon className="h-4 w-4" />

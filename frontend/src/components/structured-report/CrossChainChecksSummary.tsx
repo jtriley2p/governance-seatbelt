@@ -8,7 +8,15 @@ import { ChainLogo } from './ChainLogo';
 import { summarizeCrossChainMessages } from './cross-chain';
 import { buildAddressLinkForExplorer } from './explorer';
 
-export function CrossChainChecksSummary({ messages }: { messages: CrossChainMessagePreview[] }) {
+interface CrossChainChecksSummaryProps {
+  messages: CrossChainMessagePreview[];
+  onNavigateToChain?: (chainId: number) => void;
+}
+
+export function CrossChainChecksSummary({
+  messages,
+  onNavigateToChain,
+}: CrossChainChecksSummaryProps) {
   const summary = useMemo(() => summarizeCrossChainMessages(messages), [messages]);
   const hasFailures = summary.failureCount > 0;
 
@@ -43,31 +51,65 @@ export function CrossChainChecksSummary({ messages }: { messages: CrossChainMess
 
       <div className="mt-3 space-y-2">
         {summary.chains.map((chain) => (
-          <div key={chain.chainId} className="border border-border/50 rounded-md p-3 bg-muted/20">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <ChainLogo chainId={chain.chainId} size={18} />
-                {chain.chainName}
-              </div>
-              <div className="flex items-center gap-2">
-                {chain.bridgeType ? (
-                  <Badge variant="outline" className="text-xs">
-                    {chain.bridgeType}
+          <div
+            key={chain.chainId}
+            className="border border-border/50 rounded-md bg-muted/20 overflow-hidden"
+          >
+            {onNavigateToChain ? (
+              <button
+                type="button"
+                onClick={() => onNavigateToChain(chain.chainId)}
+                className="group/chain w-full p-3 flex items-center justify-between gap-2 flex-wrap hover:bg-muted/40 transition-colors cursor-pointer text-left"
+              >
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <ChainLogo chainId={chain.chainId} size={18} />
+                  {chain.chainName}
+                  <span className="text-xs text-muted-foreground opacity-0 group-hover/chain:opacity-100 transition-opacity">
+                    ↓
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {chain.bridgeType ? (
+                    <Badge variant="outline" className="text-xs">
+                      {chain.bridgeType}
+                    </Badge>
+                  ) : null}
+                  <Badge variant="outline" className="text-xs bg-muted-foreground/10">
+                    {chain.successCount}/{chain.total} succeeded
                   </Badge>
-                ) : null}
-                <Badge variant="outline" className="text-xs bg-muted-foreground/10">
-                  {chain.successCount}/{chain.total} succeeded
-                </Badge>
-                {chain.failureCount > 0 ? (
-                  <Badge variant="destructive" className="text-xs">
-                    {chain.failureCount} failed
+                  {chain.failureCount > 0 ? (
+                    <Badge variant="destructive" className="text-xs">
+                      {chain.failureCount} failed
+                    </Badge>
+                  ) : null}
+                </div>
+              </button>
+            ) : (
+              <div className="p-3 flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <ChainLogo chainId={chain.chainId} size={18} />
+                  {chain.chainName}
+                </div>
+                <div className="flex items-center gap-2">
+                  {chain.bridgeType ? (
+                    <Badge variant="outline" className="text-xs">
+                      {chain.bridgeType}
+                    </Badge>
+                  ) : null}
+                  <Badge variant="outline" className="text-xs bg-muted-foreground/10">
+                    {chain.successCount}/{chain.total} succeeded
                   </Badge>
-                ) : null}
+                  {chain.failureCount > 0 ? (
+                    <Badge variant="destructive" className="text-xs">
+                      {chain.failureCount} failed
+                    </Badge>
+                  ) : null}
+                </div>
               </div>
-            </div>
+            )}
 
             {chain.failures.length ? (
-              <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+              <div className="px-3 pb-3 space-y-1 text-xs text-muted-foreground border-t border-border/30">
                 {chain.failures.map((m) => (
                   <div
                     key={`${chain.chainId}-${m.index}`}
