@@ -249,12 +249,16 @@ bun upload --publish --relay-url http://localhost:8787
 SEATBELT_RELAY_URL=http://localhost:8787 bun upload --publish
 ```
 
-### Running the managed publish relay (`bun run relay:start`)
+### Managed publish relay runtime
 
-The managed relay is a minimal service that receives validated artifacts and deploys them to Vercel:
+The managed relay exposes:
 
 - `GET /api/v1/health`
 - `POST /api/v1/publishes`
+
+Production runtime is wired for Vercel Functions (`api/v1/[endpoint].ts`) and uses Vercel's Deploy API server-side.
+
+For local development, you can still run the Bun server directly:
 
 ```bash
 # Relay Vercel credentials (managed account/project)
@@ -265,7 +269,7 @@ export SEATBELT_RELAY_VERCEL_ORG_ID="<team-or-user-id>"
 bun run relay:start
 ```
 
-See `docs/PUBLISH_PHASE1C_RELAY_MVP.md` for full request/response and env details.
+See `docs/PUBLISH_PHASE1C_RELAY_MVP.md` for exact Vercel deploy steps + full API/env details.
 
 ### Running Simulations
 
