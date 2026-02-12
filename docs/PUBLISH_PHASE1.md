@@ -47,13 +47,16 @@ Current log destination: `.seatbelt/publish-log.jsonl`
 
 Precedence: if both variants are set, `VERCEL_*` wins.
 
-The command deploys a local temporary bundle containing:
+The command deploys a local temporary bundle containing the existing `frontend/` app plus:
 
-- `simulation-results.json` (validated artifact)
-- `publish-metadata.json` (publish metadata)
-- `index.html` (minimal viewer/links)
+- `public/simulation-results.json` (validated artifact)
+- `public/publish-metadata.json` (publish metadata)
+- `.vercel/project.json` (target project linkage)
 
-No Git import flow is required.
+The published root URL renders the same Seatbelt report UI used in local frontend preview, while
+still exposing raw JSON at `/simulation-results.json` and `/publish-metadata.json`.
+
+No Git import flow or external backend is required.
 
 ## One-time setup (exact commands)
 

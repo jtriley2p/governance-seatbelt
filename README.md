@@ -251,6 +251,10 @@ bun upload --validate-only
 bun upload --publish
 ```
 
+`bun upload --publish` deploys the frontend report viewer bundle. The deployment root (`/`) renders
+the full Seatbelt report UI for the uploaded artifact, and raw files remain available at
+`/simulation-results.json` and `/publish-metadata.json`.
+
 Optional custom paths:
 
 ```bash

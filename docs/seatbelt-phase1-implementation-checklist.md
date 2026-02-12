@@ -29,7 +29,7 @@ Source plan: `research/seatbelt-phase1-vercel-execution-plan.md`
 
 ## Day 2 — Local preview parity
 
-- [ ] Confirm local preview render path is identical to publish bundle render path.
+- [x] Confirm local preview render path is identical to publish bundle render path.
 - [ ] Add visible metadata header (simulation type, timestamp, schema version).
 - [ ] Add empty/missing-data fallback UX polish for viewer.
 

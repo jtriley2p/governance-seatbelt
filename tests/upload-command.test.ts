@@ -245,8 +245,10 @@ describe('bun upload command', () => {
 
           expect(command).toBe('vercel');
           expect(args).toEqual(['deploy', '--yes', '--prod', '--token', 'test_token']);
-          expect(existsSync(join(options.cwd, 'simulation-results.json'))).toBe(true);
-          expect(existsSync(join(options.cwd, 'publish-metadata.json'))).toBe(true);
+          expect(existsSync(join(options.cwd, 'package.json'))).toBe(true);
+          expect(existsSync(join(options.cwd, 'src', 'app', 'page.tsx'))).toBe(true);
+          expect(existsSync(join(options.cwd, 'public', 'simulation-results.json'))).toBe(true);
+          expect(existsSync(join(options.cwd, 'public', 'publish-metadata.json'))).toBe(true);
           expect(existsSync(join(options.cwd, '.vercel', 'project.json'))).toBe(true);
 
           const linkedProjectRaw = readFileSync(

@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import {
@@ -17,6 +25,7 @@ type UploadArgs = {
 
 const DEFAULT_ARTIFACT_PATH = 'frontend/public/simulation-results.json';
 const DEFAULT_LOG_PATH = '.seatbelt/publish-log.jsonl';
+const FRONTEND_SOURCE_DIR = resolve(import.meta.dir, '..', 'frontend');
 
 type PublishMode = 'validate-only' | 'upload-scaffold';
 
@@ -297,58 +306,21 @@ function isErrorWithCode(value: unknown): value is {
   return typeof value === 'object' && value !== null && 'code' in value;
 }
 
-function escapeHtml(input: string): string {
-  return input
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+function assertFrontendPublishBundleExists() {
+  const requiredEntries = [
+    join(FRONTEND_SOURCE_DIR, 'package.json'),
+    join(FRONTEND_SOURCE_DIR, 'src', 'app', 'page.tsx'),
+    join(FRONTEND_SOURCE_DIR, 'public'),
+  ];
 
-function buildPublishLandingPage(logEntry: PublishLogEntry): string {
-  const metadataJson = escapeHtml(JSON.stringify(logEntry, null, 2));
+  const missing = requiredEntries.filter((entry) => !existsSync(entry));
+  if (missing.length === 0) {
+    return;
+  }
 
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Seatbelt publish artifact</title>
-    <style>
-      :root {
-        color-scheme: dark;
-      }
-      body {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-        margin: 2rem;
-        line-height: 1.5;
-        background: #0f1117;
-        color: #e6edf3;
-      }
-      a {
-        color: #7cc7ff;
-      }
-      pre {
-        padding: 1rem;
-        border-radius: 0.5rem;
-        background: #161b22;
-        overflow: auto;
-      }
-    </style>
-  </head>
-  <body>
-    <h1>Seatbelt simulation publish</h1>
-    <p>This deployment contains a validated simulation artifact.</p>
-    <ul>
-      <li><a href="./simulation-results.json">simulation-results.json</a></li>
-      <li><a href="./publish-metadata.json">publish-metadata.json</a></li>
-    </ul>
-    <h2>Publish metadata</h2>
-    <pre>${metadataJson}</pre>
-  </body>
-</html>
-`;
+  throw new Error(
+    `Frontend publish bundle is incomplete. Missing required paths: ${missing.join(', ')}`,
+  );
 }
 
 function prepareDeployDirectory(
@@ -356,10 +328,15 @@ function prepareDeployDirectory(
   logEntry: PublishLogEntry,
   vercelEnv: VercelPublishEnv,
 ): string {
+  assertFrontendPublishBundleExists();
+
   const deployDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-'));
   const vercelDir = join(deployDir, '.vercel');
+  const publicDir = join(deployDir, 'public');
 
+  cpSync(FRONTEND_SOURCE_DIR, deployDir, { recursive: true });
   mkdirSync(vercelDir, { recursive: true });
+  mkdirSync(publicDir, { recursive: true });
 
   writeFileSync(
     join(vercelDir, 'project.json'),
@@ -369,9 +346,8 @@ function prepareDeployDirectory(
     }),
   );
 
-  writeFileSync(join(deployDir, 'simulation-results.json'), rawArtifact);
-  writeFileSync(join(deployDir, 'publish-metadata.json'), JSON.stringify(logEntry, null, 2));
-  writeFileSync(join(deployDir, 'index.html'), buildPublishLandingPage(logEntry));
+  writeFileSync(join(publicDir, 'simulation-results.json'), rawArtifact);
+  writeFileSync(join(publicDir, 'publish-metadata.json'), JSON.stringify(logEntry, null, 2));
 
   return deployDir;
 }
