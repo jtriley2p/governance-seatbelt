@@ -261,6 +261,27 @@ Optional custom paths:
 bun upload --artifact frontend/public/simulation-results.json --log .seatbelt/publish-log.jsonl --publish
 ```
 
+### Managed publish relay MVP (`bun run relay:start`)
+
+Phase 1C adds a minimal managed relay service with:
+
+- `GET /api/v1/health`
+- `POST /api/v1/publishes`
+
+Run locally:
+
+```bash
+# Relay Vercel credentials (managed account/project)
+export SEATBELT_RELAY_VERCEL_TOKEN="<token>"
+export SEATBELT_RELAY_VERCEL_PROJECT_ID="<project-id>"
+export SEATBELT_RELAY_VERCEL_ORG_ID="<team-or-user-id>"
+
+# Start relay
+bun run relay:start
+```
+
+See `docs/PUBLISH_PHASE1C_RELAY_MVP.md` for full request/response and env details.
+
 ### Running Simulations
 
 There are two modes of operation:
