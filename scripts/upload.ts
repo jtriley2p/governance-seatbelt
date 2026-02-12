@@ -16,16 +16,25 @@ import {
 } from '../utils/publish/artifact-validator';
 import { computeArtifactHash, createPublishMetadata } from '../utils/publish/publish-metadata';
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 type UploadArgs = {
   artifactPath: string;
   logPath: string;
   publish: boolean;
   validateOnly: boolean;
+  publishProvider: PublishProviderSelection;
+  relayUrl?: string;
 };
 
 const DEFAULT_ARTIFACT_PATH = 'frontend/public/simulation-results.json';
 const DEFAULT_LOG_PATH = '.seatbelt/publish-log.jsonl';
 const FRONTEND_SOURCE_DIR = resolve(import.meta.dir, '..', 'frontend');
+const DEFAULT_RELAY_URL = 'https://seatbelt-relay.vercel.app';
+const DEFAULT_RELAY_TIMEOUT_MS = 120_000;
+const DEFAULT_RELAY_MAX_BYTES = 25 * 1024 * 1024;
 
 const DEPLOY_BUNDLE_EXCLUDED_DIRS = new Set([
   '.git',
@@ -42,7 +51,8 @@ const DEPLOY_BUNDLE_EXCLUDED_DIRS = new Set([
 
 const DEPLOY_BUNDLE_EXCLUDED_FILES = new Set(['.gitignore', '.vercelignore']);
 
-type PublishMode = 'validate-only' | 'upload-scaffold';
+type PublishMode = 'validate-only' | 'managed-relay' | 'byo-vercel';
+type PublishProviderSelection = 'managed' | 'vercel';
 
 type PublishLogEntry = {
   publish_id: string;
@@ -55,6 +65,22 @@ type PublishLogEntry = {
   artifact_path: string;
   mode: PublishMode;
 };
+
+type ManagedRelayResponse = {
+  deploymentUrl: string;
+  artifactUrl?: string;
+  metadataUrl?: string;
+  publishId?: string;
+  idempotencyKey?: string;
+};
+
+type ManagedRelayRunner = (input: {
+  endpointUrl: string;
+  artifactRaw: string;
+  publishLogEntry: PublishLogEntry;
+  timeoutMs: number;
+  maxPayloadBytes: number;
+}) => Promise<ManagedRelayResponse>;
 
 type CommandRunOptions = {
   cwd: string;
@@ -77,6 +103,7 @@ export type UploadRuntimeOverrides = {
   env?: Record<string, string | undefined>;
   runCommand?: CommandRunner;
   frontendSourceDir?: string;
+  runManagedRelay?: ManagedRelayRunner;
 };
 
 type VercelPublishEnv = {
@@ -85,17 +112,25 @@ type VercelPublishEnv = {
   orgId: string;
 };
 
+// ---------------------------------------------------------------------------
+// Help + argument parsing
+// ---------------------------------------------------------------------------
+
 function printHelp() {
-  console.log('Seatbelt upload (Phase 1)');
+  console.log('Seatbelt upload');
   console.log('');
   console.log('Usage: bun upload [options]');
   console.log('');
   console.log('Options:');
   console.log('  --artifact <path>      Path to simulation-results artifact');
-  console.log('  --publish              Publish validated artifact to Vercel');
+  console.log('  --publish              Publish validated artifact via managed relay');
   console.log('  --validate-only        Validate + log metadata without publish attempt');
   console.log('  --log <path>           Publish metadata log path');
   console.log('  -h, --help             Show this help');
+  console.log('');
+  console.log('Advanced (break-glass):');
+  console.log('  --publish-provider vercel   Use BYO Vercel deploy instead of managed relay');
+  console.log('  --relay-url <url>           Override managed relay endpoint');
 }
 
 function parseUploadArgs(argv: string[]): UploadArgs {
@@ -104,6 +139,7 @@ function parseUploadArgs(argv: string[]): UploadArgs {
     logPath: DEFAULT_LOG_PATH,
     publish: false,
     validateOnly: false,
+    publishProvider: 'managed',
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -134,6 +170,32 @@ function parseUploadArgs(argv: string[]): UploadArgs {
       continue;
     }
 
+    if (arg === '--publish-provider') {
+      const value = argv[i + 1];
+      if (!value) {
+        throw new Error('Missing value for --publish-provider');
+      }
+
+      if (value !== 'managed' && value !== 'vercel') {
+        throw new Error('Invalid value for --publish-provider (expected managed or vercel)');
+      }
+
+      parsed.publishProvider = value;
+      i += 1;
+      continue;
+    }
+
+    if (arg === '--relay-url') {
+      const value = argv[i + 1];
+      if (!value) {
+        throw new Error('Missing value for --relay-url');
+      }
+
+      parsed.relayUrl = value;
+      i += 1;
+      continue;
+    }
+
     if (arg === '--validate-only') {
       parsed.validateOnly = true;
       continue;
@@ -149,6 +211,10 @@ function parseUploadArgs(argv: string[]): UploadArgs {
 
   return parsed;
 }
+
+// ---------------------------------------------------------------------------
+// Common utilities
+// ---------------------------------------------------------------------------
 
 function appendPublishLog(logPath: string, entry: PublishLogEntry) {
   const fullPath = resolve(logPath);
@@ -199,6 +265,241 @@ function readNonEmptyEnv(
   return trimmed;
 }
 
+function appendPathToUrl(baseUrl: string, relativePath: string): string {
+  if (baseUrl.endsWith('/')) {
+    return `${baseUrl}${relativePath}`;
+  }
+
+  return `${baseUrl}/${relativePath}`;
+}
+
+function readPositiveIntegerEnv(
+  env: Record<string, string | undefined>,
+  name: string,
+): number | undefined {
+  const value = readNonEmptyEnv(env, name);
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer when set (received: ${value})`);
+  }
+
+  return Math.floor(parsed);
+}
+
+// ---------------------------------------------------------------------------
+// Managed relay publish (default path)
+// ---------------------------------------------------------------------------
+
+function readRelayUrl(args: UploadArgs, runtimeEnv: Record<string, string | undefined>): string {
+  const fromArg = args.relayUrl?.trim();
+  if (fromArg && fromArg.length > 0) {
+    return fromArg;
+  }
+
+  const fromEnv = readNonEmptyEnv(runtimeEnv, 'SEATBELT_RELAY_URL');
+  if (fromEnv) {
+    return fromEnv;
+  }
+
+  return DEFAULT_RELAY_URL;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readOptionalString(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  return undefined;
+}
+
+function parseRelayResponse(value: unknown): ManagedRelayResponse {
+  if (!isRecord(value)) {
+    throw new Error('Managed relay response must be a JSON object.');
+  }
+
+  const deploymentUrl = readOptionalString(value, 'deploymentUrl');
+  if (!deploymentUrl) {
+    throw new Error('Managed relay response is missing deploymentUrl.');
+  }
+
+  return {
+    deploymentUrl,
+    artifactUrl: readOptionalString(value, 'artifactUrl'),
+    metadataUrl: readOptionalString(value, 'metadataUrl'),
+    publishId: readOptionalString(value, 'publishId'),
+    idempotencyKey: readOptionalString(value, 'idempotencyKey'),
+  };
+}
+
+function toJsonSnippet(input: string): string {
+  const trimmed = input.trim();
+  if (trimmed.length === 0) {
+    return '(empty response body)';
+  }
+
+  if (trimmed.length <= 500) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, 500)}…`;
+}
+
+function extractErrorMessageFromJson(value: unknown): string | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const message = readOptionalString(value, 'message');
+  if (message) {
+    return message;
+  }
+
+  return readOptionalString(value, 'error');
+}
+
+async function defaultManagedRelayRunner(input: {
+  endpointUrl: string;
+  artifactRaw: string;
+  publishLogEntry: PublishLogEntry;
+  timeoutMs: number;
+  maxPayloadBytes: number;
+}): Promise<ManagedRelayResponse> {
+  const payload = JSON.stringify({
+    artifactRaw: input.artifactRaw,
+    publishMetadata: input.publishLogEntry,
+  });
+
+  const payloadBytes = Buffer.byteLength(payload, 'utf8');
+
+  if (payloadBytes > input.maxPayloadBytes) {
+    throw new Error(
+      `Publish payload is too large (${payloadBytes} bytes > ${input.maxPayloadBytes} bytes). Reduce artifact size or use --publish-provider vercel for BYO deployment.`,
+    );
+  }
+
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => {
+    controller.abort();
+  }, input.timeoutMs);
+
+  let responseText = '';
+
+  try {
+    const response = await fetch(input.endpointUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+        'x-seatbelt-client': 'governance-seatbelt-cli',
+        'idempotency-key': input.publishLogEntry.artifact_hash,
+      },
+      body: payload,
+      signal: controller.signal,
+    });
+
+    responseText = await response.text();
+
+    if (!response.ok) {
+      const parsedBody = (() => {
+        try {
+          return JSON.parse(responseText) as unknown;
+        } catch {
+          return undefined;
+        }
+      })();
+
+      const serviceMessage = extractErrorMessageFromJson(parsedBody);
+      const suffix = serviceMessage ? ` ${serviceMessage}` : ` ${toJsonSnippet(responseText)}`;
+
+      if (response.status === 429) {
+        throw new Error(`Publish was rate-limited (HTTP 429). Please wait and retry.${suffix}`);
+      }
+
+      if (response.status === 413) {
+        throw new Error(`Publish rejected: payload too large (HTTP 413).${suffix}`);
+      }
+
+      throw new Error(`Publish failed with HTTP ${response.status}.${suffix}`);
+    }
+
+    let parsedJson: unknown;
+    try {
+      parsedJson = JSON.parse(responseText) as unknown;
+    } catch {
+      throw new Error(`Publish returned non-JSON success response: ${toJsonSnippet(responseText)}`);
+    }
+
+    return parseRelayResponse(parsedJson);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Publish timed out after ${input.timeoutMs}ms.`);
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
+async function runManagedRelayPublish(
+  rawArtifact: string,
+  logEntry: PublishLogEntry,
+  runtimeEnv: Record<string, string | undefined>,
+  args: UploadArgs,
+  relayRunner: ManagedRelayRunner,
+): Promise<void> {
+  const relayUrl = readRelayUrl(args, runtimeEnv);
+  const endpointUrl = `${relayUrl.replace(/\/+$/, '')}/api/v1/publishes`;
+  const timeoutMs =
+    readPositiveIntegerEnv(runtimeEnv, 'SEATBELT_RELAY_TIMEOUT_MS') ?? DEFAULT_RELAY_TIMEOUT_MS;
+  const maxPayloadBytes =
+    readPositiveIntegerEnv(runtimeEnv, 'SEATBELT_RELAY_MAX_BYTES') ?? DEFAULT_RELAY_MAX_BYTES;
+
+  const result = await relayRunner({
+    endpointUrl,
+    artifactRaw: rawArtifact,
+    publishLogEntry: logEntry,
+    timeoutMs,
+    maxPayloadBytes,
+  });
+
+  console.log('[upload] Publish succeeded.');
+  console.log(`[upload] Deployment URL: ${result.deploymentUrl}`);
+
+  if (result.artifactUrl) {
+    console.log(`[upload] Artifact URL: ${result.artifactUrl}`);
+  } else {
+    console.log(
+      `[upload] Artifact URL: ${appendPathToUrl(result.deploymentUrl, 'simulation-results.json')}`,
+    );
+  }
+
+  if (result.metadataUrl) {
+    console.log(`[upload] Metadata URL: ${result.metadataUrl}`);
+  } else {
+    console.log(
+      `[upload] Metadata URL: ${appendPathToUrl(result.deploymentUrl, 'publish-metadata.json')}`,
+    );
+  }
+
+  if (result.publishId) {
+    console.log(`[upload] Publish ID: ${result.publishId}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// BYO Vercel publish (break-glass fallback, --publish-provider vercel)
+// ---------------------------------------------------------------------------
+
 function readPrimaryOrAliasEnv(
   env: Record<string, string | undefined>,
   primaryName: string,
@@ -234,7 +535,7 @@ function readVercelPublishEnv(env: Record<string, string | undefined>): VercelPu
 
   if (missing.length > 0) {
     throw new Error(
-      `Vercel publish is missing required environment variables: ${missing.join(', ')}.\nSet these before running bun upload --publish (VERCEL_* takes precedence when both are set):\n  export VERCEL_TOKEN="<token>"\n  export VERCEL_PROJECT_ID="<project-id>"\n  export VERCEL_ORG_ID="<team-or-user-id>"\n  # Or use SEATBELT_VERCEL_TOKEN / SEATBELT_VERCEL_PROJECT_ID / SEATBELT_VERCEL_ORG_ID`,
+      `BYO Vercel publish is missing required environment variables: ${missing.join(', ')}.\n  export VERCEL_TOKEN="<token>"\n  export VERCEL_PROJECT_ID="<project-id>"\n  export VERCEL_ORG_ID="<team-or-user-id>"`,
     );
   }
 
@@ -410,14 +711,6 @@ function buildCommandOutputSummary(stdout: string, stderr: string): string {
   return chunks.join('\n');
 }
 
-function appendPathToUrl(baseUrl: string, relativePath: string): string {
-  if (baseUrl.endsWith('/')) {
-    return `${baseUrl}${relativePath}`;
-  }
-
-  return `${baseUrl}/${relativePath}`;
-}
-
 async function runVercelPublish(
   artifactRaw: string,
   logEntry: PublishLogEntry,
@@ -477,6 +770,10 @@ async function runVercelPublish(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Main entry point
+// ---------------------------------------------------------------------------
+
 export async function runUpload(
   argv: string[],
   overrides: UploadRuntimeOverrides = {},
@@ -484,6 +781,7 @@ export async function runUpload(
   const runtimeEnv = overrides.env ?? process.env;
   const runCommand = overrides.runCommand ?? defaultRunCommand;
   const frontendSourceDir = overrides.frontendSourceDir ?? FRONTEND_SOURCE_DIR;
+  const relayRunner = overrides.runManagedRelay ?? defaultManagedRelayRunner;
 
   try {
     const args = parseUploadArgs(argv);
@@ -498,7 +796,12 @@ export async function runUpload(
     const validated = validatePublishArtifact(parsedArtifact);
     const artifactHash = computeArtifactHash(rawArtifact);
 
-    const mode: PublishMode = args.publish ? 'upload-scaffold' : 'validate-only';
+    const mode: PublishMode = !args.publish
+      ? 'validate-only'
+      : args.publishProvider === 'vercel'
+        ? 'byo-vercel'
+        : 'managed-relay';
+
     const logEntry = buildLogEntry(validated, artifactPath, mode, artifactHash);
     appendPublishLog(args.logPath, logEntry);
 
@@ -512,7 +815,14 @@ export async function runUpload(
       return 0;
     }
 
-    await runVercelPublish(rawArtifact, logEntry, runtimeEnv, runCommand, frontendSourceDir);
+    if (args.publishProvider === 'vercel') {
+      console.log('[upload] Publish provider: BYO Vercel (break-glass).');
+      await runVercelPublish(rawArtifact, logEntry, runtimeEnv, runCommand, frontendSourceDir);
+      return 0;
+    }
+
+    console.log('[upload] Publish provider: managed relay (default).');
+    await runManagedRelayPublish(rawArtifact, logEntry, runtimeEnv, args, relayRunner);
     return 0;
   } catch (error) {
     if (error instanceof PublishArtifactValidationError) {

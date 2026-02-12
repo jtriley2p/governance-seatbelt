@@ -217,37 +217,15 @@ DAO_NAME=Uniswap
 GOVERNOR_ADDRESS=0x408ED6354d4973f66138C91495F2f2FCbd8724C3
 ```
 
-### Uploading validated artifacts to Vercel (`bun upload`)
+### Publishing simulation artifacts (`bun upload`)
 
-One-time setup (machine + project link):
-
-```bash
-# Install Vercel CLI once
-bun add -g vercel
-
-# Link this repository to the target Vercel project
-vercel link --yes
-
-# Export required publish credentials
-export VERCEL_TOKEN="<token-from-vercel-account-settings>"
-export VERCEL_PROJECT_ID="<projectId-from-.vercel/project.json>"
-export VERCEL_ORG_ID="<orgId-from-.vercel/project.json>"
-
-# Optional aliases if your env naming is namespaced
-export SEATBELT_VERCEL_TOKEN="$VERCEL_TOKEN"
-export SEATBELT_VERCEL_PROJECT_ID="$VERCEL_PROJECT_ID"
-export SEATBELT_VERCEL_ORG_ID="$VERCEL_ORG_ID"
-```
-
-If both are set, `VERCEL_*` takes precedence over `SEATBELT_VERCEL_*`.
-
-Usage:
+No local Vercel setup required. `bun upload --publish` sends validated artifacts to the managed publish relay.
 
 ```bash
-# Validate artifact + write publish metadata log only
+# Validate artifact only (no publish)
 bun upload --validate-only
 
-# Validate artifact + publish to Vercel (non-interactive)
+# Validate + publish via managed relay (zero setup)
 bun upload --publish
 ```
 
@@ -261,14 +239,22 @@ Optional custom paths:
 bun upload --artifact frontend/public/simulation-results.json --log .seatbelt/publish-log.jsonl --publish
 ```
 
-### Managed publish relay MVP (`bun run relay:start`)
+Override relay endpoint:
 
-Phase 1C adds a minimal managed relay service with:
+```bash
+# Via flag
+bun upload --publish --relay-url http://localhost:8787
+
+# Via environment variable
+SEATBELT_RELAY_URL=http://localhost:8787 bun upload --publish
+```
+
+### Running the managed publish relay (`bun run relay:start`)
+
+The managed relay is a minimal service that receives validated artifacts and deploys them to Vercel:
 
 - `GET /api/v1/health`
 - `POST /api/v1/publishes`
-
-Run locally:
 
 ```bash
 # Relay Vercel credentials (managed account/project)
@@ -276,7 +262,6 @@ export SEATBELT_RELAY_VERCEL_TOKEN="<token>"
 export SEATBELT_RELAY_VERCEL_PROJECT_ID="<project-id>"
 export SEATBELT_RELAY_VERCEL_ORG_ID="<team-or-user-id>"
 
-# Start relay
 bun run relay:start
 ```
 

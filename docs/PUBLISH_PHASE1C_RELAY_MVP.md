@@ -114,6 +114,35 @@ curl -s -X POST http://localhost:8787/api/v1/publishes \
 
 ---
 
+## CLI default behavior
+
+`bun upload --publish` now routes to the managed relay by default. No local Vercel token or project setup is required for end users.
+
+### BYO Vercel (break-glass only)
+
+The direct Vercel deploy path is retained as an internal fallback, not a user-facing option.
+It is **not** documented in `--help` primary options or the main README publish section.
+
+Use only when the managed relay is unavailable:
+
+```bash
+bun upload --publish --publish-provider vercel
+```
+
+Requires `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_ORG_ID` (or `SEATBELT_VERCEL_*` aliases).
+
+### UX simplification rationale
+
+Removing BYO-Vercel from the default user path eliminates:
+- Token/project setup friction for every new user
+- Dual-path documentation maintenance
+- Confusion about which publish path to use
+
+BYO-Vercel is kept in code as a break-glass escape hatch (relay outage, quota exhaustion).
+If relay proves reliable, BYO-Vercel can be fully removed in a future cleanup pass.
+
+---
+
 ## MVP limitations (explicit)
 
 - Rate limiting + idempotency are in-memory, single-instance only.
