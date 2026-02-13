@@ -738,6 +738,28 @@ function formatChecksForStructuredReport(
 }
 
 /**
+ * Infer simulationType from proposal block state when not explicitly provided.
+ * - Has proposalExecutedBlock → "executed"
+ * - Has proposalCreatedBlock but no executed block → "proposed"
+ * - Neither → "new"
+ */
+function inferSimulationTypeFromProposalState(
+  proposalCreatedBlock?: SimulationBlock,
+  proposalExecutedBlock?: SimulationBlock,
+): 'executed' | 'proposed' | 'new' {
+  // Check for executed state first (has executed block number)
+  if (proposalExecutedBlock?.number != null) {
+    return 'executed';
+  }
+  // Check for proposed state (has created block number but no executed)
+  if (proposalCreatedBlock?.number != null) {
+    return 'proposed';
+  }
+  // Default to new proposal
+  return 'new';
+}
+
+/**
  * Generate a structured report from the check results
  */
 function generateStructuredReport(
@@ -762,6 +784,11 @@ function generateStructuredReport(
   if (!governorAddress) {
     throw new Error('Governor address is required for metadata');
   }
+
+  // Infer simulationType from proposal state if not explicitly provided (Issue #163)
+  const resolvedSimulationType =
+    simulationType ??
+    inferSimulationTypeFromProposalState(proposalCreatedBlock, proposalExecutedBlock);
 
   // Extract title and proposal text
   const title = getProposalTitle(proposal.description.trim());
@@ -881,7 +908,7 @@ function generateStructuredReport(
       chainId: targetChainId,
       chainName: getChainName(targetChainId),
       blockExplorerBaseUrl,
-      simulationType,
+      simulationType: resolvedSimulationType,
       placeholderAddresses,
       // Repository and simulation links for Issue #92
       repoCommit,
