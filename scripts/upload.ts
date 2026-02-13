@@ -1,6 +1,14 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import {
   PublishArtifactValidationError,
   type PublishableSimulationResult,
@@ -17,6 +25,22 @@ type UploadArgs = {
 
 const DEFAULT_ARTIFACT_PATH = 'frontend/public/simulation-results.json';
 const DEFAULT_LOG_PATH = '.seatbelt/publish-log.jsonl';
+const FRONTEND_SOURCE_DIR = resolve(import.meta.dir, '..', 'frontend');
+
+const DEPLOY_BUNDLE_EXCLUDED_DIRS = new Set([
+  '.git',
+  '.next',
+  '.vercel',
+  '.turbo',
+  '.cache',
+  'node_modules',
+  'coverage',
+  'dist',
+  'build',
+  'out',
+]);
+
+const DEPLOY_BUNDLE_EXCLUDED_FILES = new Set(['.gitignore', '.vercelignore']);
 
 type PublishMode = 'validate-only' | 'upload-scaffold';
 
@@ -52,6 +76,7 @@ type CommandRunner = (
 export type UploadRuntimeOverrides = {
   env?: Record<string, string | undefined>;
   runCommand?: CommandRunner;
+  frontendSourceDir?: string;
 };
 
 type VercelPublishEnv = {
@@ -297,69 +322,70 @@ function isErrorWithCode(value: unknown): value is {
   return typeof value === 'object' && value !== null && 'code' in value;
 }
 
-function escapeHtml(input: string): string {
-  return input
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+function shouldExcludeFromDeployBundle(relativePath: string): boolean {
+  if (relativePath.length === 0) {
+    return false;
+  }
+
+  const segments = relativePath.split(/[/\\]/).filter((segment) => segment.length > 0);
+  if (segments.length === 0) {
+    return false;
+  }
+
+  if (segments.some((segment) => DEPLOY_BUNDLE_EXCLUDED_DIRS.has(segment))) {
+    return true;
+  }
+
+  const fileName = segments[segments.length - 1];
+  return DEPLOY_BUNDLE_EXCLUDED_FILES.has(fileName);
 }
 
-function buildPublishLandingPage(logEntry: PublishLogEntry): string {
-  const metadataJson = escapeHtml(JSON.stringify(logEntry, null, 2));
+function assertFrontendPublishBundleExists(frontendSourceDir: string) {
+  const requiredEntries = [
+    join(frontendSourceDir, 'package.json'),
+    join(frontendSourceDir, 'src', 'app', 'page.tsx'),
+    join(frontendSourceDir, 'public'),
+  ];
 
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Seatbelt publish artifact</title>
-    <style>
-      :root {
-        color-scheme: dark;
+  const missing = requiredEntries.filter((entry) => !existsSync(entry));
+  if (missing.length === 0) {
+    return;
+  }
+
+  throw new Error(
+    `Frontend publish bundle is incomplete. Missing required paths: ${missing.join(', ')}`,
+  );
+}
+
+function copyFrontendPublishBundle(frontendSourceDir: string, deployDir: string) {
+  cpSync(frontendSourceDir, deployDir, {
+    recursive: true,
+    filter: (sourcePath) => {
+      if (sourcePath === frontendSourceDir) {
+        return true;
       }
-      body {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-        margin: 2rem;
-        line-height: 1.5;
-        background: #0f1117;
-        color: #e6edf3;
-      }
-      a {
-        color: #7cc7ff;
-      }
-      pre {
-        padding: 1rem;
-        border-radius: 0.5rem;
-        background: #161b22;
-        overflow: auto;
-      }
-    </style>
-  </head>
-  <body>
-    <h1>Seatbelt simulation publish</h1>
-    <p>This deployment contains a validated simulation artifact.</p>
-    <ul>
-      <li><a href="./simulation-results.json">simulation-results.json</a></li>
-      <li><a href="./publish-metadata.json">publish-metadata.json</a></li>
-    </ul>
-    <h2>Publish metadata</h2>
-    <pre>${metadataJson}</pre>
-  </body>
-</html>
-`;
+
+      const relativePath = relative(frontendSourceDir, sourcePath);
+      return !shouldExcludeFromDeployBundle(relativePath);
+    },
+  });
 }
 
 function prepareDeployDirectory(
   rawArtifact: string,
   logEntry: PublishLogEntry,
   vercelEnv: VercelPublishEnv,
+  frontendSourceDir: string,
 ): string {
+  assertFrontendPublishBundleExists(frontendSourceDir);
+
   const deployDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-'));
   const vercelDir = join(deployDir, '.vercel');
+  const publicDir = join(deployDir, 'public');
 
+  copyFrontendPublishBundle(frontendSourceDir, deployDir);
   mkdirSync(vercelDir, { recursive: true });
+  mkdirSync(publicDir, { recursive: true });
 
   writeFileSync(
     join(vercelDir, 'project.json'),
@@ -369,9 +395,8 @@ function prepareDeployDirectory(
     }),
   );
 
-  writeFileSync(join(deployDir, 'simulation-results.json'), rawArtifact);
-  writeFileSync(join(deployDir, 'publish-metadata.json'), JSON.stringify(logEntry, null, 2));
-  writeFileSync(join(deployDir, 'index.html'), buildPublishLandingPage(logEntry));
+  writeFileSync(join(publicDir, 'simulation-results.json'), rawArtifact);
+  writeFileSync(join(publicDir, 'publish-metadata.json'), JSON.stringify(logEntry, null, 2));
 
   return deployDir;
 }
@@ -398,9 +423,10 @@ async function runVercelPublish(
   logEntry: PublishLogEntry,
   runtimeEnv: Record<string, string | undefined>,
   runCommand: CommandRunner,
+  frontendSourceDir: string,
 ): Promise<void> {
   const vercelEnv = readVercelPublishEnv(runtimeEnv);
-  const deployDir = prepareDeployDirectory(artifactRaw, logEntry, vercelEnv);
+  const deployDir = prepareDeployDirectory(artifactRaw, logEntry, vercelEnv, frontendSourceDir);
 
   try {
     const deployResult = await runCommand(
@@ -457,6 +483,7 @@ export async function runUpload(
 ): Promise<number> {
   const runtimeEnv = overrides.env ?? process.env;
   const runCommand = overrides.runCommand ?? defaultRunCommand;
+  const frontendSourceDir = overrides.frontendSourceDir ?? FRONTEND_SOURCE_DIR;
 
   try {
     const args = parseUploadArgs(argv);
@@ -485,7 +512,7 @@ export async function runUpload(
       return 0;
     }
 
-    await runVercelPublish(rawArtifact, logEntry, runtimeEnv, runCommand);
+    await runVercelPublish(rawArtifact, logEntry, runtimeEnv, runCommand, frontendSourceDir);
     return 0;
   } catch (error) {
     if (error instanceof PublishArtifactValidationError) {
