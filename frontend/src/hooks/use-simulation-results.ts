@@ -206,6 +206,8 @@ export interface StructuredSimulationReport {
     tenderlyUrl?: string;
     // Address labels for entity identification (Issue #94)
     addressLabels?: Record<string, AddressLabel>;
+    // On-chain proposal state (Issue #165)
+    proposalState?: string;
   };
 }
 

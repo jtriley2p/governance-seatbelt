@@ -122,10 +122,15 @@ function ReportSection() {
   const rawSimulationType = report.structuredReport?.metadata?.simulationType;
   const simulationType: SimulationType =
     rawSimulationType == null ? 'new' : (parseSimulationType(rawSimulationType) ?? 'new');
+  const proposalState = report.structuredReport?.metadata?.proposalState;
 
   return (
     <div className="w-full space-y-4">
-      <ProposalSummary proposal={proposalData} simulationType={simulationType} />
+      <ProposalSummary
+        proposal={proposalData}
+        simulationType={simulationType}
+        proposalState={proposalState}
+      />
 
       {report.structuredReport ? (
         <StructuredReport report={report.structuredReport} proposal={proposalData} />

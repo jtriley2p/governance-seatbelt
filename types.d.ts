@@ -756,6 +756,8 @@ export interface StructuredSimulationReport {
     tenderlyUrl?: string;
     // Address labels for entity identification (Issue #94)
     addressLabels?: Record<string, AddressLabel>;
+    // On-chain proposal state (Issue #165)
+    proposalState?: string;
   };
 }
 
@@ -788,6 +790,8 @@ export interface GenerateReportsParams {
   // For address label resolution (Issue #94)
   daoName?: string;
   contracts?: TenderlyContract[];
+  // On-chain proposal state (Issue #165)
+  proposalState?: string;
 }
 
 export interface WriteSimulationResultsJsonParams {
@@ -809,6 +813,8 @@ export interface WriteSimulationResultsJsonParams {
   coverage?: CoverageData;
   // Pre-generated structured report (with labels) to avoid regenerating
   structuredReport?: StructuredSimulationReport;
+  // On-chain proposal state (Issue #165)
+  proposalState?: string;
 }
 
 export interface FrontendData {
