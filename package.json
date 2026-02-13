@@ -22,6 +22,8 @@
     "e2e:local:set-proposed": "bun run scripts/e2e-local-set-proposed.ts",
     "upload": "bun run scripts/upload.ts",
     "upload:validate": "bun upload --validate-only",
+    "relay:start": "bun run relay/server.ts",
+    "test:relay": "bun test tests/publish-relay.test.ts",
     "prepare": "husky"
   },
   "repository": {

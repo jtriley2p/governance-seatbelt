@@ -141,15 +141,182 @@ describe('bun upload command', () => {
     expect(existsSync(logPath)).toBe(false);
   });
 
-  it('fails with actionable error when publish env vars are missing', async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-missing-env-'));
+  // -----------------------------------------------------------------------
+  // Managed relay publish (default path)
+  // -----------------------------------------------------------------------
+
+  it('defaults to managed relay and calls relay endpoint on --publish', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-managed-'));
+    const artifactPath = fixturePath('simulation-results.proposed.json');
+    const logPath = join(tempDir, 'publish-log.jsonl');
+
+    let relayCallCount = 0;
+
+    const runResult = await runWithCapturedConsole(
+      ['--artifact', artifactPath, '--publish', '--log', logPath],
+      {
+        env: {},
+        runManagedRelay: async (input) => {
+          relayCallCount += 1;
+          expect(input.endpointUrl).toContain('/api/v1/publishes');
+          expect(input.artifactRaw.length).toBeGreaterThan(0);
+          expect(input.publishLogEntry.artifact_hash.length).toBe(64);
+          return {
+            deploymentUrl: 'https://seatbelt-managed-default.vercel.app',
+            artifactUrl: 'https://seatbelt-managed-default.vercel.app/simulation-results.json',
+            metadataUrl: 'https://seatbelt-managed-default.vercel.app/publish-metadata.json',
+            publishId: 'relay-pub-123',
+          };
+        },
+      },
+    );
+
+    expect(runResult.code).toBe(0);
+    expect(relayCallCount).toBe(1);
+
+    const joinedLogs = runResult.logs.join('\n');
+    expect(joinedLogs).toContain('managed relay (default)');
+    expect(joinedLogs).toContain('https://seatbelt-managed-default.vercel.app');
+    expect(joinedLogs).toContain('Publish ID: relay-pub-123');
+
+    const parsedLogEntry = readLogEntry(logPath);
+    expect(readStringField(parsedLogEntry, 'mode')).toBe('managed-relay');
+  });
+
+  it('uses custom relay URL from --relay-url', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-custom-relay-'));
+    const artifactPath = fixturePath('simulation-results.proposed.json');
+    const logPath = join(tempDir, 'publish-log.jsonl');
+
+    let capturedEndpoint = '';
+
+    const runResult = await runWithCapturedConsole(
+      [
+        '--artifact',
+        artifactPath,
+        '--publish',
+        '--relay-url',
+        'http://localhost:9999',
+        '--log',
+        logPath,
+      ],
+      {
+        env: {},
+        runManagedRelay: async (input) => {
+          capturedEndpoint = input.endpointUrl;
+          return {
+            deploymentUrl: 'https://custom-relay.vercel.app',
+          };
+        },
+      },
+    );
+
+    expect(runResult.code).toBe(0);
+    expect(capturedEndpoint).toBe('http://localhost:9999/api/v1/publishes');
+  });
+
+  it('uses SEATBELT_RELAY_URL env when no --relay-url flag', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-env-relay-'));
+    const artifactPath = fixturePath('simulation-results.proposed.json');
+    const logPath = join(tempDir, 'publish-log.jsonl');
+
+    let capturedEndpoint = '';
+
+    const runResult = await runWithCapturedConsole(
+      ['--artifact', artifactPath, '--publish', '--log', logPath],
+      {
+        env: {
+          SEATBELT_RELAY_URL: 'http://env-relay.example.com',
+        },
+        runManagedRelay: async (input) => {
+          capturedEndpoint = input.endpointUrl;
+          return {
+            deploymentUrl: 'https://env-relay.vercel.app',
+          };
+        },
+      },
+    );
+
+    expect(runResult.code).toBe(0);
+    expect(capturedEndpoint).toBe('http://env-relay.example.com/api/v1/publishes');
+  });
+
+  it('surfaces managed relay publish errors', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-relay-fail-'));
+    const artifactPath = fixturePath('simulation-results.proposed.json');
+    const logPath = join(tempDir, 'publish-log.jsonl');
+
+    const runResult = await runWithCapturedConsole(
+      ['--artifact', artifactPath, '--publish', '--log', logPath],
+      {
+        env: {},
+        runManagedRelay: async () => {
+          throw new Error('Publish was rate-limited (HTTP 429). Please wait and retry.');
+        },
+      },
+    );
+
+    expect(runResult.code).toBe(1);
+    expect(runResult.errors.join('\n')).toContain('rate-limited');
+    expect(existsSync(logPath)).toBe(true);
+  });
+
+  // -----------------------------------------------------------------------
+  // BYO Vercel publish (break-glass fallback)
+  // -----------------------------------------------------------------------
+
+  it('routes to BYO Vercel with --publish-provider vercel', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-byo-'));
+    const artifactPath = fixturePath('simulation-results.proposed.json');
+    const logPath = join(tempDir, 'publish-log.jsonl');
+
+    let relayCallCount = 0;
+    let vercelCommandCount = 0;
+
+    const runResult = await runWithCapturedConsole(
+      ['--artifact', artifactPath, '--publish', '--publish-provider', 'vercel', '--log', logPath],
+      {
+        env: {
+          VERCEL_TOKEN: 'test_token',
+          VERCEL_PROJECT_ID: 'prj_123',
+          VERCEL_ORG_ID: 'team_456',
+        },
+        runCommand: async () => {
+          vercelCommandCount += 1;
+          return {
+            exitCode: 0,
+            stdout: 'Production: https://seatbelt-byo-fallback.vercel.app',
+            stderr: '',
+          };
+        },
+        runManagedRelay: async () => {
+          relayCallCount += 1;
+          return { deploymentUrl: 'https://should-not-run.vercel.app' };
+        },
+      },
+    );
+
+    expect(runResult.code).toBe(0);
+    expect(relayCallCount).toBe(0);
+    expect(vercelCommandCount).toBe(1);
+
+    const joinedLogs = runResult.logs.join('\n');
+    expect(joinedLogs).toContain('BYO Vercel (break-glass)');
+    expect(joinedLogs).toContain('https://seatbelt-byo-fallback.vercel.app');
+
+    const parsedLogEntry = readLogEntry(logPath);
+    expect(readStringField(parsedLogEntry, 'mode')).toBe('byo-vercel');
+  });
+
+  it('fails with actionable error when BYO Vercel env vars are missing', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-byo-missing-'));
     const artifactPath = fixturePath('simulation-results.proposed.json');
     const logPath = join(tempDir, 'publish-log.jsonl');
 
     let commandCalled = false;
 
     const runResult = await runWithCapturedConsole(
-      ['--artifact', artifactPath, '--publish', '--log', logPath],
+      ['--artifact', artifactPath, '--publish', '--publish-provider', 'vercel', '--log', logPath],
       {
         env: {},
         runCommand: async () => {
@@ -166,89 +333,7 @@ describe('bun upload command', () => {
     expect(runResult.code).toBe(1);
     expect(commandCalled).toBe(false);
     expect(runResult.errors.join('\n')).toContain('VERCEL_TOKEN');
-    expect(runResult.errors.join('\n')).toContain('SEATBELT_VERCEL_TOKEN');
-    expect(runResult.errors.join('\n')).toContain('VERCEL_PROJECT_ID');
-    expect(runResult.errors.join('\n')).toContain('SEATBELT_VERCEL_PROJECT_ID');
-    expect(runResult.errors.join('\n')).toContain('VERCEL_ORG_ID');
-    expect(runResult.errors.join('\n')).toContain('SEATBELT_VERCEL_ORG_ID');
     expect(existsSync(logPath)).toBe(true);
-  });
-
-  it('uses SEATBELT_VERCEL_* aliases when VERCEL_* vars are absent', async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-publish-alias-'));
-    const artifactPath = fixturePath('simulation-results.proposed.json');
-    const logPath = join(tempDir, 'publish-log.jsonl');
-
-    let commandInvocationCount = 0;
-
-    const runResult = await runWithCapturedConsole(
-      ['--artifact', artifactPath, '--publish', '--log', logPath],
-      {
-        env: {
-          SEATBELT_VERCEL_TOKEN: 'alias_token',
-          SEATBELT_VERCEL_PROJECT_ID: 'alias_project',
-          SEATBELT_VERCEL_ORG_ID: 'alias_org',
-        },
-        runCommand: async (command, args, options) => {
-          commandInvocationCount += 1;
-
-          expect(command).toBe('vercel');
-          expect(args).toEqual(['deploy', '--yes', '--prod', '--token', 'alias_token']);
-          expect(options.env.VERCEL_TOKEN).toBe('alias_token');
-          expect(options.env.VERCEL_PROJECT_ID).toBe('alias_project');
-          expect(options.env.VERCEL_ORG_ID).toBe('alias_org');
-
-          return {
-            exitCode: 0,
-            stdout: 'Production: https://seatbelt-upload-alias.vercel.app',
-            stderr: '',
-          };
-        },
-      },
-    );
-
-    expect(runResult.code).toBe(0);
-    expect(commandInvocationCount).toBe(1);
-  });
-
-  it('prefers VERCEL_* over SEATBELT_VERCEL_* when both are set', async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-publish-precedence-'));
-    const artifactPath = fixturePath('simulation-results.proposed.json');
-    const logPath = join(tempDir, 'publish-log.jsonl');
-
-    let commandInvocationCount = 0;
-
-    const runResult = await runWithCapturedConsole(
-      ['--artifact', artifactPath, '--publish', '--log', logPath],
-      {
-        env: {
-          VERCEL_TOKEN: 'primary_token',
-          VERCEL_PROJECT_ID: 'primary_project',
-          VERCEL_ORG_ID: 'primary_org',
-          SEATBELT_VERCEL_TOKEN: 'alias_token',
-          SEATBELT_VERCEL_PROJECT_ID: 'alias_project',
-          SEATBELT_VERCEL_ORG_ID: 'alias_org',
-        },
-        runCommand: async (command, args, options) => {
-          commandInvocationCount += 1;
-
-          expect(command).toBe('vercel');
-          expect(args).toEqual(['deploy', '--yes', '--prod', '--token', 'primary_token']);
-          expect(options.env.VERCEL_TOKEN).toBe('primary_token');
-          expect(options.env.VERCEL_PROJECT_ID).toBe('primary_project');
-          expect(options.env.VERCEL_ORG_ID).toBe('primary_org');
-
-          return {
-            exitCode: 0,
-            stdout: 'Production: https://seatbelt-upload-precedence.vercel.app',
-            stderr: '',
-          };
-        },
-      },
-    );
-
-    expect(runResult.code).toBe(0);
-    expect(commandInvocationCount).toBe(1);
   });
 
   it('includes publish artifacts and excludes bulky local directories in deploy prep', async () => {
@@ -260,7 +345,7 @@ describe('bun upload command', () => {
     let commandInvocationCount = 0;
 
     const runResult = await runWithCapturedConsole(
-      ['--artifact', artifactPath, '--publish', '--log', logPath],
+      ['--artifact', artifactPath, '--publish', '--publish-provider', 'vercel', '--log', logPath],
       {
         frontendSourceDir,
         env: {
@@ -301,15 +386,15 @@ describe('bun upload command', () => {
     expect(commandInvocationCount).toBe(1);
   });
 
-  it('runs non-interactive vercel deploy for bun upload --publish', async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-publish-success-'));
+  it('runs non-interactive vercel deploy for BYO --publish-provider vercel', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-byo-success-'));
     const artifactPath = fixturePath('simulation-results.executed.json');
     const logPath = join(tempDir, 'publish-log.jsonl');
 
     let commandInvocationCount = 0;
 
     const runResult = await runWithCapturedConsole(
-      ['--artifact', artifactPath, '--publish', '--log', logPath],
+      ['--artifact', artifactPath, '--publish', '--publish-provider', 'vercel', '--log', logPath],
       {
         env: {
           VERCEL_TOKEN: 'test_token',
@@ -359,35 +444,6 @@ describe('bun upload command', () => {
 
     expect(existsSync(logPath)).toBe(true);
     const parsedLogEntry = readLogEntry(logPath);
-    expect(readStringField(parsedLogEntry, 'mode')).toBe('upload-scaffold');
-  });
-
-  it('surfaces vercel deploy failures with CLI output', async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-publish-failure-'));
-    const artifactPath = fixturePath('simulation-results.proposed.json');
-    const logPath = join(tempDir, 'publish-log.jsonl');
-
-    const runResult = await runWithCapturedConsole(
-      ['--artifact', artifactPath, '--publish', '--log', logPath],
-      {
-        env: {
-          VERCEL_TOKEN: 'test_token',
-          VERCEL_PROJECT_ID: 'prj_123',
-          VERCEL_ORG_ID: 'team_456',
-        },
-        runCommand: async () => ({
-          exitCode: 1,
-          stdout: 'Error! Build failed',
-          stderr: 'Permission denied',
-        }),
-      },
-    );
-
-    expect(runResult.code).toBe(1);
-    const joinedErrors = runResult.errors.join('\n');
-    expect(joinedErrors).toContain('Vercel deploy failed with exit code 1');
-    expect(joinedErrors).toContain('Permission denied');
-    expect(joinedErrors).toContain('VERCEL_PROJECT_ID');
-    expect(existsSync(logPath)).toBe(true);
+    expect(readStringField(parsedLogEntry, 'mode')).toBe('byo-vercel');
   });
 });

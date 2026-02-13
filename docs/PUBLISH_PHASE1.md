@@ -37,50 +37,11 @@ On successful validation, `bun upload` records:
 
 Current log destination: `.seatbelt/publish-log.jsonl`
 
-## Day 3 Vercel publish implementation
+## Phase 1C — Managed relay publish (current default)
 
-`bun upload --publish` now performs a real, non-interactive Vercel deploy using either:
+`bun upload --publish` sends the validated artifact to the managed publish relay (zero local setup).
 
-- `VERCEL_TOKEN` or `SEATBELT_VERCEL_TOKEN`
-- `VERCEL_PROJECT_ID` or `SEATBELT_VERCEL_PROJECT_ID`
-- `VERCEL_ORG_ID` or `SEATBELT_VERCEL_ORG_ID`
-
-Precedence: if both variants are set, `VERCEL_*` wins.
-
-The command deploys a local temporary bundle containing the existing `frontend/` app plus:
-
-- `public/simulation-results.json` (validated artifact)
-- `public/publish-metadata.json` (publish metadata)
-- `.vercel/project.json` (target project linkage)
-
-The published root URL renders the same Seatbelt report UI used in local frontend preview, while
-still exposing raw JSON at `/simulation-results.json` and `/publish-metadata.json`.
-
-No Git import flow or external backend is required.
-
-## One-time setup (exact commands)
-
-Run from repo root:
-
-```bash
-# 1) Install Vercel CLI (once per machine)
-bun add -g vercel
-
-# 2) Link this repo to the target Vercel project (writes .vercel/project.json)
-vercel link --yes
-
-# 3) Create a token in Vercel Dashboard and export required vars
-export VERCEL_TOKEN="<token-from-vercel-account-settings>"
-export VERCEL_PROJECT_ID="<projectId-from-.vercel/project.json>"
-export VERCEL_ORG_ID="<orgId-from-.vercel/project.json>"
-
-# Optional aliases (supported for teams that namespace env vars)
-export SEATBELT_VERCEL_TOKEN="$VERCEL_TOKEN"
-export SEATBELT_VERCEL_PROJECT_ID="$VERCEL_PROJECT_ID"
-export SEATBELT_VERCEL_ORG_ID="$VERCEL_ORG_ID"
-```
-
-Tip: copy those `export` lines into your shell profile or secret manager.
+See `docs/PUBLISH_PHASE1C_RELAY_MVP.md` for relay API details and operational fallback guidance.
 
 ## Command shape
 
@@ -88,9 +49,20 @@ Tip: copy those `export` lines into your shell profile or secret manager.
 # Validate + metadata log only
 bun upload --validate-only
 
-# Validate + deploy to Vercel
+# Validate + publish via managed relay (default, zero setup)
 bun upload --publish
 
 # Optional custom paths
 bun upload --artifact frontend/public/simulation-results.json --log .seatbelt/publish-log.jsonl --publish
 ```
+
+## BYO Vercel (break-glass fallback)
+
+Direct Vercel deploy is available as an internal escape hatch when the managed relay is down:
+
+```bash
+bun upload --publish --publish-provider vercel
+```
+
+Requires `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_ORG_ID` (or `SEATBELT_VERCEL_*` aliases).
+See `docs/PUBLISH_PHASE1C_RELAY_MVP.md` for details on break-glass usage.
