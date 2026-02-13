@@ -64,12 +64,14 @@ type RateLimitBucket = {
 type CommandRunOptions = {
   cwd: string;
   env: Record<string, string | undefined>;
+  timeoutMs?: number;
 };
 
 type CommandRunResult = {
   exitCode: number;
   stdout: string;
   stderr: string;
+  timedOut?: boolean;
 };
 
 type CommandRunner = (
@@ -83,6 +85,7 @@ type RelayDependencies = {
     artifactRaw: string;
     publishLogEntry: RelayPublishLogEntry;
     env: Record<string, string | undefined>;
+    deployTimeoutMs: number;
   }) => Promise<RelayPublisherResult>;
   runCommand: CommandRunner;
   nowMs: () => number;
@@ -94,6 +97,7 @@ export type RelayConfig = {
   rateLimitEnabled: boolean;
   rateLimitWindowMs: number;
   rateLimitMaxRequests: number;
+  deployTimeoutMs: number;
   port: number;
 };
 
@@ -129,6 +133,18 @@ type VercelPublishEnv = {
   projectId: string;
   orgId: string;
 };
+
+const DEFAULT_DEPLOY_TIMEOUT_MS = 180_000;
+
+class RelayPublishTimeoutError extends Error {
+  readonly timeoutMs: number;
+
+  constructor(timeoutMs: number, details: string) {
+    super(`Publish timed out after ${timeoutMs}ms. ${details}`);
+    this.name = 'RelayPublishTimeoutError';
+    this.timeoutMs = timeoutMs;
+  }
+}
 
 function readNonEmptyEnv(
   env: Record<string, string | undefined>,
@@ -223,17 +239,45 @@ async function defaultRunCommand(
   const stdoutPromise = child.stdout ? new Response(child.stdout).text() : Promise.resolve('');
   const stderrPromise = child.stderr ? new Response(child.stderr).text() : Promise.resolve('');
 
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    stdoutPromise,
-    stderrPromise,
-  ]);
+  const completionPromise = Promise.all([child.exited, stdoutPromise, stderrPromise]).then(
+    ([exitCode, stdout, stderr]) => ({
+      exitCode,
+      stdout,
+      stderr,
+      timedOut: false,
+    }),
+  );
 
-  return {
-    exitCode,
-    stdout,
-    stderr,
-  };
+  if (typeof options.timeoutMs !== 'number') {
+    return completionPromise;
+  }
+
+  const timeoutMs = options.timeoutMs;
+
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<CommandRunResult>((resolve) => {
+    timeoutHandle = setTimeout(() => {
+      child.kill();
+
+      Promise.all([stdoutPromise, stderrPromise]).then(([stdout, stderr]) => {
+        resolve({
+          exitCode: -1,
+          stdout,
+          stderr,
+          timedOut: true,
+        });
+      });
+    }, timeoutMs);
+  });
+
+  const result = await Promise.race([completionPromise, timeoutPromise]);
+
+  if (timeoutHandle) {
+    clearTimeout(timeoutHandle);
+  }
+
+  return result;
 }
 
 function formatEnvPair(primaryName: string, aliasName: string): string {
@@ -411,6 +455,7 @@ async function defaultRelayPublisher(input: {
   publishLogEntry: RelayPublishLogEntry;
   env: Record<string, string | undefined>;
   runCommand: CommandRunner;
+  deployTimeoutMs: number;
 }): Promise<RelayPublisherResult> {
   const vercelEnv = readManagedVercelEnv(input.env);
   const deployDir = prepareDeployDirectory(input.artifactRaw, input.publishLogEntry, vercelEnv);
@@ -421,6 +466,7 @@ async function defaultRelayPublisher(input: {
       ['deploy', '--yes', '--prod', '--token', vercelEnv.token],
       {
         cwd: deployDir,
+        timeoutMs: input.deployTimeoutMs,
         env: {
           ...input.env,
           VERCEL_TOKEN: vercelEnv.token,
@@ -429,6 +475,13 @@ async function defaultRelayPublisher(input: {
         },
       },
     );
+
+    if (deployResult.timedOut) {
+      throw new RelayPublishTimeoutError(
+        input.deployTimeoutMs,
+        buildCommandOutputSummary(deployResult.stdout, deployResult.stderr),
+      );
+    }
 
     if (deployResult.exitCode !== 0) {
       throw new Error(
@@ -579,13 +632,45 @@ async function readRequestBody(request: Request, maxBodyBytes: number): Promise<
     }
   }
 
-  const textBody = await request.text();
-  const bodyByteLength = Buffer.byteLength(textBody, 'utf8');
-  if (bodyByteLength > maxBodyBytes) {
-    throw new Error('PAYLOAD_TOO_LARGE');
+  if (!request.body) {
+    return '';
   }
 
-  return textBody;
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const readResult = await reader.read();
+      if (readResult.done) {
+        break;
+      }
+
+      if (!readResult.value) {
+        continue;
+      }
+
+      totalBytes += readResult.value.byteLength;
+      if (totalBytes > maxBodyBytes) {
+        throw new Error('PAYLOAD_TOO_LARGE');
+      }
+
+      chunks.push(readResult.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const merged = new Uint8Array(totalBytes);
+  let writeOffset = 0;
+
+  for (const chunk of chunks) {
+    merged.set(chunk, writeOffset);
+    writeOffset += chunk.byteLength;
+  }
+
+  return new TextDecoder().decode(merged);
 }
 
 function parsePublishPayload(rawBody: string): PublishRequestPayload {
@@ -686,6 +771,26 @@ function buildHealthResponse(input: {
   };
 }
 
+function normalizePublishError(error: unknown): RelayExecutionResult {
+  if (error instanceof RelayPublishTimeoutError) {
+    return {
+      status: 504,
+      body: {
+        error: 'publish_timeout',
+        message: error.message,
+      },
+    };
+  }
+
+  return {
+    status: 502,
+    body: {
+      error: 'publish_failed',
+      message: error instanceof Error ? error.message : 'Unknown publish error',
+    },
+  };
+}
+
 export function createRelayConfig(
   env: Record<string, string | undefined> = process.env,
 ): RelayConfig {
@@ -698,6 +803,11 @@ export function createRelayConfig(
     ),
     rateLimitWindowMs: readPositiveInteger(env, 'SEATBELT_RELAY_RATE_LIMIT_WINDOW_MS', 60_000),
     rateLimitMaxRequests: readPositiveInteger(env, 'SEATBELT_RELAY_RATE_LIMIT_MAX_REQUESTS', 30),
+    deployTimeoutMs: readPositiveInteger(
+      env,
+      'SEATBELT_RELAY_DEPLOY_TIMEOUT_MS',
+      DEFAULT_DEPLOY_TIMEOUT_MS,
+    ),
     port: readPositiveInteger(env, 'PORT', 8787),
   };
 }
@@ -720,6 +830,7 @@ export function createRelayFetchHandler(
         artifactRaw: string;
         publishLogEntry: RelayPublishLogEntry;
         env: Record<string, string | undefined>;
+        deployTimeoutMs: number;
       }) =>
         defaultRelayPublisher({
           ...input,
@@ -898,10 +1009,18 @@ export function createRelayFetchHandler(
         });
       }
 
-      const settledResult = await inFlightRecord.promise;
-      return createJsonResponse(settledResult.status, settledResult.body, {
-        'x-idempotent-replay': 'true',
-      });
+      try {
+        const settledResult = await inFlightRecord.promise;
+        return createJsonResponse(settledResult.status, settledResult.body, {
+          'x-idempotent-replay': 'true',
+        });
+      } catch (error) {
+        const normalizedFailure = normalizePublishError(error);
+
+        return createJsonResponse(normalizedFailure.status, normalizedFailure.body, {
+          'x-idempotent-replay': 'true',
+        });
+      }
     }
 
     const executionPromise = (async (): Promise<RelayExecutionResult> => {
@@ -918,6 +1037,7 @@ export function createRelayFetchHandler(
         artifactRaw: artifactRawForPublish,
         publishLogEntry,
         env,
+        deployTimeoutMs: config.deployTimeoutMs,
       });
 
       const responseBody: RelaySuccessResponse = {
@@ -960,16 +1080,17 @@ export function createRelayFetchHandler(
     } catch (error) {
       inFlightIdempotencyRecords.delete(idempotencyKey);
 
-      const errorMessage = error instanceof Error ? error.message : 'Unknown publish error';
+      const normalizedFailure = normalizePublishError(error);
+      const errorMessage =
+        typeof normalizedFailure.body.message === 'string'
+          ? normalizedFailure.body.message
+          : 'Unknown publish error';
 
       console.error(
-        `[relay] publish failed idempotency_key=${idempotencyKey} artifact_hash=${artifactHash} error=${errorMessage}`,
+        `[relay] publish failed idempotency_key=${idempotencyKey} artifact_hash=${artifactHash} status=${normalizedFailure.status} error=${errorMessage}`,
       );
 
-      return createJsonResponse(502, {
-        error: 'publish_failed',
-        message: errorMessage,
-      });
+      return createJsonResponse(normalizedFailure.status, normalizedFailure.body);
     }
 
     inFlightIdempotencyRecords.delete(idempotencyKey);
