@@ -32,7 +32,7 @@ type UploadArgs = {
 const DEFAULT_ARTIFACT_PATH = 'frontend/public/simulation-results.json';
 const DEFAULT_LOG_PATH = '.seatbelt/publish-log.jsonl';
 const FRONTEND_SOURCE_DIR = resolve(import.meta.dir, '..', 'frontend');
-const DEFAULT_RELAY_URL = 'https://seatbelt-relay.vercel.app';
+const DEFAULT_RELAY_URL = 'https://seatbelt-relay-beta.vercel.app';
 const DEFAULT_RELAY_TIMEOUT_MS = 120_000;
 const DEFAULT_RELAY_MAX_BYTES = 25 * 1024 * 1024;
 

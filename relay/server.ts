@@ -6,8 +6,8 @@ import {
   PublishArtifactValidationError,
   type PublishableSimulationResult,
   validatePublishArtifact,
-} from '../utils/publish/artifact-validator';
-import { computeArtifactHash, createPublishMetadata } from '../utils/publish/publish-metadata';
+} from '../utils/publish/artifact-validator.js';
+import { computeArtifactHash, createPublishMetadata } from '../utils/publish/publish-metadata.js';
 
 type OpenJsonObject = Record<string, unknown>;
 
