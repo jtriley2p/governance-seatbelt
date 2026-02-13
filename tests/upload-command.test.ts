@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type UploadRuntimeOverrides, runUpload } from '../scripts/upload';
@@ -64,6 +64,32 @@ async function runWithCapturedConsole(
 
 function fixturePath(name: string): string {
   return join(__dirname, 'fixtures', 'upload', name);
+}
+
+function createFrontendFixture(rootDir: string): string {
+  const frontendDir = join(rootDir, 'frontend-source');
+  const srcAppDir = join(frontendDir, 'src', 'app');
+  const publicDir = join(frontendDir, 'public');
+
+  mkdirSync(srcAppDir, { recursive: true });
+  mkdirSync(publicDir, { recursive: true });
+
+  writeFileSync(join(frontendDir, 'package.json'), '{"name":"fixture-frontend"}\n');
+  writeFileSync(join(srcAppDir, 'page.tsx'), 'export default function Page() { return null; }\n');
+  writeFileSync(join(publicDir, 'placeholder.txt'), 'placeholder\n');
+
+  writeFileSync(join(frontendDir, '.gitignore'), 'public/simulation-results.json\n');
+
+  mkdirSync(join(frontendDir, '.next'), { recursive: true });
+  writeFileSync(join(frontendDir, '.next', 'trace.txt'), 'do-not-copy\n');
+
+  mkdirSync(join(frontendDir, 'node_modules', 'left-pad'), { recursive: true });
+  writeFileSync(join(frontendDir, 'node_modules', 'left-pad', 'index.js'), 'module.exports = {}\n');
+
+  mkdirSync(join(frontendDir, '.vercel'), { recursive: true });
+  writeFileSync(join(frontendDir, '.vercel', 'stale-project.json'), '{}\n');
+
+  return frontendDir;
 }
 
 describe('bun upload command', () => {
@@ -215,6 +241,56 @@ describe('bun upload command', () => {
           return {
             exitCode: 0,
             stdout: 'Production: https://seatbelt-upload-precedence.vercel.app',
+            stderr: '',
+          };
+        },
+      },
+    );
+
+    expect(runResult.code).toBe(0);
+    expect(commandInvocationCount).toBe(1);
+  });
+
+  it('includes publish artifacts and excludes bulky local directories in deploy prep', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-publish-filtering-'));
+    const artifactPath = fixturePath('simulation-results.executed.json');
+    const logPath = join(tempDir, 'publish-log.jsonl');
+    const frontendSourceDir = createFrontendFixture(tempDir);
+
+    let commandInvocationCount = 0;
+
+    const runResult = await runWithCapturedConsole(
+      ['--artifact', artifactPath, '--publish', '--log', logPath],
+      {
+        frontendSourceDir,
+        env: {
+          VERCEL_TOKEN: 'test_token',
+          VERCEL_PROJECT_ID: 'prj_123',
+          VERCEL_ORG_ID: 'team_456',
+        },
+        runCommand: async (command, args, options) => {
+          commandInvocationCount += 1;
+
+          expect(command).toBe('vercel');
+          expect(args).toEqual(['deploy', '--yes', '--prod', '--token', 'test_token']);
+
+          const copiedArtifactPath = join(options.cwd, 'public', 'simulation-results.json');
+          const copiedMetadataPath = join(options.cwd, 'public', 'publish-metadata.json');
+
+          expect(existsSync(copiedArtifactPath)).toBe(true);
+          expect(existsSync(copiedMetadataPath)).toBe(true);
+          expect(existsSync(join(options.cwd, '.next'))).toBe(false);
+          expect(existsSync(join(options.cwd, 'node_modules'))).toBe(false);
+          expect(existsSync(join(options.cwd, '.gitignore'))).toBe(false);
+          expect(existsSync(join(options.cwd, '.vercel', 'stale-project.json'))).toBe(false);
+          expect(existsSync(join(options.cwd, '.vercel', 'project.json'))).toBe(true);
+
+          const artifactRaw = readFileSync(artifactPath, 'utf8');
+          expect(readFileSync(copiedArtifactPath, 'utf8')).toBe(artifactRaw);
+
+          return {
+            exitCode: 0,
+            stdout: 'Production: https://seatbelt-upload-filtering.vercel.app',
             stderr: '',
           };
         },
