@@ -186,6 +186,7 @@ async function processSimulation(
     coverage,
     daoName: config.daoName,
     contracts: sim.contracts,
+    proposalState,
   });
 
   // Prepare simulation data
@@ -262,7 +263,7 @@ async function main() {
       deps, // Use deps from finalResult
       finalResult,
       proposal.id.toString(),
-      'Custom', // State for custom simulations
+      'Pending', // State for custom/new simulations (not yet on-chain)
       false, // Don't cache custom simulations
     );
 

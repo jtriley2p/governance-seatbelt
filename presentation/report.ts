@@ -776,6 +776,7 @@ function generateStructuredReport(
   simulationId?: string,
   simulation?: TenderlySimulation,
   destinationChecks?: Record<number, AllCheckResults>,
+  proposalState?: string,
 ): StructuredSimulationReport {
   // Validate required fields
   if (!proposal.proposer) {
@@ -914,6 +915,8 @@ function generateStructuredReport(
       repoCommit,
       repoUrl,
       tenderlyUrl,
+      // On-chain proposal state (Issue #165)
+      proposalState,
     },
   };
 }
@@ -939,6 +942,7 @@ export function writeSimulationResultsJson(params: WriteSimulationResultsJsonPar
     simulationType,
     simulation,
     coverage,
+    proposalState,
   } = params;
 
   try {
@@ -972,6 +976,7 @@ export function writeSimulationResultsJson(params: WriteSimulationResultsJsonPar
         simulationId,
         simulation,
         destinationChecks,
+        proposalState,
       );
 
     if (coverage) {
@@ -1039,6 +1044,7 @@ export async function generateAndSaveReports(params: GenerateReportsParams) {
     coverage,
     daoName,
     contracts,
+    proposalState,
   } = params;
   console.log(`[Report] Generating report for proposal ${proposal.id} (${proposal.proposalId})`);
   console.log(`[Report] Output directory: ${outputDir}`);
@@ -1090,6 +1096,7 @@ export async function generateAndSaveReports(params: GenerateReportsParams) {
     simulation?.simulation?.id,
     simulation,
     destinationChecks,
+    proposalState,
   );
 
   // Add coverage data to the structured report if available
