@@ -5,15 +5,12 @@ import { createConfig } from 'wagmi';
 import { mainnet } from 'wagmi/chains';
 import { injected } from 'wagmi/connectors';
 
-const isProduction = process.env.NODE_ENV === 'production';
-
 const overrideRpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
 const overrideChainId = process.env.NEXT_PUBLIC_CHAIN_ID
   ? Number(process.env.NEXT_PUBLIC_CHAIN_ID)
   : null;
 
-const mainnetRpcUrl =
-  process.env.NEXT_PUBLIC_MAINNET_RPC_URL ?? 'https://eth.llamarpc.com';
+const mainnetRpcUrl = process.env.NEXT_PUBLIC_MAINNET_RPC_URL ?? 'https://eth.llamarpc.com';
 
 const getChain = (): { chain: Chain; rpcUrl: string } => {
   if (overrideChainId && overrideChainId !== mainnet.id) {
@@ -47,24 +44,35 @@ const { chain, rpcUrl } = getChain();
 
 export const queryClient = new QueryClient();
 
-export const projectId = process.env.NEXT_PUBLIC_PROJECT_ID;
-export const walletConnectEnabled = Boolean(projectId && projectId !== 'demo');
+const walletConnectProjectId =
+  process.env.NEXT_PUBLIC_PROJECT_ID && process.env.NEXT_PUBLIC_PROJECT_ID !== 'demo'
+    ? process.env.NEXT_PUBLIC_PROJECT_ID
+    : null;
 
-export const config = walletConnectEnabled
-  ? getDefaultConfig({
+export const projectId = process.env.NEXT_PUBLIC_PROJECT_ID;
+export const walletConnectEnabled = walletConnectProjectId !== null;
+
+function createWagmiClientConfig() {
+  if (walletConnectProjectId !== null) {
+    return getDefaultConfig({
       appName: 'Governance Seatbelt',
-      projectId: projectId as string,
+      projectId: walletConnectProjectId,
       chains: [chain],
       transports: {
         [chain.id]: http(rpcUrl),
       },
-      ssr: true,
-    })
-  : createConfig({
-      chains: [chain],
-      transports: {
-        [chain.id]: http(rpcUrl),
-      },
-      connectors: [injected()],
       ssr: true,
     });
+  }
+
+  return createConfig({
+    chains: [chain],
+    transports: {
+      [chain.id]: http(rpcUrl),
+    },
+    connectors: [injected()],
+    ssr: true,
+  });
+}
+
+export const config = createWagmiClientConfig();
