@@ -219,57 +219,27 @@ GOVERNOR_ADDRESS=0x408ED6354d4973f66138C91495F2f2FCbd8724C3
 
 ### Publishing simulation artifacts (`bun upload`)
 
-No local Vercel setup required. `bun upload --publish` sends validated artifacts to the managed publish relay.
+After running a simulation to generate `frontend/public/simulation-results.json` (see **Running Simulations** below), use the managed relay by default (no local Vercel setup required):
 
 ```bash
 # Validate artifact only (no publish)
 bun upload --validate-only
 
-# Validate + publish via managed relay (zero setup)
+# Validate + publish via managed relay (default)
 bun upload --publish
 ```
 
-`bun upload --publish` deploys the frontend report viewer bundle. The deployment root (`/`) renders
-the full Seatbelt report UI for the uploaded artifact, and raw files remain available at
-`/simulation-results.json` and `/publish-metadata.json`.
+A successful publish returns a deployment URL where:
 
-Optional custom paths:
+- `/` renders the Seatbelt report viewer
+- `/simulation-results.json` serves the artifact JSON
+- `/publish-metadata.json` serves publish metadata
 
-```bash
-bun upload --artifact frontend/public/simulation-results.json --log .seatbelt/publish-log.jsonl --publish
-```
+For complete publish docs (custom artifact paths, relay override, troubleshooting, and fallback guidance), see:
 
-Override relay endpoint:
-
-```bash
-# Via flag
-bun upload --publish --relay-url http://localhost:8787
-
-# Via environment variable
-SEATBELT_RELAY_URL=http://localhost:8787 bun upload --publish
-```
-
-### Managed publish relay runtime
-
-The managed relay exposes:
-
-- `GET /api/v1/health`
-- `POST /api/v1/publishes`
-
-Production runtime is wired for Vercel Functions (`api/v1/[endpoint].ts`) and uses Vercel's Deploy API server-side.
-
-For local development, you can still run the Bun server directly:
-
-```bash
-# Relay Vercel credentials (managed account/project)
-export SEATBELT_RELAY_VERCEL_TOKEN="<token>"
-export SEATBELT_RELAY_VERCEL_PROJECT_ID="<project-id>"
-export SEATBELT_RELAY_VERCEL_ORG_ID="<team-or-user-id>"
-
-bun run relay:start
-```
-
-See `docs/PUBLISH_PHASE1C_RELAY_MVP.md` for exact Vercel deploy steps + full API/env details.
+- `docs/PUBLISH_QUICKSTART.md` (primary user guide)
+- `docs/PUBLISH_CONTRACT.md` (publish contract)
+- `docs/PUBLISH_RELAY_OPS.md` (relay runtime/ops)
 
 ### Running Simulations
 

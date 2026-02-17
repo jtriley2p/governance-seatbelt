@@ -1,12 +1,12 @@
-# Phase 1 Publish Contract (Vercel-first)
+# Publish Contract (`bun upload`)
 
-This document captures the publish guardrails used by `bun upload`.
+This document defines the publish guardrails enforced by Seatbelt.
 
 ## Canonical artifact input
 
 - Input file: `simulation-results.json`
 - Source of truth: existing `proposalData` + `report.structuredReport` contract
-- No new report schema is introduced in Phase 1
+- No new report schema is introduced by publish
 
 ## Hard-block required fields
 
@@ -27,7 +27,7 @@ This document captures the publish guardrails used by `bun upload`.
 - `report.status` must match `report.structuredReport.status`
 - proposal call arrays must be length-aligned (`targets`, `values`, `signatures`, `calldatas`)
 
-## Phase 1 publish metadata (minimal)
+## Publish metadata (minimal)
 
 On successful validation, `bun upload` records:
 
@@ -37,32 +37,8 @@ On successful validation, `bun upload` records:
 
 Current log destination: `.seatbelt/publish-log.jsonl`
 
-## Phase 1C — Managed relay publish (current default)
+## Usage
 
-`bun upload --publish` sends the validated artifact to the managed publish relay (zero local setup).
+For CLI commands, custom paths, and fallback guidance, see `docs/PUBLISH_QUICKSTART.md`.
 
-See `docs/PUBLISH_PHASE1C_RELAY_MVP.md` for relay API details and operational fallback guidance.
-
-## Command shape
-
-```bash
-# Validate + metadata log only
-bun upload --validate-only
-
-# Validate + publish via managed relay (default, zero setup)
-bun upload --publish
-
-# Optional custom paths
-bun upload --artifact frontend/public/simulation-results.json --log .seatbelt/publish-log.jsonl --publish
-```
-
-## BYO Vercel (break-glass fallback)
-
-Direct Vercel deploy is available as an internal escape hatch when the managed relay is down:
-
-```bash
-bun upload --publish --publish-provider vercel
-```
-
-Requires `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_ORG_ID` (or `SEATBELT_VERCEL_*` aliases).
-See `docs/PUBLISH_PHASE1C_RELAY_MVP.md` for details on break-glass usage.
+See `docs/PUBLISH_RELAY_OPS.md` for relay API/runtime details.

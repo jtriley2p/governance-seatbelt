@@ -1,26 +1,14 @@
-# Seatbelt Phase 1C — Managed Publish Relay MVP
+# Publish Relay Ops
 
-## Build Clean Scaffold
+Operational reference for the managed publish relay used by `bun upload --publish`.
 
-- **Mode:** C (build/ship MVP)
-- **Invariants:**
-  1. Publish only artifacts that pass existing `validatePublishArtifact`.
-  2. Every accepted publish returns stable URLs for deployment + artifact + metadata.
-  3. Existing CLI BYO Vercel path (`bun upload --publish`) remains unchanged.
-- **Source of Truth (SoT):**
-  - `utils/publish/artifact-validator.ts`
-  - `utils/publish/publish-metadata.ts`
-- **Failure model:**
-  - Invalid JSON/schema/artifact contract => `400`.
-  - Oversized payload => `413`.
-  - Rate limit exceeded => `429` with `Retry-After`.
-  - Idempotency key reused for a different artifact hash => `409`.
-  - Vercel publish failure => `502`.
-- **Observability (MVP):**
-  - Health endpoint with config + in-memory idempotency stats.
-  - Structured relay logs include `publish_id`, idempotency key, hash, deployment URL.
+Audience: relay maintainers/operators. End-user publish steps are in `docs/PUBLISH_QUICKSTART.md`.
 
----
+## Relay behavior
+
+- Relay always re-validates artifacts server-side against the publish contract.
+- Managed relay is the default publish path for end users.
+- BYO Vercel remains an internal break-glass fallback.
 
 ## Endpoints
 
@@ -43,7 +31,6 @@ Request body (JSON):
 
 Notes:
 - `artifact` is required unless `artifactRaw` is provided.
-- Relay always re-validates server-side against existing Seatbelt publish contract.
 - `Idempotency-Key` header is optional. If omitted, relay uses computed `artifact_hash`.
 
 Success response (`201`):
@@ -59,7 +46,13 @@ Success response (`201`):
 }
 ```
 
----
+## Failure model
+
+- Invalid JSON/schema/artifact contract => `400`
+- Oversized payload => `413`
+- Rate limit exceeded => `429` with `Retry-After`
+- Idempotency key reused for a different artifact hash => `409`
+- Vercel publish failure => `502`
 
 ## Required environment variables
 
@@ -85,10 +78,10 @@ export SEATBELT_RELAY_MAX_BODY_BYTES=5242880
 export SEATBELT_RELAY_RATE_LIMIT_ENABLED=true
 export SEATBELT_RELAY_RATE_LIMIT_WINDOW_MS=60000
 export SEATBELT_RELAY_RATE_LIMIT_MAX_REQUESTS=30
-export SEATBELT_RELAY_VERSION="phase1c-mvp"
+export SEATBELT_RELAY_VERSION="publish-relay"
 ```
 
----
+`SEATBELT_RELAY_VERSION` is label-only for observability/logging. Changing its value does not change runtime behavior.
 
 ## Deploy relay runtime to Vercel (`seatbelt-relay`)
 
@@ -116,7 +109,7 @@ Post-deploy verification:
 curl -sS https://seatbelt-relay-beta.vercel.app/api/v1/health | jq
 ```
 
-If you need to verify publish path end-to-end, send a known-good artifact:
+If you need to verify publish end-to-end with a known-good artifact:
 
 ```bash
 curl -sS -X POST https://seatbelt-relay-beta.vercel.app/api/v1/publishes \
@@ -124,8 +117,6 @@ curl -sS -X POST https://seatbelt-relay-beta.vercel.app/api/v1/publishes \
   -H 'idempotency-key: relay-smoke-test-1' \
   --data @<(jq -n --rawfile a frontend/public/simulation-results.json '{artifactRaw: $a}') | jq
 ```
-
----
 
 ## Run locally
 
@@ -149,40 +140,6 @@ curl -s -X POST http://localhost:8787/api/v1/publishes \
   --data @<(jq -n --rawfile a frontend/public/simulation-results.json '{artifactRaw: $a}') | jq
 ```
 
----
+## Break-glass fallback
 
-## CLI default behavior
-
-`bun upload --publish` now routes to the managed relay by default. No local Vercel token or project setup is required for end users.
-
-### BYO Vercel (break-glass only)
-
-The direct Vercel deploy path is retained as an internal fallback, not a user-facing option.
-It is **not** documented in `--help` primary options or the main README publish section.
-
-Use only when the managed relay is unavailable:
-
-```bash
-bun upload --publish --publish-provider vercel
-```
-
-Requires `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_ORG_ID` (or `SEATBELT_VERCEL_*` aliases).
-
-### UX simplification rationale
-
-Removing BYO-Vercel from the default user path eliminates:
-- Token/project setup friction for every new user
-- Dual-path documentation maintenance
-- Confusion about which publish path to use
-
-BYO-Vercel is kept in code as a break-glass escape hatch (relay outage, quota exhaustion).
-If relay proves reliable, BYO-Vercel can be fully removed in a future cleanup pass.
-
----
-
-## MVP limitations (explicit)
-
-- Rate limiting + idempotency are in-memory, single-instance only.
-- No durable database yet for audit/history.
-- No auth layer for publish endpoint (intentional for anyone-can-publish MVP).
-- Clear seam exists for future shared-store upgrade (Redis/Postgres) without changing API contract.
+For break-glass CLI fallback usage (`--publish-provider vercel`), see `docs/PUBLISH_QUICKSTART.md`.
