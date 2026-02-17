@@ -45,7 +45,7 @@ SEATBELT_RELAY_URL=http://localhost:8787 bun upload --publish
 Artifact failed contract validation.
 
 - Re-run `bun upload --validate-only`
-- Ensure required publish fields are present (see `docs/PUBLISH_PHASE1.md`)
+- Ensure required publish fields are present (see `docs/PUBLISH_CONTRACT.md`)
 
 ### `429` from relay
 Rate limit exceeded.
@@ -73,5 +73,5 @@ Requires Vercel credentials in env (`VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL
 
 ## Related docs
 
-- `docs/PUBLISH_PHASE1.md` — publish contract and required fields
-- `docs/PUBLISH_PHASE1C_RELAY_MVP.md` — relay API/runtime/deploy details
+- `docs/PUBLISH_CONTRACT.md` — publish contract and required fields
+- `docs/PUBLISH_RELAY_OPS.md` — relay API/runtime/deploy details

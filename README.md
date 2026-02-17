@@ -238,8 +238,8 @@ A successful publish returns a deployment URL where:
 For complete publish docs (custom artifact paths, relay override, troubleshooting, and fallback guidance), see:
 
 - `docs/PUBLISH_QUICKSTART.md` (primary user guide)
-- `docs/PUBLISH_PHASE1.md` (publish contract)
-- `docs/PUBLISH_PHASE1C_RELAY_MVP.md` (relay runtime/ops)
+- `docs/PUBLISH_CONTRACT.md` (publish contract)
+- `docs/PUBLISH_RELAY_OPS.md` (relay runtime/ops)
 
 ### Running Simulations
 
