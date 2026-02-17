@@ -63,6 +63,12 @@ Rate limit exceeded.
 - Wait for the `Retry-After` window and retry
 - Avoid parallel publish spam from the same source
 
+### `413` from relay
+Artifact payload exceeds relay max body size.
+
+- Reduce payload size and retry
+- If needed, ask relay operators to review `SEATBELT_RELAY_MAX_BODY_BYTES` (see `docs/PUBLISH_RELAY_OPS.md`)
+
 ### `502` from relay
 Relay could not complete provider publish (typically transient upstream/deploy issue).
 
@@ -77,7 +83,9 @@ If the managed relay is unavailable, use direct Vercel publish:
 bun upload --publish --publish-provider vercel
 ```
 
-Requires Vercel credentials in env (`VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_ORG_ID`, or `SEATBELT_VERCEL_*`).
+Requires direct-publish credentials in env (`VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_ORG_ID`, or `SEATBELT_VERCEL_*`).
+
+Note: these are distinct from relay-operator credentials (`SEATBELT_RELAY_VERCEL_*`) documented in `docs/PUBLISH_RELAY_OPS.md`.
 
 ---
 

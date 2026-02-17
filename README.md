@@ -219,7 +219,7 @@ GOVERNOR_ADDRESS=0x408ED6354d4973f66138C91495F2f2FCbd8724C3
 
 ### Publishing simulation artifacts (`bun upload`)
 
-Use the managed relay by default (no local Vercel setup required):
+After running a simulation to generate `frontend/public/simulation-results.json` (see **Running Simulations** below), use the managed relay by default (no local Vercel setup required):
 
 ```bash
 # Validate artifact only (no publish)
