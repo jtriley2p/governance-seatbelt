@@ -1,6 +1,6 @@
-# Legacy redirect
+# Redirect
 
-This document was renamed to reflect current terminology.
+This file exists for compatibility with existing links.
 
 Use:
 
