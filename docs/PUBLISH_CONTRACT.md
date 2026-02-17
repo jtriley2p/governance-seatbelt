@@ -37,27 +37,8 @@ On successful validation, `bun upload` records:
 
 Current log destination: `.seatbelt/publish-log.jsonl`
 
-## Command shape
+## Usage
 
-```bash
-# Validate + metadata log only
-bun upload --validate-only
-
-# Validate + publish via managed relay (default)
-bun upload --publish
-
-# Optional custom paths
-bun upload --artifact frontend/public/simulation-results.json --log .seatbelt/publish-log.jsonl --publish
-```
-
-## Break-glass fallback
-
-Direct Vercel deploy is available as an internal escape hatch when the managed relay is unavailable:
-
-```bash
-bun upload --publish --publish-provider vercel
-```
-
-Requires `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_ORG_ID` (or `SEATBELT_VERCEL_*` aliases).
+For CLI commands, custom paths, and fallback guidance, see `docs/PUBLISH_QUICKSTART.md`.
 
 See `docs/PUBLISH_RELAY_OPS.md` for relay API/runtime details.

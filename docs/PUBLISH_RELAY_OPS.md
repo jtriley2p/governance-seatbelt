@@ -2,6 +2,8 @@
 
 Operational reference for the managed publish relay used by `bun upload --publish`.
 
+Audience: relay maintainers/operators. End-user publish steps are in `docs/PUBLISH_QUICKSTART.md`.
+
 ## Relay behavior
 
 - Relay always re-validates artifacts server-side against the publish contract.
@@ -79,6 +81,8 @@ export SEATBELT_RELAY_RATE_LIMIT_MAX_REQUESTS=30
 export SEATBELT_RELAY_VERSION="publish-relay"
 ```
 
+`SEATBELT_RELAY_VERSION` is label-only for observability/logging. Changing its value does not change runtime behavior.
+
 ## Deploy relay runtime to Vercel (`seatbelt-relay`)
 
 From the repository root:
@@ -138,10 +142,4 @@ curl -s -X POST http://localhost:8787/api/v1/publishes \
 
 ## Break-glass fallback
 
-Use only when the managed relay is unavailable:
-
-```bash
-bun upload --publish --publish-provider vercel
-```
-
-Requires `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_ORG_ID` (or `SEATBELT_VERCEL_*` aliases).
+For break-glass CLI fallback usage (`--publish-provider vercel`), see `docs/PUBLISH_QUICKSTART.md`.

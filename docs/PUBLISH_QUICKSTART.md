@@ -2,6 +2,16 @@
 
 This is the primary guide for publishing Seatbelt simulation artifacts.
 
+## Prerequisites
+
+Generate an artifact first:
+
+```bash
+SIM_NAME=my-proposal bun start
+```
+
+This writes `frontend/public/simulation-results.json` by default.
+
 ## 1) Happy path (default managed relay)
 
 No local Vercel setup is required.
