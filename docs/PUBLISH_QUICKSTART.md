@@ -24,11 +24,16 @@ bun upload --validate-only
 bun upload --publish
 ```
 
-On success, Seatbelt publishes a viewer deployment and returns URLs where:
+On success, the relay returns publish URLs:
 
-- `/` renders the Seatbelt report viewer
-- `/simulation-results.json` serves the artifact JSON
-- `/publish-metadata.json` serves publish metadata
+- `deploymentUrl` — artifact deployment root (may be a publish landing page)
+- `artifactUrl` — published `simulation-results.json`
+- `metadataUrl` — published `publish-metadata.json`
+- `viewerUrl` — canonical frontend viewer URL (when relay is configured with `SEATBELT_VIEWER_URL`)
+
+Canonical share links should use:
+
+- `<viewerUrl>?artifact=<artifactUrl>`
 
 ## 2) Optional custom paths
 
@@ -50,6 +55,13 @@ SEATBELT_RELAY_URL=http://localhost:8787 bun upload --publish
 ```
 
 ## 4) Troubleshooting
+
+### Share link opens artifact landing page instead of frontend viewer
+Relay is not configured with a stable viewer URL.
+
+- Set `SEATBELT_VIEWER_URL` on the `seatbelt-relay` project to your dedicated viewer app URL.
+- Redeploy relay (`vercel deploy --yes --prod`).
+- Re-run publish and confirm `viewerUrl` is present in relay response.
 
 ### `400` from publish endpoint
 Artifact failed contract validation.

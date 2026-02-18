@@ -10,6 +10,18 @@ Audience: relay maintainers/operators. End-user publish steps are in `docs/PUBLI
 - Managed relay is the default publish path for end users.
 - BYO Vercel remains an internal break-glass fallback.
 
+## Project topology (recommended)
+
+Use separate projects for each responsibility:
+
+- `seatbelt-relay` — write/API path (`POST /api/v1/publishes`)
+- `seatbelt-publish` — artifact deployments (`simulation-results.json`, `publish-metadata.json`)
+- `seatbelt-viewer` — stable frontend report viewer URL
+
+Share links should resolve to:
+
+- `<viewerUrl>?artifact=<artifactUrl>`
+
 ## Endpoints
 
 ### `GET /api/v1/health`
@@ -42,9 +54,12 @@ Success response (`201`):
   "artifactHash": "sha256",
   "deploymentUrl": "https://...vercel.app",
   "artifactUrl": "https://.../simulation-results.json",
-  "metadataUrl": "https://.../publish-metadata.json"
+  "metadataUrl": "https://.../publish-metadata.json",
+  "viewerUrl": "https://...viewer.vercel.app/"
 }
 ```
+
+`viewerUrl` is included when `SEATBELT_VIEWER_URL` is configured on relay.
 
 ## Failure model
 
@@ -59,16 +74,23 @@ Success response (`201`):
 Set these on the `seatbelt-relay` Vercel project (Production + Preview):
 
 ```bash
-# Managed Vercel deploy credentials (primary names)
+# Managed Vercel deploy credentials (artifact target project)
 export SEATBELT_RELAY_VERCEL_TOKEN="<token>"
-export SEATBELT_RELAY_VERCEL_PROJECT_ID="<project-id>"
+export SEATBELT_RELAY_VERCEL_PROJECT_ID="<seatbelt-publish-project-id>"
 export SEATBELT_RELAY_VERCEL_ORG_ID="<team-or-user-id>"
+
+# Canonical frontend viewer URL used in share links
+export SEATBELT_VIEWER_URL="https://seatbelt-viewer.vercel.app"
 
 # Optional aliases (fallbacks if primary names are not set)
 export VERCEL_TOKEN="$SEATBELT_RELAY_VERCEL_TOKEN"
 export VERCEL_PROJECT_ID="$SEATBELT_RELAY_VERCEL_PROJECT_ID"
 export VERCEL_ORG_ID="$SEATBELT_RELAY_VERCEL_ORG_ID"
 ```
+
+Important:
+- `SEATBELT_VIEWER_URL` should point to a stable viewer app URL (project/domain dedicated to frontend).
+- Do not point `SEATBELT_VIEWER_URL` at rotating artifact deployment aliases.
 
 Optional tuning:
 
@@ -106,17 +128,17 @@ Expected runtime wiring for this repo:
 Post-deploy verification:
 
 ```bash
+# 1) health
 curl -sS https://seatbelt-relay-beta.vercel.app/api/v1/health | jq
-```
 
-If you need to verify publish end-to-end with a known-good artifact:
-
-```bash
+# 2) publish smoke test (expect artifactUrl + viewerUrl)
 curl -sS -X POST https://seatbelt-relay-beta.vercel.app/api/v1/publishes \
   -H 'content-type: application/json' \
-  -H 'idempotency-key: relay-smoke-test-1' \
+  -H "idempotency-key: relay-smoke-test-$(date +%s)" \
   --data @<(jq -n --rawfile a frontend/public/simulation-results.json '{artifactRaw: $a}') | jq
 ```
+
+If `viewerUrl` is missing in the publish response, verify `SEATBELT_VIEWER_URL` is set on the relay project and redeploy relay.
 
 ## Run locally
 
