@@ -16,6 +16,7 @@ const shareLinkRequestTimestampsByClient = new Map<string, number[]>();
 type ShareLinkResult =
   | {
       artifactUrl: string;
+      viewerUrl?: string;
     }
   | {
       error: string;
@@ -197,17 +198,22 @@ async function publishViaManagedRelay(
     }
 
     const directArtifactUrl = readStringProperty(parsedResponse, 'artifactUrl');
+    const relayViewerUrl = readStringProperty(parsedResponse, 'viewerUrl') ?? undefined;
+    const deploymentUrl = readStringProperty(parsedResponse, 'deploymentUrl');
     if (directArtifactUrl) {
-      return { artifactUrl: directArtifactUrl };
+      return {
+        artifactUrl: directArtifactUrl,
+        viewerUrl: relayViewerUrl,
+      };
     }
 
-    const deploymentUrl = readStringProperty(parsedResponse, 'deploymentUrl');
     if (!deploymentUrl) {
       return { error: 'Relay publish response is missing deploymentUrl', status: 502 };
     }
 
     return {
       artifactUrl: appendPathToUrl(deploymentUrl, 'simulation-results.json'),
+      viewerUrl: relayViewerUrl,
     };
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
@@ -253,7 +259,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: publishResult.error }, { status: publishResult.status });
     }
 
-    return NextResponse.json({ artifactUrl: publishResult.artifactUrl });
+    return NextResponse.json({
+      artifactUrl: publishResult.artifactUrl,
+      viewerUrl: publishResult.viewerUrl,
+    });
   } catch (error) {
     if (error instanceof SimulationResultsParseError) {
       console.error('Invalid simulation-results.json for publish:', error.issues);

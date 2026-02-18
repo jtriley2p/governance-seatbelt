@@ -10,7 +10,6 @@ const LOCAL_SIMULATION_RESULTS_FILE = path.join(process.cwd(), 'public', 'simula
 const ENV_KEYS = [
   'NODE_ENV',
   'SIMULATION_RESULTS_MAX_BYTES',
-  'SIMULATION_RESULTS_ALLOWED_ARTIFACT_HOSTS',
   'SHARE_LINK_RATE_LIMIT_MAX_REQUESTS',
   'SHARE_LINK_RATE_LIMIT_WINDOW_MS',
   'SEATBELT_RELAY_URL',
@@ -108,6 +107,13 @@ function readArtifactUrl(payload: unknown): string | null {
   return typeof artifactUrl === 'string' ? artifactUrl : null;
 }
 
+function readViewerUrl(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+
+  const viewerUrl = Reflect.get(payload, 'viewerUrl');
+  return typeof viewerUrl === 'string' ? viewerUrl : null;
+}
+
 function readFetchRequestUrl(input: RequestInfo | URL): string {
   if (input instanceof URL) {
     return input.toString();
@@ -139,7 +145,7 @@ afterAll(() => {
 });
 
 describe('/api/simulation-results', () => {
-  it('returns results from allowlisted artifact host and strips markdown by default', async () => {
+  it('returns results from arbitrary public artifact host and strips markdown by default', async () => {
     let fetchInit: RequestInit | undefined;
 
     globalThis.fetch = createMockFetch(
@@ -154,7 +160,7 @@ describe('/api/simulation-results', () => {
       },
     );
 
-    const artifactUrl = 'https://seatbelt-publish.vercel.app/simulation-results.json';
+    const artifactUrl = 'https://publisher.example.org/simulation-results.json';
     const response = await getSimulationResults(
       new Request(
         `http://localhost/api/simulation-results?artifact=${encodeURIComponent(artifactUrl)}`,
@@ -195,9 +201,7 @@ describe('/api/simulation-results', () => {
     );
   });
 
-  it('rejects private-network artifact targets even if explicitly configured', async () => {
-    process.env.SIMULATION_RESULTS_ALLOWED_ARTIFACT_HOSTS = '10.0.0.1';
-
+  it('rejects private-network artifact targets', async () => {
     let fetchCalls = 0;
     globalThis.fetch = createMockFetch(async (): Promise<Response> => {
       fetchCalls += 1;
@@ -291,7 +295,7 @@ describe('/api/simulation-results', () => {
 });
 
 describe('/api/share-link', () => {
-  it('publishes simulation-results.json and returns artifactUrl', async () => {
+  it('publishes simulation-results.json and returns artifactUrl + viewerUrl', async () => {
     writeSimulationResultsFile(VALID_SIMULATION_RESULTS_JSON);
     process.env.SEATBELT_RELAY_URL = 'https://seatbelt-relay-beta.vercel.app';
 
@@ -299,6 +303,7 @@ describe('/api/share-link', () => {
       return new Response(
         JSON.stringify({
           artifactUrl: 'https://seatbelt-publish.vercel.app/simulation-results.json',
+          viewerUrl: 'https://seatbelt.app',
         }),
         {
           status: 200,
@@ -323,6 +328,7 @@ describe('/api/share-link', () => {
     expect(readArtifactUrl(payload)).toBe(
       'https://seatbelt-publish.vercel.app/simulation-results.json',
     );
+    expect(readViewerUrl(payload)).toBe('https://seatbelt.app');
   });
 
   it('returns 429 when share-link endpoint exceeds rate limit', async () => {

@@ -5,10 +5,6 @@ import { NextResponse } from 'next/server';
 
 const DEFAULT_MAX_SIMULATION_RESULTS_BYTES = 25 * 1024 * 1024; // 25MB
 const DEFAULT_ARTIFACT_FETCH_TIMEOUT_MS = 15_000;
-const DEFAULT_ALLOWED_ARTIFACT_HOSTS = [
-  'seatbelt-publish.vercel.app',
-  'seatbelt-publish-beta.vercel.app',
-];
 const LOCALHOST_ARTIFACT_HOSTS = ['localhost', '127.0.0.1', '::1'];
 const SIMULATION_RESULTS_FILENAME = 'simulation-results.json';
 const LOCAL_SIMULATION_RESULTS_FILE = path.join(
@@ -22,11 +18,6 @@ type SimulationResultsSourceError = {
   status: number;
   fileSizeBytes?: number;
   maxBytes?: number;
-};
-
-type AllowedArtifactHost = {
-  hostname: string;
-  isLocalhost: boolean;
 };
 
 function isSimulationResultsSourceError(value: unknown): value is SimulationResultsSourceError {
@@ -101,41 +92,6 @@ function isPrivateNetworkHostname(hostname: string): boolean {
   return isPrivateIpv4Address(hostname) || isPrivateIpv6Address(hostname);
 }
 
-function getAllowedArtifactHosts(): Map<string, AllowedArtifactHost> {
-  const hosts = new Map<string, AllowedArtifactHost>();
-  const localhostHosts = new Set(LOCALHOST_ARTIFACT_HOSTS.map(normalizeHostname));
-
-  const addHost = (hostname: string) => {
-    const normalized = normalizeHostname(hostname);
-    hosts.set(normalized, {
-      hostname: normalized,
-      isLocalhost: localhostHosts.has(normalized),
-    });
-  };
-
-  for (const host of DEFAULT_ALLOWED_ARTIFACT_HOSTS) {
-    addHost(host);
-  }
-
-  const configuredHosts = process.env.SIMULATION_RESULTS_ALLOWED_ARTIFACT_HOSTS;
-  if (configuredHosts) {
-    for (const host of configuredHosts.split(',')) {
-      const trimmed = host.trim();
-      if (trimmed) {
-        addHost(trimmed);
-      }
-    }
-  }
-
-  if (process.env.NODE_ENV !== 'production') {
-    for (const localhostHost of LOCALHOST_ARTIFACT_HOSTS) {
-      addHost(localhostHost);
-    }
-  }
-
-  return hosts;
-}
-
 function getMaxSimulationResultsBytes(): number {
   const raw = process.env.SIMULATION_RESULTS_MAX_BYTES;
   if (!raw) return DEFAULT_MAX_SIMULATION_RESULTS_BYTES;
@@ -195,11 +151,15 @@ function normalizeArtifactPathname(pathname: string): string | null {
   return `${basePathname}${SIMULATION_RESULTS_FILENAME}`;
 }
 
-function buildTrustedArtifactUrl(parsed: URL, allowedHost: AllowedArtifactHost): string {
+function isLocalArtifactHostname(hostname: string): boolean {
+  return LOCALHOST_ARTIFACT_HOSTS.map(normalizeHostname).includes(normalizeHostname(hostname));
+}
+
+function buildTrustedArtifactUrl(parsed: URL, hostname: string, isLocalhost: boolean): string {
   const trusted = new URL('https://seatbelt-publish.vercel.app/');
-  trusted.protocol = allowedHost.isLocalhost ? parsed.protocol : 'https:';
-  trusted.hostname = allowedHost.hostname;
-  trusted.port = allowedHost.isLocalhost ? parsed.port : '';
+  trusted.protocol = isLocalhost ? parsed.protocol : 'https:';
+  trusted.hostname = hostname;
+  trusted.port = isLocalhost ? parsed.port : '';
 
   const normalizedPathname = normalizeArtifactPathname(parsed.pathname);
   if (!normalizedPathname) {
@@ -222,22 +182,17 @@ function parseArtifactUrl(rawArtifactUrl: string): string | SimulationResultsSou
     const parsed = new URL(trimmed);
     const protocol = parsed.protocol;
     const hostname = normalizeHostname(parsed.hostname);
-    const allowedHosts = getAllowedArtifactHosts();
-    const allowedHost = allowedHosts.get(hostname);
+    const isLocalhost = isLocalArtifactHostname(hostname);
 
-    if (!allowedHost) {
-      return { error: 'Artifact host is not allowed', status: 400 };
-    }
-
-    if (!(protocol === 'https:' || (protocol === 'http:' && allowedHost.isLocalhost))) {
+    if (!(protocol === 'https:' || (protocol === 'http:' && isLocalhost))) {
       return { error: 'Artifact URL must use https (or http on localhost)', status: 400 };
     }
 
-    if (parsed.port && !allowedHost.isLocalhost) {
+    if (parsed.port && !isLocalhost) {
       return { error: 'Artifact URL must not include custom ports', status: 400 };
     }
 
-    if (isPrivateNetworkHostname(allowedHost.hostname) && !allowedHost.isLocalhost) {
+    if (isPrivateNetworkHostname(hostname) && !isLocalhost) {
       return { error: 'Artifact URL must not target private networks', status: 400 };
     }
 
@@ -246,7 +201,7 @@ function parseArtifactUrl(rawArtifactUrl: string): string | SimulationResultsSou
     }
 
     try {
-      return buildTrustedArtifactUrl(parsed, allowedHost);
+      return buildTrustedArtifactUrl(parsed, hostname, isLocalhost);
     } catch {
       return { error: 'Artifact URL must point to simulation-results.json', status: 400 };
     }
