@@ -132,7 +132,7 @@ export function useShareLink() {
   const handleShare = async () => {
     if (artifactFromQuery) {
       try {
-        const viewerUrl = buildViewerUrl(window.location.origin);
+        const viewerUrl = resolveViewerUrl();
         const shareUrl = buildCanonicalShareUrl(viewerUrl, artifactFromQuery);
         await copyToClipboard(shareUrl);
         toast.success('Share link copied');
