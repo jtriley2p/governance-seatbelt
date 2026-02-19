@@ -229,11 +229,15 @@ bun upload --validate-only
 bun upload --publish
 ```
 
-A successful publish returns a deployment URL where:
+A successful publish returns relay response URLs (`deploymentUrl`, `artifactUrl`, `metadataUrl`, and `viewerUrl` when configured).
 
-- `/` renders the Seatbelt report viewer
-- `/simulation-results.json` serves the artifact JSON
-- `/publish-metadata.json` serves publish metadata
+For share links, use:
+
+- `<viewerUrl>?artifact=<artifactUrl>`
+
+Notes:
+- `artifactUrl` points to the published `simulation-results.json`.
+- `deploymentUrl` (and its `/`) is the artifact deployment root and may render a publish landing page, not the canonical frontend viewer.
 
 For complete publish docs (custom artifact paths, relay override, troubleshooting, and fallback guidance), see:
 

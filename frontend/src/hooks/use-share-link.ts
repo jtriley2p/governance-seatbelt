@@ -2,13 +2,24 @@
 
 import { buildCanonicalShareUrl, buildViewerUrl, normalizeArtifactUrl } from '@/lib/share-link';
 import { useMutation } from '@tanstack/react-query';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
+
+type ShareArtifactResponse = {
+  artifactUrl: string;
+  viewerUrl: string | null;
+};
+
+const LOCALHOST_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
 async function copyToClipboard(text: string): Promise<void> {
   if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Fall back to execCommand-based copy when async clipboard is denied.
+    }
   }
 
   if (typeof document === 'undefined') {
@@ -32,7 +43,7 @@ async function copyToClipboard(text: string): Promise<void> {
   }
 }
 
-async function requestShareArtifact(): Promise<string> {
+async function requestShareArtifact(): Promise<ShareArtifactResponse> {
   const response = await fetch('/api/share-link', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -61,34 +72,59 @@ async function requestShareArtifact(): Promise<string> {
     throw new Error('Share link response is invalid');
   }
 
-  return normalizedArtifactUrl;
+  return {
+    artifactUrl: normalizedArtifactUrl,
+    viewerUrl: normalizeViewerUrl(Reflect.get(payload, 'viewerUrl')),
+  };
 }
 
-function getCanonicalViewerUrl(): string {
+function normalizeViewerUrl(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (!(parsed.protocol === 'https:' || parsed.protocol === 'http:')) {
+      return null;
+    }
+
+    return buildViewerUrl(parsed.toString());
+  } catch {
+    return null;
+  }
+}
+
+function resolveViewerUrl(preferredViewerUrl: string | null = null): string {
+  const normalizedPreferredViewerUrl = normalizeViewerUrl(preferredViewerUrl);
+  if (normalizedPreferredViewerUrl) {
+    return normalizedPreferredViewerUrl;
+  }
+
   if (typeof window === 'undefined') {
     throw new Error('Window is unavailable');
+  }
+
+  const configuredViewerUrl = process.env.NEXT_PUBLIC_SHARE_VIEWER_URL?.trim();
+  if (configuredViewerUrl) {
+    return buildViewerUrl(configuredViewerUrl);
+  }
+
+  if (LOCALHOST_HOSTS.has(window.location.hostname)) {
+    throw new Error(
+      'Viewer URL is not configured by relay. Configure SEATBELT_VIEWER_URL (relay) or NEXT_PUBLIC_SHARE_VIEWER_URL (frontend).',
+    );
   }
 
   return buildViewerUrl(window.location.origin);
 }
 
-function updateArtifactParamInUrl(
-  router: ReturnType<typeof useRouter>,
-  pathname: string,
-  searchParams: ReturnType<typeof useSearchParams>,
-  artifactUrl: string,
-) {
-  const query = new URLSearchParams(searchParams.toString());
-  query.set('artifact', artifactUrl);
-
-  const basePath = pathname || '/';
-  const destination = query.size > 0 ? `${basePath}?${query.toString()}` : basePath;
-  router.replace(destination, { scroll: false });
-}
-
 export function useShareLink() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const artifactFromQuery = normalizeArtifactUrl(searchParams.get('artifact'));
@@ -98,10 +134,9 @@ export function useShareLink() {
   });
 
   const handleShare = async () => {
-    const viewerUrl = getCanonicalViewerUrl();
-
     if (artifactFromQuery) {
       try {
+        const viewerUrl = resolveViewerUrl();
         const shareUrl = buildCanonicalShareUrl(viewerUrl, artifactFromQuery);
         await copyToClipboard(shareUrl);
         toast.success('Share link copied');
@@ -114,14 +149,19 @@ export function useShareLink() {
     }
 
     try {
-      const artifactUrl = await generateMutation.mutateAsync();
-      const shareUrl = buildCanonicalShareUrl(viewerUrl, artifactUrl);
+      const shareArtifactResult = await generateMutation.mutateAsync();
+      const artifactUrl = shareArtifactResult.artifactUrl;
+      const publishViewerUrl = resolveViewerUrl(shareArtifactResult.viewerUrl);
+      const shareUrl = buildCanonicalShareUrl(publishViewerUrl, artifactUrl);
       await copyToClipboard(shareUrl);
-      updateArtifactParamInUrl(router, pathname, searchParams, artifactUrl);
       toast.success('Share link ready — copied to clipboard');
     } catch (error) {
       console.error('Error generating share link:', error);
-      toast.error('Couldn’t generate share link. Try again.');
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Couldn’t generate share link. Try again.';
+      toast.error(message);
     }
   };
 

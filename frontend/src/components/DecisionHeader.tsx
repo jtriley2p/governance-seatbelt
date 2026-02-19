@@ -92,7 +92,7 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 sm:h-8 gap-1.5 text-xs"
+                className="h-7 gap-1.5 text-xs border border-border cursor-pointer sm:hidden"
                 onClick={onShare}
                 disabled={isGenerating}
               >
@@ -102,11 +102,7 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
                   <Link2Icon className="h-3.5 w-3.5" />
                 )}
                 <span className="font-medium">
-                  {isGenerating
-                    ? 'Building Report…'
-                    : hasArtifact
-                      ? 'Copy Share Link'
-                      : 'Generate Share Link'}
+                  {isGenerating ? 'Building…' : hasArtifact ? 'Copy Link' : 'Share'}
                 </span>
               </Button>
 

@@ -33,6 +33,7 @@ type RelaySuccessResponse = {
   deploymentUrl: string;
   artifactUrl: string;
   metadataUrl: string;
+  viewerUrl?: string;
 };
 
 type RelayPublisherResult = {
@@ -367,6 +368,26 @@ function appendPathToUrl(baseUrl: string, relativePath: string): string {
   return `${baseUrl}/${relativePath}`;
 }
 
+function readConfiguredViewerUrl(env: Record<string, string | undefined>): string | undefined {
+  const rawViewerUrl = readNonEmptyEnv(env, 'SEATBELT_VIEWER_URL');
+  if (!rawViewerUrl) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(rawViewerUrl);
+    if (!(parsed.protocol === 'https:' || parsed.protocol === 'http:')) {
+      return undefined;
+    }
+
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 function isErrorWithCode(value: unknown): value is { code: unknown } {
   return typeof value === 'object' && value !== null && 'code' in value;
 }
@@ -403,6 +424,46 @@ function buildPublishLandingPage(logEntry: RelayPublishLogEntry): string {
       a {
         color: #7cc7ff;
       }
+      h2 {
+        margin-top: 2rem;
+        margin-bottom: 0.75rem;
+      }
+      .muted {
+        color: #9aa7b7;
+      }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        border-radius: 999px;
+        border: 1px solid #2f3b4f;
+        padding: 0.25rem 0.6rem;
+        font-size: 0.85rem;
+        color: #c7d2e1;
+        background: #111827;
+      }
+      .status.error {
+        border-color: #5b1f27;
+        background: #2a1116;
+        color: #fca5a5;
+      }
+      .panel {
+        padding: 1rem;
+        border-radius: 0.5rem;
+        background: #111827;
+        border: 1px solid #1f2937;
+      }
+      .checks {
+        margin: 0.5rem 0 0;
+        padding-left: 1.25rem;
+      }
+      .checks li {
+        margin: 0.35rem 0;
+      }
+      .checks-status {
+        font-weight: 700;
+        margin-right: 0.35rem;
+      }
       pre {
         padding: 1rem;
         border-radius: 0.5rem;
@@ -415,11 +476,172 @@ function buildPublishLandingPage(logEntry: RelayPublishLogEntry): string {
     <h1>Seatbelt simulation publish</h1>
     <p>This deployment contains a validated simulation artifact.</p>
     <ul>
-      <li><a href="./simulation-results.json">simulation-results.json</a></li>
+      <li><a id="artifact-link" href="./simulation-results.json">simulation-results.json</a></li>
       <li><a href="./publish-metadata.json">publish-metadata.json</a></li>
     </ul>
+    <h2>Report preview</h2>
+    <p id="report-status" class="status">Loading report…</p>
+    <div id="report-preview" class="panel" hidden>
+      <h3 id="report-title">Governance simulation report</h3>
+      <p id="report-summary" class="muted"></p>
+      <h4>Checks</h4>
+      <ul id="report-checks" class="checks"></ul>
+      <h4>Markdown report</h4>
+      <pre id="report-markdown"></pre>
+    </div>
     <h2>Publish metadata</h2>
     <pre>${metadataJson}</pre>
+    <script>
+      (function () {
+        function setStatus(message, isError) {
+          var statusNode = document.getElementById('report-status');
+          if (!statusNode) return;
+
+          statusNode.textContent = message;
+          statusNode.className = isError ? 'status error' : 'status';
+        }
+
+        function normalizeArtifactUrl(rawValue) {
+          var fallback = './simulation-results.json';
+          if (typeof rawValue !== 'string' || rawValue.trim().length === 0) {
+            return fallback;
+          }
+
+          try {
+            var parsed = new URL(rawValue, window.location.href);
+            var pathname = parsed.pathname || '/';
+
+            if (!pathname.endsWith('/simulation-results.json')) {
+              pathname = pathname.replace(/\\/+$/, '');
+              var lastSegment = pathname.split('/').pop() || '';
+              if (lastSegment.indexOf('.') === -1) {
+                pathname = pathname + '/simulation-results.json';
+              }
+            }
+
+            parsed.pathname = pathname;
+            parsed.hash = '';
+            return parsed.toString();
+          } catch (_error) {
+            return fallback;
+          }
+        }
+
+        function readFirstResult(value) {
+          if (Array.isArray(value)) {
+            return value[0] || null;
+          }
+
+          if (value && typeof value === 'object') {
+            return value;
+          }
+
+          return null;
+        }
+
+        function toCheckLabel(check) {
+          var status = typeof check.status === 'string' ? check.status.toUpperCase() : 'UNKNOWN';
+          var title = typeof check.title === 'string' ? check.title : 'Untitled check';
+          return status + ': ' + title;
+        }
+
+        async function loadReportPreview() {
+          var params = new URLSearchParams(window.location.search);
+          var artifactUrl = normalizeArtifactUrl(params.get('artifact'));
+
+          var artifactLink = document.getElementById('artifact-link');
+          if (artifactLink) {
+            artifactLink.href = artifactUrl;
+          }
+
+          setStatus('Loading report…', false);
+
+          var previewNode = document.getElementById('report-preview');
+          var titleNode = document.getElementById('report-title');
+          var summaryNode = document.getElementById('report-summary');
+          var checksNode = document.getElementById('report-checks');
+          var markdownNode = document.getElementById('report-markdown');
+
+          try {
+            var response = await fetch(artifactUrl, { cache: 'no-store' });
+            if (!response.ok) {
+              throw new Error('Artifact request failed (HTTP ' + response.status + ')');
+            }
+
+            var payload = await response.json();
+            var firstResult = readFirstResult(payload);
+            if (!firstResult || typeof firstResult !== 'object') {
+              throw new Error('Artifact payload is not a simulation-results object');
+            }
+
+            var report = firstResult.report && typeof firstResult.report === 'object' ? firstResult.report : {};
+            var structuredReport =
+              report.structuredReport && typeof report.structuredReport === 'object'
+                ? report.structuredReport
+                : {};
+
+            var title =
+              typeof structuredReport.title === 'string' && structuredReport.title
+                ? structuredReport.title
+                : 'Governance simulation report';
+            var summary =
+              typeof structuredReport.summary === 'string'
+                ? structuredReport.summary
+                : typeof report.summary === 'string'
+                  ? report.summary
+                  : 'No summary available.';
+            var markdown =
+              typeof report.markdownReport === 'string' && report.markdownReport.length > 0
+                ? report.markdownReport
+                : 'Markdown report not available.';
+
+            var checks = Array.isArray(structuredReport.checks) ? structuredReport.checks : [];
+
+            if (titleNode) {
+              titleNode.textContent = title;
+            }
+
+            if (summaryNode) {
+              summaryNode.textContent = summary;
+            }
+
+            if (markdownNode) {
+              markdownNode.textContent = markdown;
+            }
+
+            if (checksNode) {
+              checksNode.innerHTML = '';
+              if (checks.length === 0) {
+                var emptyItem = document.createElement('li');
+                emptyItem.textContent = 'No checks found in this report.';
+                checksNode.appendChild(emptyItem);
+              } else {
+                for (var i = 0; i < checks.length; i += 1) {
+                  var check = checks[i];
+                  var item = document.createElement('li');
+                  var label = toCheckLabel(check || {});
+                  item.textContent = label;
+                  checksNode.appendChild(item);
+                }
+              }
+            }
+
+            if (previewNode) {
+              previewNode.hidden = false;
+            }
+
+            setStatus('Loaded report preview from artifact.', false);
+          } catch (error) {
+            setStatus(
+              error instanceof Error ? error.message : 'Failed to load report preview from artifact.',
+              true,
+            );
+          }
+        }
+
+        loadReportPreview();
+      })();
+    </script>
   </body>
 </html>
 `;
@@ -1054,6 +1276,11 @@ export function createRelayFetchHandler(
         metadataUrl: publishResult.metadataUrl,
       };
 
+      const configuredViewerUrl = readConfiguredViewerUrl(env);
+      if (configuredViewerUrl) {
+        responseBody.viewerUrl = configuredViewerUrl;
+      }
+
       const responseBodyRecord: OpenJsonObject = {
         publishId: responseBody.publishId,
         idempotencyKey: responseBody.idempotencyKey,
@@ -1062,6 +1289,10 @@ export function createRelayFetchHandler(
         artifactUrl: responseBody.artifactUrl,
         metadataUrl: responseBody.metadataUrl,
       };
+
+      if (responseBody.viewerUrl) {
+        responseBodyRecord.viewerUrl = responseBody.viewerUrl;
+      }
 
       console.log(
         `[relay] publish success publish_id=${publishLogEntry.publish_id} idempotency_key=${idempotencyKey} artifact_hash=${artifactHash} deployment_url=${publishResult.deploymentUrl}`,

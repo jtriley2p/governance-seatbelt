@@ -2,10 +2,18 @@
 
 import { Button } from '@/components/ui/button';
 import { useHrefWithArtifact } from '@/hooks/use-artifact-navigation';
+import { useShareLink } from '@/hooks/use-share-link';
 import { useSimulationResults } from '@/hooks/use-simulation-results';
 import { parseSimulationType } from '@/lib/write-actions';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { CheckCircleIcon, FileTextIcon, PlayIcon, SendIcon } from 'lucide-react';
+import {
+  CheckCircleIcon,
+  FileTextIcon,
+  Link2Icon,
+  Loader2Icon,
+  PlayIcon,
+  SendIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
@@ -76,6 +84,7 @@ export function Navbar() {
   const pathname = usePathname();
   const reportHref = useHrefWithArtifact('/');
   const actionHref = useHrefWithArtifact('/action');
+  const { hasArtifact, isGenerating, onShare } = useShareLink();
   const { data: simulationData } = useSimulationResults();
 
   const rawSimulationType = simulationData?.report.structuredReport?.metadata?.simulationType;
@@ -126,7 +135,30 @@ export function Navbar() {
           </div>
 
           <div className="flex items-center">
-            <NavbarConnect />
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="hidden sm:inline-flex h-8 gap-1.5 text-xs border border-border cursor-pointer"
+                onClick={onShare}
+                disabled={isGenerating}
+              >
+                {isGenerating ? (
+                  <Loader2Icon className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Link2Icon className="h-3.5 w-3.5" />
+                )}
+                <span className="font-medium">
+                  {isGenerating
+                    ? 'Building Report…'
+                    : hasArtifact
+                      ? 'Copy Share Link'
+                      : 'Generate Share Link'}
+                </span>
+              </Button>
+              <NavbarConnect />
+            </div>
           </div>
         </div>
       </div>
