@@ -44,14 +44,7 @@ export async function getArbDistroCrossChainResult(): Promise<SimulationResult> 
   return arbCrossChainPromise;
 }
 
-export async function getOptimismBridgeSourceResult(options?: {
-  forceRefresh?: boolean;
-}): Promise<SimulationResult> {
-  if (options?.forceRefresh) {
-    opSourcePromise = undefined;
-    opCrossChainPromise = undefined;
-  }
-
+export async function getOptimismBridgeSourceResult(): Promise<SimulationResult> {
   if (!opSourcePromise) {
     opSourcePromise = (async () => {
       const config = await getOptimismConfig();
@@ -61,16 +54,10 @@ export async function getOptimismBridgeSourceResult(options?: {
   return opSourcePromise;
 }
 
-export async function getOptimismBridgeCrossChainResult(options?: {
-  forceRefresh?: boolean;
-}): Promise<SimulationResult> {
-  if (options?.forceRefresh) {
-    opCrossChainPromise = undefined;
-  }
-
+export async function getOptimismBridgeCrossChainResult(): Promise<SimulationResult> {
   if (!opCrossChainPromise) {
     opCrossChainPromise = (async () => {
-      const source = await getOptimismBridgeSourceResult({ forceRefresh: options?.forceRefresh });
+      const source = await getOptimismBridgeSourceResult();
       return await handleCrossChainSimulations(source);
     })();
   }
