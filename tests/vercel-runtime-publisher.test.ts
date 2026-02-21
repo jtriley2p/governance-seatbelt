@@ -66,7 +66,9 @@ describe('vercel runtime publisher', () => {
       expect(result.artifactUrl).toBe(
         'https://a-pub-123.publish.scopelift.co/simulation-results.json',
       );
-      expect(result.metadataUrl).toBe('https://a-pub-123.publish.scopelift.co/publish-metadata.json');
+      expect(result.metadataUrl).toBe(
+        'https://a-pub-123.publish.scopelift.co/publish-metadata.json',
+      );
 
       const parsedBody: unknown = JSON.parse(deploymentRequestBody);
       if (!isRecord(parsedBody)) {
@@ -98,7 +100,9 @@ describe('vercel runtime publisher', () => {
       }
 
       expect(parsedAliasBody.alias).toBe('a-pub-123.publish.scopelift.co');
-      expect(requestedUrls.some((url) => url.includes('/v2/deployments/dpl_123/aliases'))).toBe(true);
+      expect(requestedUrls.some((url) => url.includes('/v2/deployments/dpl_123/aliases'))).toBe(
+        true,
+      );
     } finally {
       globalThis.fetch = originalFetch;
     }
