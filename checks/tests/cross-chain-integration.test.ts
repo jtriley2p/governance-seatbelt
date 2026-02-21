@@ -150,18 +150,15 @@ describe('Cross-Chain Integration Tests', () => {
       async () => {
         const crossChainResult = await getOptimismBridgeCrossChainResult();
 
-        // External upstream data can occasionally return no destination messages.
-        // When destinations are present, verify expected OP/Base chain routing.
+        // Should have simulations for both OP and Base
         expect(crossChainResult.destinationSimulations).toBeDefined();
-        if (
-          crossChainResult.destinationSimulations &&
-          crossChainResult.destinationSimulations.length > 0
-        ) {
+        if (crossChainResult.destinationSimulations) {
+          expect(crossChainResult.destinationSimulations.length).toBeGreaterThan(0);
+
+          // Check that we have both chain IDs
           const chainIds = crossChainResult.destinationSimulations.map((sim) => sim.chainId);
           expect(chainIds).toContain(10); // OP Mainnet
           expect(chainIds).toContain(8453); // Base
-        } else {
-          expect(crossChainResult.destinationSimulations).toEqual([]);
         }
 
         // Run checks and verify they handle multiple destinations
