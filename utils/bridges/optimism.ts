@@ -43,21 +43,38 @@ const VALIDATION_CONSTANTS = {
 // Get all messenger addresses as lowercase for comparison
 const MESSENGER_ADDRESSES = Object.values(OPTIMISM_MESSENGERS).map((addr) => addr.toLowerCase());
 
-/**
- * Recursively searches the call trace for calls to any Optimism L1CrossDomainMessenger.
- */
-function findOptimismMessengerCalls(call: CallTrace): CallTrace[] {
-  let messengerCalls: CallTrace[] = [];
+type ExtendedCallTrace = CallTrace & {
+  address?: string;
+  function_name?: string;
+  call_type?: string;
+  caller?: { address?: string };
+  decoded_input?: Array<{
+    soltype?: { name?: string };
+    value?: unknown;
+  }>;
+};
 
-  // Check if the current call is to any messenger
-  if (call?.to && MESSENGER_ADDRESSES.includes(call.to.toLowerCase())) {
+function isMessengerAddress(address: string | undefined): boolean {
+  return !!address && MESSENGER_ADDRESSES.includes(address.toLowerCase());
+}
+
+/**
+ * Recursively searches the call trace for calls in the context of an Optimism messenger.
+ *
+ * We match both:
+ * - proxy fallback calls where `to` is the messenger address
+ * - delegatecall frames where `address` is the messenger (proxy context) and `to` is implementation
+ */
+function findOptimismMessengerCalls(call: ExtendedCallTrace): ExtendedCallTrace[] {
+  let messengerCalls: ExtendedCallTrace[] = [];
+
+  if (isMessengerAddress(call?.to) || isMessengerAddress(call?.address)) {
     messengerCalls.push(call);
   }
 
-  // Recursively check sub-calls
   if (call?.calls && Array.isArray(call.calls) && call.calls.length > 0) {
     for (const subCall of call.calls) {
-      messengerCalls = messengerCalls.concat(findOptimismMessengerCalls(subCall));
+      messengerCalls = messengerCalls.concat(findOptimismMessengerCalls(subCall as ExtendedCallTrace));
     }
   }
 
@@ -75,6 +92,57 @@ function getChainIdFromMessenger(messengerAddress: string): string | null {
     }
   }
   return null;
+}
+
+function decodeSendMessageFromDecodedInput(call: ExtendedCallTrace):
+  | {
+      fromAddress: Address;
+      targetAddress: Address;
+      messageData: Hex;
+      minGasLimit: bigint;
+    }
+  | null {
+  if (call.function_name !== 'sendMessage' || !Array.isArray(call.decoded_input)) {
+    return null;
+  }
+
+  const argsByName = new Map<string, unknown>();
+  for (const arg of call.decoded_input) {
+    const name = arg.soltype?.name;
+    if (typeof name === 'string') {
+      argsByName.set(name, arg.value);
+    }
+  }
+
+  const targetValue = argsByName.get('_target') ?? call.decoded_input[0]?.value;
+  const messageValue = argsByName.get('_message') ?? call.decoded_input[1]?.value;
+  const minGasValue = argsByName.get('_minGasLimit') ?? call.decoded_input[2]?.value;
+
+  if (typeof targetValue !== 'string' || typeof messageValue !== 'string') {
+    return null;
+  }
+
+  const fromCandidate =
+    typeof call.caller?.address === 'string' ? call.caller.address : call.from;
+  if (typeof fromCandidate !== 'string') {
+    return null;
+  }
+
+  const parsedMinGas =
+    typeof minGasValue === 'bigint'
+      ? minGasValue
+      : typeof minGasValue === 'number'
+        ? BigInt(minGasValue)
+        : typeof minGasValue === 'string'
+          ? BigInt(minGasValue)
+          : 0n;
+
+  return {
+    fromAddress: getAddress(fromCandidate),
+    targetAddress: getAddress(targetValue),
+    messageData: messageValue as Hex,
+    minGasLimit: parsedMinGas,
+  };
 }
 
 /**
@@ -98,45 +166,64 @@ export function parseOptimismL1L2Messages(
 
   // Find all calls to Optimism messengers
   const messengerCalls = findOptimismMessengerCalls(
-    sourceSim.transaction.transaction_info.call_trace,
+    sourceSim.transaction.transaction_info.call_trace as ExtendedCallTrace,
   );
 
   for (const call of messengerCalls) {
-    if (!call || !call.input || !call.from || !call.to) continue;
-
-    // Skip empty or invalid calldata - must have at least minimum length for sendMessage
-    if (
-      call.input === '0x' ||
-      call.input.length < VALIDATION_CONSTANTS.MIN_SEND_MESSAGE_INPUT_LENGTH
-    ) {
-      console.log(
-        `[Optimism Parser] Skipping call with invalid input length: ${call.input?.length || 0} chars (min: ${VALIDATION_CONSTANTS.MIN_SEND_MESSAGE_INPUT_LENGTH})`,
-      );
-      continue;
-    }
+    const messengerAddress = isMessengerAddress(call.to)
+      ? call.to
+      : isMessengerAddress(call.address)
+        ? call.address
+        : undefined;
+    if (!messengerAddress) continue;
 
     // Get the destination chain ID
-    const destinationChainId = getChainIdFromMessenger(call.to);
+    const destinationChainId = getChainIdFromMessenger(messengerAddress);
     if (!destinationChainId) {
-      console.log(`[Optimism Parser] Unknown messenger address: ${call.to}`);
+      console.log(`[Optimism Parser] Unknown messenger address: ${messengerAddress}`);
       continue;
     }
 
     try {
-      // Decode sendMessage function call using viem's robust ABI decoding
-      const { functionName, args } = decodeFunctionData({
-        abi: SEND_MESSAGE_ABI,
-        data: call.input as Hex,
-      });
+      // Preferred path: use Tenderly-decoded sendMessage args from delegatecall frames.
+      // This is resilient when fallback proxy frames have non-decodable input blobs.
+      let decoded = decodeSendMessageFromDecodedInput(call);
 
-      // Verify this is indeed a sendMessage call
-      if (functionName !== 'sendMessage') {
-        console.log(`[Optimism Parser] Skipping non-sendMessage call: ${functionName}`);
-        continue;
+      // Fallback path: decode raw calldata directly from the frame input.
+      if (!decoded) {
+        if (!call.input || !call.from) continue;
+
+        // Skip empty or invalid calldata - must have at least minimum length for sendMessage
+        if (
+          call.input === '0x' ||
+          call.input.length < VALIDATION_CONSTANTS.MIN_SEND_MESSAGE_INPUT_LENGTH
+        ) {
+          console.log(
+            `[Optimism Parser] Skipping call with invalid input length: ${call.input?.length || 0} chars (min: ${VALIDATION_CONSTANTS.MIN_SEND_MESSAGE_INPUT_LENGTH})`,
+          );
+          continue;
+        }
+
+        const { functionName, args } = decodeFunctionData({
+          abi: SEND_MESSAGE_ABI,
+          data: call.input as Hex,
+        });
+
+        if (functionName !== 'sendMessage') {
+          console.log(`[Optimism Parser] Skipping non-sendMessage call: ${functionName}`);
+          continue;
+        }
+
+        const [targetAddress, messageData, minGasLimit] = args;
+        decoded = {
+          fromAddress: getAddress(call.from),
+          targetAddress: getAddress(targetAddress),
+          messageData: messageData as Hex,
+          minGasLimit: BigInt(minGasLimit),
+        };
       }
 
-      // Extract decoded arguments
-      const [targetAddress, messageData, minGasLimit] = args;
+      const { fromAddress, targetAddress, messageData, minGasLimit } = decoded;
 
       // Validate message data length for DoS prevention
       const messageLength = messageData.length;
@@ -157,10 +244,10 @@ export function parseOptimismL1L2Messages(
       let l2FromAddress =
         destinationChainId === '130'
           ? ('0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D' as Address) // Uniswap V2 Router
-          : getAddress(call.from);
+          : fromAddress;
 
-      let l2TargetAddress = getAddress(targetAddress);
-      let l2InputData = messageData as Hex;
+      let l2TargetAddress = targetAddress;
+      let l2InputData = messageData;
 
       // Unwrap L2CrossChainAccount.forward(...) when the message targets a known forwarder.
       // This avoids false negatives where the forwarder enforces cross-domain auth that Seatbelt
@@ -170,7 +257,7 @@ export function parseOptimismL1L2Messages(
         try {
           const decodedForward = decodeFunctionData({
             abi: L2_CROSS_CHAIN_ACCOUNT_FORWARD_ABI,
-            data: messageData as Hex,
+            data: messageData,
           });
           if (decodedForward.functionName === 'forward') {
             const [forwardTarget, forwardData] = decodedForward.args;
@@ -193,7 +280,7 @@ export function parseOptimismL1L2Messages(
       };
 
       // Use both target address and calldata hash as key for deduplication
-      const key = `${targetAddress}-${messageData}-${destinationChainId}`;
+      const key = `${l2TargetAddress}-${l2InputData}-${destinationChainId}`;
       messagesByTargetAndCalldata.set(key, message);
 
       console.log(
