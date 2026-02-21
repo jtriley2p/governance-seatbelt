@@ -10,6 +10,20 @@ type ShareArtifactResponse = {
   viewerUrl: string | null;
 };
 
+function readErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const errorValue = Reflect.get(payload, 'error');
+  if (typeof errorValue !== 'string') {
+    return null;
+  }
+
+  const trimmed = errorValue.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 const LOCALHOST_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
 async function copyToClipboard(text: string): Promise<void> {
@@ -57,7 +71,8 @@ async function requestShareArtifact(): Promise<ShareArtifactResponse> {
   }
 
   if (!response.ok) {
-    throw new Error('Share link generation failed');
+    const responseErrorMessage = readErrorMessage(payload);
+    throw new Error(responseErrorMessage ?? 'Share link generation failed');
   }
 
   if (!payload || typeof payload !== 'object' || !('artifactUrl' in payload)) {

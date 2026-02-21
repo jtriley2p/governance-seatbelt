@@ -22,6 +22,11 @@ Share links should resolve to:
 
 - `<viewerUrl>?artifact=<artifactUrl>`
 
+Artifact URL policy:
+
+- Relay attempts to create a branded artifact alias: `https://a-<publishId>.publish.scopelift.co/...`
+- If alias creation fails, relay falls back to the immutable Vercel deployment URL
+
 ## Endpoints
 
 ### `GET /api/v1/health`
@@ -60,6 +65,12 @@ Success response (`201`):
 ```
 
 `viewerUrl` is included when `SEATBELT_VIEWER_URL` is configured on relay.
+
+Artifact alias prerequisites:
+
+- Attach `publish.scopelift.co` and `*.publish.scopelift.co` to the `seatbelt-publish` project
+- Configure DNS for those records in the domain provider
+- Relay token/org/project must have permission to create deployment aliases
 
 ## Failure model
 

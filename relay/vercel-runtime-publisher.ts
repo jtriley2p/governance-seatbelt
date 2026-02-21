@@ -25,7 +25,13 @@ type VercelPublishEnv = {
   orgId: string;
 };
 
+type CreatedDeployment = {
+  id: string;
+  deploymentUrl: string;
+};
+
 const VERCEL_API_BASE_URL = 'https://api.vercel.com';
+const PUBLISH_ALIAS_BASE_DOMAIN = 'publish.scopelift.co';
 
 function readNonEmptyEnv(
   env: Record<string, string | undefined>,
@@ -408,6 +414,11 @@ function summarizeErrorPayload(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function toPublishAliasHostname(publishId: string): string {
+  const normalized = publishId.trim().toLowerCase();
+  return `a-${normalized}.${PUBLISH_ALIAS_BASE_DOMAIN}`;
+}
+
 function buildDeploymentRequestBody(input: {
   projectId: string;
   publishLogEntry: RelayPublishLogEntry;
@@ -443,7 +454,7 @@ async function createDeployment(input: {
   artifactRaw: string;
   publishLogEntry: RelayPublishLogEntry;
   vercelEnv: VercelPublishEnv;
-}): Promise<string> {
+}): Promise<CreatedDeployment> {
   const url = `${VERCEL_API_BASE_URL}/v13/deployments?teamId=${encodeURIComponent(input.vercelEnv.orgId)}`;
 
   const response = await fetch(url, {
@@ -485,7 +496,57 @@ async function createDeployment(input: {
     throw new Error('Vercel deployment API response was missing deployment url.');
   }
 
-  return toDeploymentUrl(deploymentUrl);
+  const deploymentId =
+    readOptionalString(parsedBody, 'id') ?? readOptionalString(parsedBody, 'uid');
+  if (!deploymentId) {
+    throw new Error('Vercel deployment API response was missing deployment id.');
+  }
+
+  return {
+    id: deploymentId,
+    deploymentUrl: toDeploymentUrl(deploymentUrl),
+  };
+}
+
+async function createPublishAlias(input: {
+  deploymentId: string;
+  publishId: string;
+  vercelEnv: VercelPublishEnv;
+}): Promise<string> {
+  const aliasHostname = toPublishAliasHostname(input.publishId);
+  const url = `${VERCEL_API_BASE_URL}/v2/deployments/${encodeURIComponent(input.deploymentId)}/aliases?teamId=${encodeURIComponent(input.vercelEnv.orgId)}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${input.vercelEnv.token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      alias: aliasHostname,
+    }),
+  });
+
+  if (response.status === 409) {
+    return `https://${aliasHostname}`;
+  }
+
+  if (!response.ok) {
+    const responseText = await response.text();
+
+    let parsedBody: unknown;
+    try {
+      parsedBody = JSON.parse(responseText) as unknown;
+    } catch {
+      parsedBody = undefined;
+    }
+
+    throw new Error(
+      `Vercel alias API request failed with HTTP ${response.status}. ${summarizeErrorPayload(parsedBody)}`,
+    );
+  }
+
+  return `https://${aliasHostname}`;
 }
 
 export async function publishViaVercelApi(
@@ -493,15 +554,29 @@ export async function publishViaVercelApi(
 ): Promise<RelayPublisherResult> {
   const vercelEnv = readManagedVercelEnv(input.env);
 
-  const deploymentUrl = await createDeployment({
+  const deployment = await createDeployment({
     artifactRaw: input.artifactRaw,
     publishLogEntry: input.publishLogEntry,
     vercelEnv,
   });
 
+  let artifactBaseUrl = deployment.deploymentUrl;
+  try {
+    artifactBaseUrl = await createPublishAlias({
+      deploymentId: deployment.id,
+      publishId: input.publishLogEntry.publish_id,
+      vercelEnv,
+    });
+  } catch (error) {
+    console.warn(
+      `[relay] alias creation failed for publish_id=${input.publishLogEntry.publish_id}; falling back to deployment URL`,
+      error,
+    );
+  }
+
   return {
-    deploymentUrl,
-    artifactUrl: appendPathToUrl(deploymentUrl, 'simulation-results.json'),
-    metadataUrl: appendPathToUrl(deploymentUrl, 'publish-metadata.json'),
+    deploymentUrl: deployment.deploymentUrl,
+    artifactUrl: appendPathToUrl(artifactBaseUrl, 'simulation-results.json'),
+    metadataUrl: appendPathToUrl(artifactBaseUrl, 'publish-metadata.json'),
   };
 }
