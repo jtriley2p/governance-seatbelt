@@ -74,7 +74,9 @@ function findOptimismMessengerCalls(call: ExtendedCallTrace): ExtendedCallTrace[
 
   if (call?.calls && Array.isArray(call.calls) && call.calls.length > 0) {
     for (const subCall of call.calls) {
-      messengerCalls = messengerCalls.concat(findOptimismMessengerCalls(subCall as ExtendedCallTrace));
+      messengerCalls = messengerCalls.concat(
+        findOptimismMessengerCalls(subCall as ExtendedCallTrace),
+      );
     }
   }
 
@@ -94,14 +96,12 @@ function getChainIdFromMessenger(messengerAddress: string): string | null {
   return null;
 }
 
-function decodeSendMessageFromDecodedInput(call: ExtendedCallTrace):
-  | {
-      fromAddress: Address;
-      targetAddress: Address;
-      messageData: Hex;
-      minGasLimit: bigint;
-    }
-  | null {
+function decodeSendMessageFromDecodedInput(call: ExtendedCallTrace): {
+  fromAddress: Address;
+  targetAddress: Address;
+  messageData: Hex;
+  minGasLimit: bigint;
+} | null {
   if (call.function_name !== 'sendMessage' || !Array.isArray(call.decoded_input)) {
     return null;
   }
@@ -122,8 +122,7 @@ function decodeSendMessageFromDecodedInput(call: ExtendedCallTrace):
     return null;
   }
 
-  const fromCandidate =
-    typeof call.caller?.address === 'string' ? call.caller.address : call.from;
+  const fromCandidate = typeof call.caller?.address === 'string' ? call.caller.address : call.from;
   if (typeof fromCandidate !== 'string') {
     return null;
   }
