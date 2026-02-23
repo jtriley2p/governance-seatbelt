@@ -267,17 +267,6 @@ export function parseArbitrumL1L2Messages(
           console.log(`[Arbitrum Parser] Unhandled function: ${decodedInput.functionName}`);
       }
     } catch (error) {
-      // Skip calls that aren't ABI-encoded inbox functions (e.g. raw/internal calldata with 0x00000000)
-      const isUnknownSelector =
-        error &&
-        typeof error === 'object' &&
-        'shortMessage' in error &&
-        typeof (error as { shortMessage?: string }).shortMessage === 'string' &&
-        ((error as { shortMessage: string }).shortMessage.includes('not found on ABI') ||
-          (error as { shortMessage: string }).shortMessage.includes('Encoded function signature'));
-      if (isUnknownSelector) {
-        continue;
-      }
       console.error(
         '[Arbitrum Parser] Error decoding inbox call data:',
         error,
