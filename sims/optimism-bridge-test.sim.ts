@@ -1,53 +1,58 @@
-import { encodeAbiParameters } from 'viem';
+import { encodeFunctionData, parseAbi } from 'viem';
 import type { Address } from 'viem';
 import type { SimulationConfigNew } from '../types';
 
 /**
  * Test simulation for Optimism bridge functionality.
- * This simulation sends ETH from mainnet to both OP Mainnet and Base.
+ * This simulation sends messages from mainnet to both OP Mainnet and Base.
  */
 
 const L1_CROSS_DOMAIN_MESSENGER_OP: Address = '0x25ace71c97B33Cc4729CF772ae268934F7ab5fA1';
 const L1_CROSS_DOMAIN_MESSENGER_BASE: Address = '0x866E82a600A1414e583f7F13623F1aC5d58b0Afa';
 
 // Use the same L2 recipient as successful tx 0x9021641e61b6d20a78b2c6aaf6cb77a1629ad6f86d26e9d73453f59dcf39b655
-const L2_RECIPIENT_OP: Address = '0x4200000000000000000000000000000000000006'; // Same as successful tx
-const L2_RECIPIENT_BASE: Address = '0x4200000000000000000000000000000000000006'; // Use same for Base
+const L2_RECIPIENT_OP: Address = '0x4200000000000000000000000000000000000006';
+const L2_RECIPIENT_BASE: Address = '0x4200000000000000000000000000000000000006';
 
-// Use the exact same simple message pattern as successful tx 0x9021641e61b6d20a78b2c6aaf6cb77a1629ad6f86d26e9d73453f59dcf39b655
-// This is just deposit() function selector - 0xd0e30db0
+// This is deposit() function selector - 0xd0e30db0
 const testMessage = '0xd0e30db0' as const;
 
-// Based on successful tx 0x9021641e61b6d20a78b2c6aaf6cb77a1629ad6f86d26e9d73453f59dcf39b655
-// Optimism sendMessage calls use 0 ETH value - gas is paid differently than Arbitrum
-const l2GasPayment = 0n; // Optimism doesn't require ETH payment for sendMessage
+const l2GasPayment = 0n;
+const minGasLimit = 1000000;
 
-// Encode the sendMessage calls using the working pattern from OptimismExample.sol
-// Use abi.encode() pattern with string signature like the working example
+const crossDomainMessengerAbi = parseAbi([
+  'function sendMessage(address _target, bytes _message, uint32 _minGasLimit)',
+]);
+
+// Use full function calldata and empty timelock signature. This avoids relying on
+// dynamic string signature overrides in simulation state, and keeps destination traces
+// consistently decodable for cross-chain parsing.
 const call1 = {
   target: L1_CROSS_DOMAIN_MESSENGER_OP,
-  calldata: encodeAbiParameters(
-    [{ type: 'address' }, { type: 'bytes' }, { type: 'uint32' }],
-    [L2_RECIPIENT_OP, testMessage, 1000000], // Fixed: uint32 gas limit, not uint256
-  ),
+  calldata: encodeFunctionData({
+    abi: crossDomainMessengerAbi,
+    functionName: 'sendMessage',
+    args: [L2_RECIPIENT_OP, testMessage, minGasLimit],
+  }),
   value: l2GasPayment,
-  signature: 'sendMessage(address,bytes,uint32)', // Fixed: uint32 not uint256
+  signature: '',
 };
 
 const call2 = {
   target: L1_CROSS_DOMAIN_MESSENGER_BASE,
-  calldata: encodeAbiParameters(
-    [{ type: 'address' }, { type: 'bytes' }, { type: 'uint32' }],
-    [L2_RECIPIENT_BASE, testMessage, 1000000], // Fixed: uint32 gas limit, not uint256
-  ),
+  calldata: encodeFunctionData({
+    abi: crossDomainMessengerAbi,
+    functionName: 'sendMessage',
+    args: [L2_RECIPIENT_BASE, testMessage, minGasLimit],
+  }),
   value: l2GasPayment,
-  signature: 'sendMessage(address,bytes,uint32)', // Fixed: uint32 not uint256
+  signature: '',
 };
 
 export const config: SimulationConfigNew = {
   type: 'new',
   daoName: 'OptimismBridgeTest',
-  governorAddress: '0x408ED6354d4973f66138C91495F2f2FCbd8724C3', // Using Uniswap governor for testing
+  governorAddress: '0x408ED6354d4973f66138C91495F2f2FCbd8724C3',
   governorType: 'bravo',
   targets: [call1.target, call2.target],
   values: [call1.value, call2.value],

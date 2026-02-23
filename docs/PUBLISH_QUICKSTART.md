@@ -27,7 +27,7 @@ bun upload --publish
 On success, the relay returns publish URLs:
 
 - `deploymentUrl` — artifact deployment root (may be a publish landing page)
-- `artifactUrl` — published `simulation-results.json`
+- `artifactUrl` — published `simulation-results.json` (branded alias when available, deployment URL fallback)
 - `metadataUrl` — published `publish-metadata.json`
 - `viewerUrl` — canonical frontend viewer URL (when relay is configured with `SEATBELT_VIEWER_URL`)
 
