@@ -9,8 +9,8 @@ for better informed voting.
 ### 1. Setup
 
 ```bash
-# Install dependencies
-bun install
+# Install root + frontend dependencies
+bun run setup
 
 # Copy and configure environment variables
 cp .env.example .env
@@ -107,6 +107,12 @@ This repository also includes a frontend application that allows you to visualiz
 ### Running the Frontend
 
 To run the frontend with simulation results:
+
+0. Install dependencies (once per clone):
+
+   ```sh
+   bun run setup
+   ```
 
 1. Provide simulation results (choose one):
 

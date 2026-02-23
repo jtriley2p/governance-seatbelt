@@ -26,6 +26,10 @@ type CrossChainChainSummary = {
   }>;
 };
 
+function toFailureStatus(status: CrossChainMessagePreview['status']): 'failure' | 'skipped' {
+  return status === 'failure' ? 'failure' : 'skipped';
+}
+
 export function summarizeCrossChainMessages(messages: CrossChainMessagePreview[]): {
   total: number;
   successCount: number;
@@ -67,7 +71,7 @@ export function summarizeCrossChainMessages(messages: CrossChainMessagePreview[]
           .filter((m) => m.status !== 'success')
           .map(({ index, status, call, targetLabel, target, error }) => ({
             index,
-            status,
+            status: toFailureStatus(status),
             call,
             targetLabel,
             target,
