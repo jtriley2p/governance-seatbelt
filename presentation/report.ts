@@ -46,10 +46,15 @@ const CHAIN_NAMES: Record<number, string> = {
   42161: 'Arbitrum One',
   10: 'Optimism',
   8453: 'Base',
+  130: 'Unichain',
   1301: 'Unichain',
   57073: 'Ink',
   1868: 'Soneium',
   60808: 'BOB',
+  196: 'X Layer',
+  42220: 'Celo',
+  480: 'World Chain',
+  7777777: 'Zora',
 };
 
 function getChainName(chainId: number): string {

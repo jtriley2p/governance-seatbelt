@@ -19,6 +19,7 @@ import {
   toFunctionSelector,
 } from 'viem';
 import { ChainLogo } from './structured-report/ChainLogo';
+import { resolveChainName } from './structured-report/chain-name';
 
 type RiskTag = 'Upgrade' | 'Admin/Role' | 'Token Approval' | 'Token Transfer' | 'ETH Value';
 
@@ -936,11 +937,19 @@ function CrossChainCallsSection({
     return acc;
   }, {});
 
+  const sortedChainEntries = Object.entries(byChain).sort((a, b) => {
+    const aChainId = Number(a[0]);
+    const bChainId = Number(b[0]);
+    const aName = resolveChainName(aChainId, a[1][0]?.chainName);
+    const bName = resolveChainName(bChainId, b[1][0]?.chainName);
+    return aName.localeCompare(bName);
+  });
+
   return (
     <>
-      {Object.entries(byChain).map(([chainIdStr, chainMessages]) => {
+      {sortedChainEntries.map(([chainIdStr, chainMessages]) => {
         const chainId = Number(chainIdStr);
-        const chainName = chainMessages[0]?.chainName || `Chain ${chainId}`;
+        const chainName = resolveChainName(chainId, chainMessages[0]?.chainName);
         const explorerBaseUrl = chainMessages[0]?.blockExplorerBaseUrl || 'https://etherscan.io';
         const bridgeType = chainMessages[0]?.bridgeType;
 
@@ -964,7 +973,9 @@ function CrossChainCallsSection({
             <div className="flex items-center justify-between gap-2 pt-2 border-t border-border">
               <div className="flex items-center gap-2">
                 <ChainLogo chainId={chainId} size={20} />
-                <span className="font-medium text-sm">{chainName}</span>
+                <span className="font-medium text-sm" title={`Chain ID: ${chainId}`}>
+                  {chainName}
+                </span>
                 {bridgeType && (
                   <Badge variant="outline" className="text-[10px] px-1.5">
                     via {bridgeType}

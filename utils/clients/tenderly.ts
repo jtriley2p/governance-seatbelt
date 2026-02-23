@@ -11,6 +11,7 @@ import {
   zeroHash,
 } from 'viem';
 import type {
+  ExtractedCrossChainMessage,
   GovernorType,
   ProposalData,
   ProposalEvent,
@@ -839,6 +840,7 @@ const TENDERLY_DESTINATION_SUPPORTED_CHAIN_IDS = new Set([
   57073, // Ink
   60808, // Bob
   1868, // Soneium
+  196, // XLayer
   42220, // Celo
   480, // Worldchain
 ]);
@@ -860,17 +862,19 @@ export async function handleCrossChainSimulations(
   // 1. Parse source simulation for cross-chain messages
   console.log('[CrossChainHandler] Parsing source sim for messages...');
 
+  const getMessageKey = (message: ExtractedCrossChainMessage) =>
+    `${message.bridgeType}:${message.destinationChainId}:${message.l2TargetAddress.toLowerCase()}:${message.l2InputData.toLowerCase()}`;
+
   // Parse from call trace
   const arbMessages = parseArbitrumL1L2Messages(result.sim);
   const opMessages = parseOptimismL1L2Messages(result.sim);
-  let extractedMessages = [...arbMessages, ...opMessages];
+  const messageMap = new Map<string, ExtractedCrossChainMessage>();
+  for (const message of [...arbMessages, ...opMessages]) {
+    messageMap.set(getMessageKey(message), message);
+  }
 
-  // Fallback: if trace yielded nothing, extract from proposal targets/calldatas (e.g. sim 94)
-  if (
-    extractedMessages.length === 0 &&
-    result.proposal?.targets?.length &&
-    result.proposal?.calldatas?.length
-  ) {
+  // Always parse proposal calldata as a backfill path. Trace parsing can miss delegatecall/proxy frames.
+  if (result.proposal?.targets?.length && result.proposal?.calldatas?.length) {
     const l1Sender = result.deps?.timelock?.address;
     const arbFromProposal = parseArbitrumL1L2MessagesFromProposal(
       result.proposal.targets,
@@ -882,18 +886,44 @@ export async function handleCrossChainSimulations(
       result.proposal.calldatas,
       l1Sender,
     );
-    extractedMessages = [...arbFromProposal, ...opFromProposal];
-    if (extractedMessages.length > 0) {
+
+    let backfilledCount = 0;
+    for (const message of [...arbFromProposal, ...opFromProposal]) {
+      const key = getMessageKey(message);
+      if (!messageMap.has(key)) {
+        messageMap.set(key, message);
+        backfilledCount += 1;
+      }
+    }
+
+    if (backfilledCount > 0) {
       console.log(
-        `[CrossChainHandler] Using ${extractedMessages.length} message(s) from proposal (trace had none).`,
+        `[CrossChainHandler] Backfilled ${backfilledCount} message(s) from proposal calldata.`,
       );
     }
   }
+
+  const extractedMessages = Array.from(messageMap.values());
 
   if (extractedMessages.length === 0) {
     console.log('[CrossChainHandler] No cross-chain messages detected.');
     return result; // Return early with original source data
   }
+
+  const getDestinationFailureReason = (sim: TenderlySimulation): string => {
+    const traceReason = sim.transaction?.transaction_info?.call_trace?.error_reason;
+    if (traceReason && traceReason.trim().length > 0) return traceReason;
+
+    const stackReason = sim.transaction?.transaction_info?.stack_trace?.find(
+      (frame) =>
+        (typeof frame.error_reason === 'string' && frame.error_reason.trim().length > 0) ||
+        (typeof frame.error === 'string' && frame.error.trim().length > 0),
+    );
+    if (stackReason?.error_reason?.trim()) return stackReason.error_reason;
+    if (stackReason?.error?.trim()) return stackReason.error;
+
+    return 'Destination simulation failed (no detailed error returned by Tenderly).';
+  };
 
   // 2. If messages found, simulate them on destination chains
   console.log(
@@ -955,7 +985,7 @@ export async function handleCrossChainSimulations(
         console.error(
           `[CrossChainHandler] Destination sim FAILED for L2 target: ${message.l2TargetAddress}`,
         );
-        const errorMsg = destSim.transaction?.transaction_info?.call_trace?.error_reason;
+        const errorMsg = getDestinationFailureReason(destSim);
         return {
           chainId: destinationChainId,
           bridgeType: message.bridgeType,

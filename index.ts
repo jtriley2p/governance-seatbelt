@@ -28,7 +28,19 @@ import {
 } from './utils/contracts/governor';
 import { PROPOSAL_STATES } from './utils/contracts/governor-bravo';
 
-const L2_CHECK_SUPPORTED_CHAIN_IDS = new Set([10, 8453, 42161, 130, 57073, 1868, 60808]);
+const L2_CHECK_SUPPORTED_CHAIN_IDS = new Set([
+  10, // Optimism
+  8453, // Base
+  42161, // Arbitrum
+  130, // Unichain
+  57073, // Ink
+  1868, // Soneium
+  60808, // Bob
+  196, // X Layer
+  42220, // Celo
+  480, // World Chain
+  7777777, // Zora
+]);
 
 /**
  * @notice Run the complete simulation pipeline (source + cross-chain)
@@ -177,6 +189,60 @@ async function processSimulation(
     coverage.summary.skipped += l2Coverage.summary.skipped;
     coverage.summary.failed += l2Coverage.summary.failed;
     coverage.summary.inferredSkips += l2Coverage.summary.inferredSkips;
+  }
+
+  // Ensure every destination chain appears in coverage, even when checks did not run.
+  const coveredChainIds = new Set(Object.keys(destinationChecks).map((id) => Number(id)));
+  const simsByChain = new Map<
+    number,
+    Array<NonNullable<SimulationResult['destinationSimulations']>[number]>
+  >();
+  for (const destinationSim of destinationSimulations ?? []) {
+    const list = simsByChain.get(destinationSim.chainId) ?? [];
+    list.push(destinationSim);
+    simsByChain.set(destinationSim.chainId, list);
+  }
+
+  for (const [chainId, chainSims] of simsByChain.entries()) {
+    if (coveredChainIds.has(chainId)) continue;
+
+    let status: 'skipped' | 'failed' = 'skipped';
+    let skipReason: string | undefined;
+
+    const failures = chainSims.filter((sim) => sim.status === 'failure');
+    const skips = chainSims.filter((sim) => sim.status === 'skipped');
+    const successes = chainSims.filter((sim) => sim.status === 'success');
+
+    if (failures.length > 0) {
+      status = 'failed';
+      const reasons = failures.map((sim) => sim.error).filter(Boolean);
+      skipReason = reasons.length > 0 ? reasons.join(' | ') : 'Destination simulation failed.';
+    } else if (!L2_CHECK_SUPPORTED_CHAIN_IDS.has(chainId)) {
+      status = 'skipped';
+      skipReason = `L2 checks are not supported for chain ${chainId}.`;
+    } else if (skips.length > 0) {
+      status = 'skipped';
+      const reasons = skips.map((sim) => sim.error).filter(Boolean);
+      skipReason = reasons.length > 0 ? reasons.join(' | ') : 'Destination simulation skipped.';
+    } else if (successes.length > 0) {
+      status = 'failed';
+      skipReason =
+        'Destination simulation succeeded but no L2 checks were recorded for this chain.';
+    } else {
+      status = 'skipped';
+      skipReason = 'No destination simulation result was available for this chain.';
+    }
+
+    coverage.checks.push({
+      checkId: 'crossChainDestination',
+      checkName: 'Cross-chain destination simulation status',
+      status,
+      skipReason,
+      chainId,
+    });
+    coverage.summary.total += 1;
+    if (status === 'skipped') coverage.summary.skipped += 1;
+    else coverage.summary.failed += 1;
   }
 
   // Log coverage summary

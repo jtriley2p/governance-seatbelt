@@ -20,6 +20,7 @@ import { CrossChainPreview } from './structured-report/CrossChainPreview';
 import { SimulationPlaceholderBadge } from './structured-report/SimulationPlaceholderBadge';
 import { SimulationWarningBanner } from './structured-report/SimulationWarningBanner';
 import { StateChanges } from './structured-report/StateChanges';
+import { resolveChainName } from './structured-report/chain-name';
 import {
   buildAddressLink,
   buildBlockLink,
@@ -74,6 +75,54 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
         },
       ];
 
+  const sortedChainReports = useMemo(() => {
+    const primary = chainReports.find((chainReport) => chainReport.chainId === mainChainId);
+    const rest = chainReports
+      .filter((chainReport) => chainReport.chainId !== mainChainId)
+      .slice()
+      .sort((a, b) => a.chainName.localeCompare(b.chainName));
+
+    return primary ? [primary, ...rest] : rest;
+  }, [chainReports, mainChainId]);
+
+  const noCheckChainStatuses = useMemo(() => {
+    const coveredChainIds = new Set(sortedChainReports.map((chainReport) => chainReport.chainId));
+    const byChain = new Map<
+      number,
+      { status: 'skipped' | 'failed'; reason?: string; chainName: string }
+    >();
+
+    for (const entry of report.coverage?.checks ?? []) {
+      if (entry.checkId !== 'crossChainDestination' || entry.chainId == null) continue;
+      if (coveredChainIds.has(entry.chainId)) continue;
+      if (entry.status !== 'skipped' && entry.status !== 'failed') continue;
+
+      const existing = byChain.get(entry.chainId);
+      const next = {
+        status: entry.status,
+        reason: entry.skipReason,
+        chainName: resolveChainName(entry.chainId),
+      } as const;
+
+      // Prefer failed over skipped when multiple summary entries exist for a chain.
+      if (!existing || (existing.status === 'skipped' && next.status === 'failed')) {
+        byChain.set(entry.chainId, next);
+      }
+    }
+
+    const entries = Array.from(byChain.entries()).map(([chainId, value]) => ({
+      chainId,
+      ...value,
+    }));
+
+    const primary = entries.find((entry) => entry.chainId === mainChainId);
+    const rest = entries
+      .filter((entry) => entry.chainId !== mainChainId)
+      .sort((a, b) => a.chainName.localeCompare(b.chainName));
+
+    return primary ? [primary, ...rest] : rest;
+  }, [sortedChainReports, report.coverage?.checks, mainChainId]);
+
   return (
     <div className="w-full space-y-4">
       <DecisionHeader report={report} />
@@ -99,9 +148,9 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
         <TabsContent value="overview" className="mt-4 space-y-6">
           {/* Primary: Execution Summary - Coverage + Cross-Chain in a prominent grid */}
           {(report.coverage?.checks?.length || report.crossChain?.messages?.length) && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
               {report.coverage && report.coverage.checks.length > 0 && (
-                <section className="rounded-lg border-2 border-border bg-card p-4 sm:p-5">
+                <section className="rounded-lg border-2 border-border bg-card p-4 sm:p-5 self-start h-fit">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                       Check Coverage
@@ -277,7 +326,7 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
             />
           ) : null}
 
-          {chainReports.map((chainReport) => {
+          {sortedChainReports.map((chainReport) => {
             const isMainChain = chainReport.chainId === mainChainId;
             const effectiveMetadata = {
               ...report.metadata,
@@ -349,6 +398,48 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
               </section>
             );
           })}
+
+          {noCheckChainStatuses.map((chainStatus) => (
+            <section
+              key={`chain-checks-${chainStatus.chainId}`}
+              id={`chain-checks-${chainStatus.chainId}`}
+              className="rounded-lg border border-border/60 bg-card/50 p-4 sm:p-6 space-y-4"
+            >
+              <div className="flex items-center justify-between gap-4">
+                <h3 className="flex items-center gap-2 text-base sm:text-lg font-semibold">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="flex items-center gap-2 cursor-default">
+                        <ChainLogo chainId={chainStatus.chainId} size={24} />
+                        {chainStatus.chainName}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>Chain ID: {chainStatus.chainId}</TooltipContent>
+                  </Tooltip>
+                </h3>
+                <Badge
+                  variant="outline"
+                  className={
+                    chainStatus.status === 'failed'
+                      ? 'bg-red-100 text-red-800 border-red-300'
+                      : 'bg-slate-100 text-slate-700 border-slate-300'
+                  }
+                >
+                  {chainStatus.status === 'failed'
+                    ? 'Checks not run (sim failed)'
+                    : 'Checks skipped'}
+                </Badge>
+              </div>
+
+              <div className="flex items-center justify-center p-4 sm:p-6 text-muted-foreground bg-muted/50 rounded-lg text-sm">
+                <InfoIcon className="h-4 w-4 mr-2 shrink-0" />
+                <span>
+                  {chainStatus.reason ||
+                    'No checks were run for this destination chain in this simulation.'}
+                </span>
+              </div>
+            </section>
+          ))}
         </TabsContent>
 
         <TabsContent value="calls" className="mt-4 space-y-4">
@@ -356,7 +447,7 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
         </TabsContent>
 
         <TabsContent value="state-changes" className="mt-4 space-y-4">
-          {chainReports.map((chainReport) => {
+          {sortedChainReports.map((chainReport) => {
             const isMainChain = chainReport.chainId === mainChainId;
             const effectiveMetadata = {
               ...report.metadata,

@@ -1,4 +1,5 @@
 import type { CrossChainMessagePreview } from '@/hooks/use-simulation-results';
+import { resolveChainName } from './chain-name';
 
 export function formatCrossChainCall(message: CrossChainMessagePreview): string {
   if (message.call?.signature) return message.call.signature;
@@ -17,9 +18,11 @@ type CrossChainChainSummary = {
   failureCount: number;
   failures: Array<{
     index: number;
+    status: 'failure' | 'skipped';
     call: string;
     targetLabel?: string;
     target?: string;
+    error?: string;
   }>;
 };
 
@@ -37,9 +40,8 @@ export function summarizeCrossChainMessages(messages: CrossChainMessagePreview[]
   }
 
   const chains: CrossChainChainSummary[] = Array.from(byChain.entries())
-    .sort(([a], [b]) => a - b)
     .map(([chainId, chainMessages]) => {
-      const chainName = chainMessages[0]?.chainName || `Chain ${chainId}`;
+      const chainName = resolveChainName(chainId, chainMessages[0]?.chainName);
       const explorerBaseUrl = chainMessages[0]?.blockExplorerBaseUrl || 'https://etherscan.io';
       const bridgeType = chainMessages[0]?.bridgeType;
       const successCount = chainMessages.filter((m) => m.status === 'success').length;
@@ -60,11 +62,20 @@ export function summarizeCrossChainMessages(messages: CrossChainMessagePreview[]
             targetLabel: m.targetLabel,
             target: m.l2TargetAddress,
             status: m.status,
+            error: m.error,
           }))
-          .filter((m) => m.status === 'failure')
-          .map(({ index, call, targetLabel, target }) => ({ index, call, targetLabel, target })),
+          .filter((m) => m.status !== 'success')
+          .map(({ index, status, call, targetLabel, target, error }) => ({
+            index,
+            status,
+            call,
+            targetLabel,
+            target,
+            error,
+          })),
       };
-    });
+    })
+    .sort((a, b) => a.chainName.localeCompare(b.chainName));
 
   const total = chains.reduce((acc, c) => acc + c.total, 0);
   const successCount = chains.reduce((acc, c) => acc + c.successCount, 0);

@@ -63,7 +63,7 @@ export function CrossChainChecksSummary({
               >
                 <div className="flex items-center gap-2 text-sm font-medium">
                   <ChainLogo chainId={chain.chainId} size={18} />
-                  {chain.chainName}
+                  <span title={`Chain ID: ${chain.chainId}`}>{chain.chainName}</span>
                   <span className="text-xs text-muted-foreground opacity-0 group-hover/chain:opacity-100 transition-opacity">
                     ↓
                   </span>
@@ -88,7 +88,7 @@ export function CrossChainChecksSummary({
               <div className="p-3 flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2 text-sm font-medium">
                   <ChainLogo chainId={chain.chainId} size={18} />
-                  {chain.chainName}
+                  <span title={`Chain ID: ${chain.chainId}`}>{chain.chainName}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   {chain.bridgeType ? (
@@ -115,7 +115,9 @@ export function CrossChainChecksSummary({
                     key={`${chain.chainId}-${m.index}`}
                     className="flex items-center gap-2 flex-wrap"
                   >
-                    <span className="text-red-600 font-medium">Message {m.index + 1} failed:</span>
+                    <span className="text-red-600 font-medium">
+                      Message {m.index + 1} {m.status === 'skipped' ? 'skipped' : 'failed'}:
+                    </span>
                     <code className="font-mono bg-muted-foreground/10 px-1 py-0.5 rounded">
                       {m.call}
                     </code>
@@ -132,6 +134,7 @@ export function CrossChainChecksSummary({
                         <ExternalLinkIcon className="h-3 w-3 ml-1" />
                       </a>
                     ) : null}
+                    {m.error ? <span className="text-red-600">{m.error}</span> : null}
                   </div>
                 ))}
               </div>
