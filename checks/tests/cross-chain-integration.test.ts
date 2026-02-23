@@ -153,13 +153,7 @@ describe('Cross-Chain Integration Tests', () => {
         // Should have simulations for both OP and Base
         expect(crossChainResult.destinationSimulations).toBeDefined();
         if (crossChainResult.destinationSimulations) {
-          if (crossChainResult.destinationSimulations.length === 0) {
-            // External API/data sources can intermittently yield no destination
-            // simulations even when the source simulation itself is successful.
-            // In that case, this test should not fail on strict chain expectations.
-            expect(Array.isArray(crossChainResult.destinationSimulations)).toBe(true);
-            return;
-          }
+          expect(crossChainResult.destinationSimulations.length).toBeGreaterThan(0);
 
           // Check that we have both chain IDs
           const chainIds = crossChainResult.destinationSimulations.map((sim) => sim.chainId);
@@ -286,7 +280,7 @@ describe('Cross-Chain Integration Tests', () => {
 
       // Should handle the scenario gracefully
       expect(crossChainResult).toBeDefined();
-      expect(Array.isArray(crossChainResult.destinationSimulations)).toBe(true);
+      expect(crossChainResult.destinationSimulations).toEqual([]);
     });
   });
 
