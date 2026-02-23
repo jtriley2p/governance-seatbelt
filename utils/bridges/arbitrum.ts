@@ -28,14 +28,24 @@ const ARBITRUM_HANDLED_SELECTORS = new Set([
   toFunctionSelector(
     'function uniswapCreateRetryableTicket(address,uint256,uint256,address,address,uint256,uint256,bytes)',
   ).toLowerCase(),
-  toFunctionSelector('function sendL1FundedContractTransaction(uint256,uint256,address,bytes)').toLowerCase(),
-  toFunctionSelector('function sendL1FundedUnsignedTransaction(uint256,uint256,address,bytes)').toLowerCase(),
+  toFunctionSelector(
+    'function sendL1FundedContractTransaction(uint256,uint256,address,bytes)',
+  ).toLowerCase(),
+  toFunctionSelector(
+    'function sendL1FundedUnsignedTransaction(uint256,uint256,address,bytes)',
+  ).toLowerCase(),
   toFunctionSelector(
     'function sendL1FundedUnsignedTransactionToFork(uint256,uint256,address,bytes)',
   ).toLowerCase(),
-  toFunctionSelector('function sendContractTransaction(uint256,uint256,address,uint256,bytes)').toLowerCase(),
-  toFunctionSelector('function sendUnsignedTransaction(uint256,uint256,address,uint256,bytes)').toLowerCase(),
-  toFunctionSelector('function sendUnsignedTransactionToFork(uint256,uint256,address,uint256,bytes)').toLowerCase(),
+  toFunctionSelector(
+    'function sendContractTransaction(uint256,uint256,address,uint256,bytes)',
+  ).toLowerCase(),
+  toFunctionSelector(
+    'function sendUnsignedTransaction(uint256,uint256,address,uint256,bytes)',
+  ).toLowerCase(),
+  toFunctionSelector(
+    'function sendUnsignedTransactionToFork(uint256,uint256,address,uint256,bytes)',
+  ).toLowerCase(),
   toFunctionSelector('function sendL2Message(bytes)').toLowerCase(),
   toFunctionSelector('function sendL2MessageFromOrigin(bytes)').toLowerCase(),
 ]);

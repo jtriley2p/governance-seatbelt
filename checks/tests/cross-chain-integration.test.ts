@@ -241,9 +241,6 @@ describe('Cross-Chain Integration Tests', () => {
     });
 
     test('should handle network failures during cross-chain simulation', async () => {
-      // Import a working config
-      const { config } = await import('../../sims/arb-distro.sim.ts');
-
       // Mock a network failure scenario by trying to run cross-chain with minimal data
       const partialSourceResult = {
         sim: {
@@ -259,10 +256,10 @@ describe('Cross-Chain Integration Tests', () => {
         proposal: {
           id: 999n,
           proposer: '0x0000000000000000000000000000000000000000',
-          targets: config.targets,
-          values: config.values,
-          signatures: config.signatures,
-          calldatas: config.calldatas,
+          targets: [],
+          values: [],
+          signatures: [],
+          calldatas: [],
           startBlock: 1000n,
           endBlock: 2000n,
           description: 'Test proposal',
