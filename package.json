@@ -5,6 +5,9 @@
   "description": "Make governance safer",
   "scripts": {
     "compile": "hardhat compile",
+    "install:frontend": "cd frontend && bun install --frozen-lockfile",
+    "install:all": "bun install --frozen-lockfile && bun run install:frontend",
+    "setup": "bun run install:all",
     "start": "bun run index.ts",
     "typecheck": "tsc --noEmit",
     "lint": "bun run typecheck && biome check .",
