@@ -63,6 +63,10 @@ const L2_CROSS_CHAIN_ACCOUNT_FORWARD_ABI = parseAbi([
   'function forward(address target, bytes data)',
 ]);
 
+const CROSS_CHAIN_FORWARD_SELECTOR = toFunctionSelector(
+  'function forward(address target, bytes data)',
+);
+
 // Constants for validation
 const VALIDATION_CONSTANTS = {
   MIN_SEND_MESSAGE_INPUT_LENGTH: 138, // Minimum length for valid sendMessage call
@@ -113,25 +117,26 @@ function findOptimismMessengerCalls(call: ExtendedCallTrace): ExtendedCallTrace[
   return messengerCalls;
 }
 
-function findOptimismCalls(call: CallTrace): { portalCalls: CallTrace[] } {
-  const portalCalls: CallTrace[] = [];
+function findOptimismCalls(call: CallTrace): { portalCalls: ExtendedCallTrace[] } {
+  const portalCalls: ExtendedCallTrace[] = [];
 
-  const visit = (node: CallTrace) => {
-    if (node?.to) {
-      const normalizedTo = node.to.toLowerCase();
-      if (PORTAL_ADDRESSES.has(normalizedTo)) {
-        portalCalls.push(node);
-      }
+  const visit = (node: ExtendedCallTrace) => {
+    const portalAddress = [node.to, node.address]
+      .filter((value): value is string => typeof value === 'string')
+      .find((value) => PORTAL_ADDRESSES.has(value.toLowerCase()));
+
+    if (portalAddress) {
+      portalCalls.push(node);
     }
 
     if (node?.calls && Array.isArray(node.calls) && node.calls.length > 0) {
       for (const subCall of node.calls) {
-        visit(subCall);
+        visit(subCall as ExtendedCallTrace);
       }
     }
   };
 
-  visit(call);
+  visit(call as ExtendedCallTrace);
   return { portalCalls };
 }
 
@@ -203,6 +208,73 @@ function decodeSendMessageFromDecodedInput(call: ExtendedCallTrace): {
   };
 }
 
+function decodeDepositTransactionFromDecodedInput(call: ExtendedCallTrace): {
+  fromAddress: Address;
+  targetAddress: Address;
+  value: bigint;
+  isCreation: boolean;
+  messageData: Hex;
+} | null {
+  if (call.function_name !== 'depositTransaction' || !Array.isArray(call.decoded_input)) {
+    return null;
+  }
+
+  const argsByName = new Map<string, unknown>();
+  for (const arg of call.decoded_input) {
+    const name = arg.soltype?.name;
+    if (typeof name === 'string') {
+      argsByName.set(name, arg.value);
+    }
+  }
+
+  const targetValue = argsByName.get('_to') ?? call.decoded_input[0]?.value;
+  const valueRaw = argsByName.get('_value') ?? call.decoded_input[1]?.value;
+  const isCreationRaw = argsByName.get('_isCreation') ?? call.decoded_input[3]?.value;
+  const messageValue = argsByName.get('_data') ?? call.decoded_input[4]?.value;
+
+  if (typeof targetValue !== 'string' || typeof messageValue !== 'string') {
+    return null;
+  }
+
+  const fromCandidate =
+    typeof call.caller?.address === 'string'
+      ? call.caller.address
+      : typeof call.from === 'string'
+        ? call.from
+        : undefined;
+  if (!fromCandidate) {
+    return null;
+  }
+
+  const parsedValue =
+    typeof valueRaw === 'bigint'
+      ? valueRaw
+      : typeof valueRaw === 'number'
+        ? BigInt(valueRaw)
+        : typeof valueRaw === 'string'
+          ? BigInt(valueRaw)
+          : 0n;
+
+  const isCreation =
+    typeof isCreationRaw === 'boolean'
+      ? isCreationRaw
+      : typeof isCreationRaw === 'number'
+        ? isCreationRaw !== 0
+        : typeof isCreationRaw === 'bigint'
+          ? isCreationRaw !== 0n
+          : typeof isCreationRaw === 'string'
+            ? isCreationRaw !== '0'
+            : false;
+
+  return {
+    fromAddress: getAddress(fromCandidate),
+    targetAddress: getAddress(targetValue),
+    value: parsedValue,
+    isCreation,
+    messageData: messageValue as Hex,
+  };
+}
+
 function calculateL2Alias(l1Address: Address): Address {
   const l1AddressBigInt = hexToBigInt(l1Address);
   const l2AliasBigInt = l1AddressBigInt + OPTIMISM_ALIAS_OFFSET;
@@ -233,7 +305,13 @@ function buildMessageFromDecodedPayload(input: {
   }
 
   const expectedForwarder = L2_CROSS_CHAIN_ACCOUNTS[input.destinationChainId];
-  if (expectedForwarder && getAddress(input.targetAddress) === getAddress(expectedForwarder)) {
+  const shouldAttemptForwardDecode =
+    input.messageData.length >= 10 &&
+    slice(input.messageData, 0, 4) === CROSS_CHAIN_FORWARD_SELECTOR &&
+    (!expectedForwarder || getAddress(input.targetAddress) === getAddress(expectedForwarder));
+
+  // Decode forwarded payloads so we simulate and label the final target contract call.
+  if (shouldAttemptForwardDecode) {
     try {
       const decodedForward = decodeFunctionData({
         abi: L2_CROSS_CHAIN_ACCOUNT_FORWARD_ABI,
@@ -241,12 +319,12 @@ function buildMessageFromDecodedPayload(input: {
       });
       if (decodedForward.functionName === 'forward') {
         const [forwardTarget, forwardData] = decodedForward.args;
-        l2FromAddress = getAddress(expectedForwarder);
+        l2FromAddress = getAddress(input.targetAddress);
         l2TargetAddress = getAddress(forwardTarget);
         l2InputData = forwardData as Hex;
       }
     } catch {
-      // If decoding fails, fall back to simulating the direct call to the forwarder.
+      // Fall back to simulating the direct call to the forwarder.
     }
   }
 
@@ -353,45 +431,67 @@ export function parseOptimismL1L2Messages(
   }
 
   for (const call of portalCalls) {
-    if (!call?.input || !call.from || !call.to) continue;
+    const portalAddress = [call.to, call.address]
+      .filter((value): value is string => typeof value === 'string')
+      .find((value) => PORTAL_ADDRESSES.has(value.toLowerCase()));
+    if (!portalAddress) continue;
 
-    if (
-      call.input === '0x' ||
-      call.input.length < VALIDATION_CONSTANTS.MIN_DEPOSIT_TRANSACTION_INPUT_LENGTH
-    ) {
-      continue;
-    }
-
-    if (slice(call.input as Hex, 0, 4) !== DEPOSIT_TRANSACTION_SELECTOR) {
-      continue;
-    }
-
-    const destinationChainId = getChainIdFromAddress(call.to, OPTIMISM_PORTALS);
+    const destinationChainId = getChainIdFromAddress(portalAddress, OPTIMISM_PORTALS);
     if (!destinationChainId) {
       continue;
     }
 
     try {
-      const { functionName, args } = decodeFunctionData({
-        abi: DEPOSIT_TRANSACTION_ABI,
-        data: call.input as Hex,
-      });
+      let decodedDeposit = decodeDepositTransactionFromDecodedInput(call);
 
-      if (functionName !== 'depositTransaction') {
-        continue;
+      if (!decodedDeposit) {
+        if (
+          !call?.input ||
+          call.input === '0x' ||
+          call.input.length < VALIDATION_CONSTANTS.MIN_DEPOSIT_TRANSACTION_INPUT_LENGTH
+        ) {
+          continue;
+        }
+        if (slice(call.input as Hex, 0, 4) !== DEPOSIT_TRANSACTION_SELECTOR) {
+          continue;
+        }
+
+        const { functionName, args } = decodeFunctionData({
+          abi: DEPOSIT_TRANSACTION_ABI,
+          data: call.input as Hex,
+        });
+
+        if (functionName !== 'depositTransaction') {
+          continue;
+        }
+
+        const [targetAddress, value, _gasLimit, isCreation, messageData] = args;
+        const fromCandidate =
+          typeof call.from === 'string'
+            ? call.from
+            : typeof call.caller?.address === 'string'
+              ? call.caller.address
+              : undefined;
+        if (!fromCandidate) {
+          continue;
+        }
+        decodedDeposit = {
+          fromAddress: getAddress(fromCandidate),
+          targetAddress: getAddress(targetAddress),
+          value: BigInt(value),
+          isCreation: Boolean(isCreation),
+          messageData: messageData as Hex,
+        };
       }
 
-      const [targetAddress, value, _gasLimit, isCreation, messageData] = args;
-      if (isCreation) {
-        continue;
-      }
+      if (decodedDeposit.isCreation) continue;
 
       const message = buildMessageFromDecodedPayload({
         destinationChainId,
-        targetAddress,
-        messageData: messageData as Hex,
-        l2Value: value.toString(),
-        l2FromAddress: calculateL2Alias(getAddress(call.from)),
+        targetAddress: decodedDeposit.targetAddress,
+        messageData: decodedDeposit.messageData,
+        l2Value: decodedDeposit.value.toString(),
+        l2FromAddress: calculateL2Alias(decodedDeposit.fromAddress),
       });
 
       if (!message) continue;

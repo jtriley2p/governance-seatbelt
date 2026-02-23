@@ -5,6 +5,7 @@ import type { CrossChainMessagePreview } from '@/hooks/use-simulation-results';
 import { ExternalLinkIcon } from 'lucide-react';
 import { useMemo } from 'react';
 import { ChainLogo } from './ChainLogo';
+import { resolveChainName } from './chain-name';
 import { formatCrossChainCall } from './cross-chain';
 import { buildAddressLinkForExplorer } from './explorer';
 
@@ -16,13 +17,17 @@ export function CrossChainPreview({ messages }: { messages: CrossChainMessagePre
       list.push(msg);
       byChain.set(msg.chainId, list);
     }
-    return Array.from(byChain.entries()).sort(([a], [b]) => a - b);
+    return Array.from(byChain.entries()).sort((a, b) => {
+      const aName = resolveChainName(a[0], a[1][0]?.chainName);
+      const bName = resolveChainName(b[0], b[1][0]?.chainName);
+      return aName.localeCompare(bName);
+    });
   }, [messages]);
 
   return (
     <div className="space-y-3">
       {groups.map(([chainId, chainMessages]) => {
-        const chainName = chainMessages[0]?.chainName || `Chain ${chainId}`;
+        const chainName = resolveChainName(chainId, chainMessages[0]?.chainName);
         const explorerBaseUrl = chainMessages[0]?.blockExplorerBaseUrl || 'https://etherscan.io';
         const bridgeType = chainMessages[0]?.bridgeType;
 
@@ -31,7 +36,7 @@ export function CrossChainPreview({ messages }: { messages: CrossChainMessagePre
             <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <ChainLogo chainId={chainId} size={16} />
-                {chainName}
+                <span title={`Chain ID: ${chainId}`}>{chainName}</span>
               </div>
               {bridgeType ? (
                 <Badge variant="outline" className="text-[10px] h-5 px-1.5">

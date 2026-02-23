@@ -6,6 +6,7 @@ import type {
   StructuredSimulationReport,
 } from '@/hooks/use-simulation-results';
 import { ChainLogo } from './ChainLogo';
+import { resolveChainName } from './chain-name';
 
 type CheckOutcome = 'passed' | 'warning' | 'failed' | 'not_applicable' | 'not_run';
 
@@ -48,10 +49,19 @@ export function CoverageSummary({ report, onNavigateToChecks }: CoverageSummaryP
     chainNames.set(report.metadata.chainId, report.metadata.chainName);
   }
 
+  const primaryChainId = report.metadata.chainId ?? 1;
   const chainEntries = Object.entries(coverageByChain).sort(([a], [b]) => {
     if (a === 'unknown') return 1;
     if (b === 'unknown') return -1;
-    return Number(a) - Number(b);
+
+    const aNum = Number(a);
+    const bNum = Number(b);
+    if (aNum === primaryChainId) return -1;
+    if (bNum === primaryChainId) return 1;
+
+    const aLabel = chainNames.get(aNum) ?? resolveChainName(aNum);
+    const bLabel = chainNames.get(bNum) ?? resolveChainName(bNum);
+    return aLabel.localeCompare(bLabel);
   });
 
   const summarizeCoverage = (entries: CheckCoverage[]) => {
@@ -95,13 +105,18 @@ export function CoverageSummary({ report, onNavigateToChecks }: CoverageSummaryP
         const stats = summarizeCoverage(entries);
         const chainIdNum = chainId !== 'unknown' ? Number(chainId) : null;
         const chainName = chainIdNum ? chainNames.get(chainIdNum) : null;
-        const chainLabel = chainName || (chainId === 'unknown' ? 'Unknown' : `Chain ${chainId}`);
+        const chainLabel =
+          chainId === 'unknown'
+            ? 'Unknown'
+            : chainIdNum
+              ? (chainName ?? resolveChainName(chainIdNum))
+              : `Chain ${chainId}`;
 
         return (
           <div key={chainId} className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-sm font-medium">
               {chainIdNum && <ChainLogo chainId={chainIdNum} size={16} />}
-              {chainLabel}
+              <span title={chainIdNum ? `Chain ID: ${chainIdNum}` : undefined}>{chainLabel}</span>
             </div>
             <StatsDisplay stats={stats} />
           </div>
