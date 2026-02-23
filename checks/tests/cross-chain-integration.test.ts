@@ -240,7 +240,7 @@ describe('Cross-Chain Integration Tests', () => {
       }
     });
 
-    test('should handle network failures during cross-chain simulation', async () => {
+    test('should return no destination simulations when no cross-chain messages are present', async () => {
       // Mock a network failure scenario by trying to run cross-chain with minimal data
       const partialSourceResult = {
         sim: {
@@ -275,9 +275,10 @@ describe('Cross-Chain Integration Tests', () => {
         partialSourceResult as unknown as SimulationResult,
       );
 
-      // Should handle the scenario gracefully
+      // With no call-trace bridge calls and no proposal calldata, no destination sims should be produced.
       expect(crossChainResult).toBeDefined();
       expect(crossChainResult.destinationSimulations).toEqual([]);
+      expect(crossChainResult.crossChainFailure).toBe(false);
     });
   });
 
