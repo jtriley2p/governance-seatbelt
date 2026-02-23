@@ -1,4 +1,12 @@
-import { type Address, type Hex, decodeFunctionData, getAddress, hexToBigInt, toHex } from 'viem';
+import {
+  type Address,
+  type Hex,
+  decodeFunctionData,
+  getAddress,
+  hexToBigInt,
+  toFunctionSelector,
+  toHex,
+} from 'viem';
 import type { CallTrace, TenderlySimulation } from '../../types.d';
 import type { ExtractedCrossChainMessage } from '../../types.d';
 // Assuming ABI is available, similar to sims/arb-grant.sim.ts
@@ -7,6 +15,30 @@ import ArbitrumDelayedInboxAbi from '../abis/ArbitrumDelayedInboxAbi.json' asser
 const ARBITRUM_DELAYED_INBOX: Address = '0x4Dbd4fc535Ac27206064B68FfCf827b0A60BAB3f';
 const ARBITRUM_CHAIN_ID = '42161';
 const ARB_ALIAS_OFFSET = BigInt('0x1111000000000000000000000000000000001111');
+const ARBITRUM_HANDLED_SELECTORS = new Set([
+  toFunctionSelector(
+    'function createRetryableTicket(address,uint256,uint256,address,address,uint256,uint256,bytes)',
+  ).toLowerCase(),
+  toFunctionSelector(
+    'function createRetryableTicketNoRefundAliasRewrite(address,uint256,uint256,address,address,uint256,uint256,bytes)',
+  ).toLowerCase(),
+  toFunctionSelector(
+    'function unsafeCreateRetryableTicket(address,uint256,uint256,address,address,uint256,uint256,bytes)',
+  ).toLowerCase(),
+  toFunctionSelector(
+    'function uniswapCreateRetryableTicket(address,uint256,uint256,address,address,uint256,uint256,bytes)',
+  ).toLowerCase(),
+  toFunctionSelector('function sendL1FundedContractTransaction(uint256,uint256,address,bytes)').toLowerCase(),
+  toFunctionSelector('function sendL1FundedUnsignedTransaction(uint256,uint256,address,bytes)').toLowerCase(),
+  toFunctionSelector(
+    'function sendL1FundedUnsignedTransactionToFork(uint256,uint256,address,bytes)',
+  ).toLowerCase(),
+  toFunctionSelector('function sendContractTransaction(uint256,uint256,address,uint256,bytes)').toLowerCase(),
+  toFunctionSelector('function sendUnsignedTransaction(uint256,uint256,address,uint256,bytes)').toLowerCase(),
+  toFunctionSelector('function sendUnsignedTransactionToFork(uint256,uint256,address,uint256,bytes)').toLowerCase(),
+  toFunctionSelector('function sendL2Message(bytes)').toLowerCase(),
+  toFunctionSelector('function sendL2MessageFromOrigin(bytes)').toLowerCase(),
+]);
 
 /**
  * Calculates the L2 alias for a given L1 address.
@@ -55,6 +87,7 @@ export function parseArbitrumL1L2Messages(
 ): ExtractedCrossChainMessage[] {
   // Map to store messages by target address and calldata hash
   const messagesByTargetAndCalldata = new Map<string, ExtractedCrossChainMessage>();
+  const unknownSelectorCounts = new Map<string, number>();
 
   // Handle null or undefined transaction info gracefully
   if (!sourceSim?.transaction?.transaction_info?.call_trace) {
@@ -70,6 +103,15 @@ export function parseArbitrumL1L2Messages(
     // Skip empty or invalid calldata
     if (call.input === '0x' || call.input.length < 10) {
       console.log(`[Arbitrum Parser] Skipping call with invalid input: ${call.input}`);
+      continue;
+    }
+    const selector = call.input.slice(0, 10).toLowerCase();
+    if (selector === '0x00000000') {
+      console.log('[Arbitrum Parser] Skipping raw/internal calldata with selector 0x00000000');
+      continue;
+    }
+    if (!ARBITRUM_HANDLED_SELECTORS.has(selector)) {
+      unknownSelectorCounts.set(selector, (unknownSelectorCounts.get(selector) || 0) + 1);
       continue;
     }
 
@@ -243,6 +285,15 @@ export function parseArbitrumL1L2Messages(
         call.input,
       );
     }
+  }
+
+  if (unknownSelectorCounts.size > 0) {
+    const selectorSummary = Array.from(unknownSelectorCounts.entries())
+      .map(([selector, count]) => `${selector} (${count})`)
+      .join(', ');
+    console.warn(
+      `[Arbitrum Parser] Encountered unsupported non-zero inbox selectors: ${selectorSummary}`,
+    );
   }
 
   const extractedMessages = Array.from(messagesByTargetAndCalldata.values());
