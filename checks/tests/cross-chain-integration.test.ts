@@ -240,10 +240,7 @@ describe('Cross-Chain Integration Tests', () => {
       }
     });
 
-    test('should handle network failures during cross-chain simulation', async () => {
-      // Import a working config
-      const { config } = await import('../../sims/arb-distro.sim.ts');
-
+    test('should return no destination simulations when no cross-chain messages are present', async () => {
       // Mock a network failure scenario by trying to run cross-chain with minimal data
       const partialSourceResult = {
         sim: {
@@ -259,10 +256,10 @@ describe('Cross-Chain Integration Tests', () => {
         proposal: {
           id: 999n,
           proposer: '0x0000000000000000000000000000000000000000',
-          targets: config.targets,
-          values: config.values,
-          signatures: config.signatures,
-          calldatas: config.calldatas,
+          targets: [],
+          values: [],
+          signatures: [],
+          calldatas: [],
           startBlock: 1000n,
           endBlock: 2000n,
           description: 'Test proposal',
@@ -278,9 +275,10 @@ describe('Cross-Chain Integration Tests', () => {
         partialSourceResult as unknown as SimulationResult,
       );
 
-      // Should handle the scenario gracefully
+      // With no call-trace bridge calls and no proposal calldata, no destination sims should be produced.
       expect(crossChainResult).toBeDefined();
       expect(crossChainResult.destinationSimulations).toEqual([]);
+      expect(crossChainResult.crossChainFailure).toBe(false);
     });
   });
 
