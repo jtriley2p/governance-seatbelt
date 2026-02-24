@@ -34,6 +34,7 @@ import type {
 } from '../types';
 import { BlockExplorerFactory } from '../utils/clients/block-explorers/factory';
 import { getChainConfig, publicClient } from '../utils/clients/client';
+import { lookupFunctionSignatureBySelector } from '../utils/clients/function-signature-registry';
 import { DEFAULT_SIMULATION_ADDRESS, getContractName } from '../utils/clients/tenderly';
 import { formatProposalId } from '../utils/contracts/governor';
 import { extractAddressesFromReport, resolveLabelsForAddresses } from '../utils/labels';
@@ -145,19 +146,24 @@ async function decodeContractCall(
   if (knownSignature) return { selector, signature: knownSignature };
 
   const abi = await fetchContractAbiCached(target, chainId);
-  if (!abi) return { selector };
-
   let signature: string | undefined;
-  for (const item of abi) {
-    if (item.type !== 'function') continue;
-    try {
-      if (toFunctionSelector(item) === selector) {
-        signature = formatAbiFunctionSignature(item);
-        break;
+  if (abi) {
+    for (const item of abi) {
+      if (item.type !== 'function') continue;
+      try {
+        if (toFunctionSelector(item) === selector) {
+          signature = formatAbiFunctionSignature(item);
+          break;
+        }
+      } catch {
+        // Ignore malformed ABI entries.
       }
-    } catch {
-      // Ignore malformed ABI entries.
     }
+  }
+
+  if (!signature) {
+    const fallbackSignature = await lookupFunctionSignatureBySelector(selector);
+    if (fallbackSignature) signature = fallbackSignature;
   }
 
   return { selector, signature };
