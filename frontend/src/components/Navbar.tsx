@@ -118,9 +118,36 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center gap-8">
-            <Link href={reportHref} className="flex items-center gap-2">
-              <h1 className="text-xl font-semibold">Seatbelt</h1>
-            </Link>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:gap-3">
+              <Link href={reportHref} className="flex items-center gap-2">
+                <h1 className="text-xl font-semibold">Seatbelt</h1>
+              </Link>
+              <div className="sm:hidden text-[10px] leading-none text-muted-foreground">
+                Maintained by{' '}
+                <a
+                  href="https://scopelift.co"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline-offset-2 hover:underline"
+                >
+                  ScopeLift
+                </a>
+              </div>
+              <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
+                <span aria-hidden="true">|</span>
+                <span>
+                  Maintained by{' '}
+                  <a
+                    href="https://scopelift.co"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline-offset-2 hover:underline"
+                  >
+                    ScopeLift
+                  </a>
+                </span>
+              </div>
+            </div>
 
             <div className="hidden md:flex items-center gap-1">
               <NavLink href={reportHref} active={pathname === '/'}>

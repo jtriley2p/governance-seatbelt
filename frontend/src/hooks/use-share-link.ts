@@ -163,7 +163,9 @@ export function useShareLink() {
       return;
     }
 
-    const loadingToastId = toast.loading('Generating share link. This can take up to a minute…');
+    const loadingToastId = toast.loading(
+      'Generating share link. Usually takes ~10-20s, but can take up to 2 minutes…',
+    );
     try {
       const shareArtifactResult = await generateMutation.mutateAsync();
       const artifactUrl = shareArtifactResult.artifactUrl;
