@@ -1,5 +1,5 @@
 import { http, createPublicClient } from 'viem';
-import type { PublicClient } from 'viem';
+import type { PublicClient, Transport } from 'viem';
 import {
   arbitrum,
   base,
@@ -66,6 +66,42 @@ const ZORA_RPC_URL = process.env.ZORA_RPC_URL || zora.rpcUrls.default.http[0];
 const XLAYER_RPC_URL = process.env.XLAYER_RPC_URL || xLayer.rpcUrls.default.http[0];
 
 const ETHERSCAN_V2_API_URL = 'https://api.etherscan.io/v2/api';
+
+type ChainById = {
+  [mainnet.id]: typeof mainnet;
+  [arbitrum.id]: typeof arbitrum;
+  [optimism.id]: typeof optimism;
+  [base.id]: typeof base;
+  [unichain.id]: typeof unichain;
+  [ink.id]: typeof ink;
+  [soneium.id]: typeof soneium;
+  [bob.id]: typeof bob;
+  [celo.id]: typeof celo;
+  [worldchain.id]: typeof worldchain;
+  [zora.id]: typeof zora;
+  [xLayer.id]: typeof xLayer;
+};
+
+const CHAIN_BY_ID: ChainById = {
+  [mainnet.id]: mainnet,
+  [arbitrum.id]: arbitrum,
+  [optimism.id]: optimism,
+  [base.id]: base,
+  [unichain.id]: unichain,
+  [ink.id]: ink,
+  [soneium.id]: soneium,
+  [bob.id]: bob,
+  [celo.id]: celo,
+  [worldchain.id]: worldchain,
+  [zora.id]: zora,
+  [xLayer.id]: xLayer,
+};
+
+type SupportedChainId = keyof ChainById;
+type ChainForId<I extends SupportedChainId> = ChainById[I];
+type ClientRegistry = {
+  [I in SupportedChainId]: PublicClient<Transport, ChainForId<I>>;
+};
 
 export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
   [mainnet.id]: {
@@ -195,7 +231,7 @@ export function getChainConfig(chainId: number): ChainConfig {
   return config;
 }
 
-const clients: Record<number, PublicClient> = {
+const clients = {
   [mainnet.id]: createPublicClient({
     chain: mainnet,
     transport: http(CHAIN_CONFIGS[mainnet.id].rpcUrl),
@@ -207,51 +243,57 @@ const clients: Record<number, PublicClient> = {
   [optimism.id]: createPublicClient({
     chain: optimism,
     transport: http(CHAIN_CONFIGS[optimism.id].rpcUrl),
-  }) as unknown as PublicClient,
+  }),
   [base.id]: createPublicClient({
     chain: base,
     transport: http(CHAIN_CONFIGS[base.id].rpcUrl),
-  }) as unknown as PublicClient,
+  }),
   [unichain.id]: createPublicClient({
     chain: unichain,
     transport: http(CHAIN_CONFIGS[unichain.id].rpcUrl),
-  }) as unknown as PublicClient,
+  }),
   [ink.id]: createPublicClient({
     chain: ink,
     transport: http(CHAIN_CONFIGS[ink.id].rpcUrl),
-  }) as unknown as PublicClient,
+  }),
   [soneium.id]: createPublicClient({
     chain: soneium,
     transport: http(CHAIN_CONFIGS[soneium.id].rpcUrl),
-  }) as unknown as PublicClient,
+  }),
   [bob.id]: createPublicClient({
     chain: bob,
     transport: http(CHAIN_CONFIGS[bob.id].rpcUrl),
-  }) as unknown as PublicClient,
+  }),
   [celo.id]: createPublicClient({
     chain: celo,
     transport: http(CHAIN_CONFIGS[celo.id].rpcUrl),
-  }) as unknown as PublicClient,
+  }),
   [worldchain.id]: createPublicClient({
     chain: worldchain,
     transport: http(CHAIN_CONFIGS[worldchain.id].rpcUrl),
-  }) as unknown as PublicClient,
+  }),
   [zora.id]: createPublicClient({
     chain: zora,
     transport: http(CHAIN_CONFIGS[zora.id].rpcUrl),
-  }) as unknown as PublicClient,
+  }),
   [xLayer.id]: createPublicClient({
     chain: xLayer,
     transport: http(CHAIN_CONFIGS[xLayer.id].rpcUrl),
-  }) as unknown as PublicClient,
-};
+  }),
+} satisfies ClientRegistry;
 
-export const publicClient = clients[mainnet.id];
+function isSupportedChainId(chainId: number): chainId is SupportedChainId {
+  return Object.prototype.hasOwnProperty.call(CHAIN_BY_ID, chainId);
+}
 
+export function getClientForChain<I extends SupportedChainId>(chainId: I): ClientRegistry[I];
+export function getClientForChain(chainId: number): ClientRegistry[SupportedChainId];
 export function getClientForChain(chainId: number) {
-  const client = clients[chainId];
-  if (!client) {
+  if (!isSupportedChainId(chainId)) {
     throw new Error(`No client found for chain ID ${chainId}`);
   }
-  return client;
+
+  return clients[chainId];
 }
+
+export const publicClient = clients[mainnet.id];
