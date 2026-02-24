@@ -17,6 +17,9 @@ type RuntimePublisherInput = {
   artifactRaw: string;
   publishLogEntry: RelayPublishLogEntry;
   env: Record<string, string | undefined>;
+  deployTimeoutMs?: number;
+  aliasRetryBaseMs?: number;
+  aliasRetryMaxMs?: number;
 };
 
 type VercelPublishEnv = {
@@ -32,6 +35,14 @@ type CreatedDeployment = {
 
 const VERCEL_API_BASE_URL = 'https://api.vercel.com';
 const PUBLISH_ALIAS_BASE_DOMAIN = 'publish.scopelift.co';
+const DEFAULT_ALIAS_READY_TIMEOUT_MS = 120_000;
+const DEFAULT_ALIAS_RETRY_BASE_MS = 1_000;
+const DEFAULT_ALIAS_RETRY_MAX_MS = 5_000;
+
+type AliasApiError = Error & {
+  status: number;
+  errorCode?: string;
+};
 
 function readNonEmptyEnv(
   env: Record<string, string | undefined>,
@@ -105,6 +116,31 @@ function readManagedVercelEnv(env: Record<string, string | undefined>): VercelPu
     projectId,
     orgId,
   };
+}
+
+function readPositiveIntegerEnv(
+  env: Record<string, string | undefined>,
+  name: string,
+): number | undefined {
+  const raw = readNonEmptyEnv(env, name);
+  if (!raw) {
+    return undefined;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined;
+  }
+
+  return Math.floor(parsed);
+}
+
+function readPositiveInteger(value: number | undefined): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+
+  return Math.floor(value);
 }
 
 function appendPathToUrl(baseUrl: string, relativePath: string): string {
@@ -414,6 +450,87 @@ function summarizeErrorPayload(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function readAliasErrorCode(value: unknown): string | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const directCode = readOptionalString(value, 'error');
+  if (directCode) {
+    return directCode;
+  }
+
+  const nestedError = value.error;
+  if (!isRecord(nestedError)) {
+    return undefined;
+  }
+
+  return readOptionalString(nestedError, 'code');
+}
+
+function toAliasApiError(status: number, payload: unknown): AliasApiError {
+  const message = `Vercel alias API request failed with HTTP ${status}. ${summarizeErrorPayload(payload)}`;
+  const error = new Error(message) as AliasApiError;
+  error.status = status;
+  error.errorCode = readAliasErrorCode(payload);
+  return error;
+}
+
+function isAliasApiError(value: unknown): value is AliasApiError {
+  return value instanceof Error && typeof (value as AliasApiError).status === 'number';
+}
+
+function isDeploymentNotReadyAliasError(value: unknown): value is AliasApiError {
+  return isAliasApiError(value) && value.errorCode === 'deployment_not_ready';
+}
+
+function isRetryableAliasError(value: unknown): boolean {
+  if (isDeploymentNotReadyAliasError(value)) {
+    return true;
+  }
+
+  if (isAliasApiError(value)) {
+    if (value.status === 429) {
+      return true;
+    }
+
+    if (value.status >= 500 && value.status <= 599) {
+      return true;
+    }
+  }
+
+  // Network fetch failures are usually surfaced as TypeError.
+  if (value instanceof Error && value.name === 'TypeError') {
+    return true;
+  }
+
+  return false;
+}
+
+function describeAliasRetryReason(value: unknown): string {
+  if (isAliasApiError(value)) {
+    if (value.errorCode) {
+      return `${value.errorCode} (HTTP ${value.status})`;
+    }
+
+    return `HTTP ${value.status}`;
+  }
+
+  return value instanceof Error
+    ? `${value.name}: ${value.message}`
+    : 'unknown transient alias error';
+}
+
+function sleep(ms: number): Promise<void> {
+  if (ms <= 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function toPublishAliasHostname(publishId: string): string {
   const normalized = publishId.trim().toLowerCase();
   return `a-${normalized}.${PUBLISH_ALIAS_BASE_DOMAIN}`;
@@ -541,18 +658,60 @@ async function createPublishAlias(input: {
       parsedBody = undefined;
     }
 
-    throw new Error(
-      `Vercel alias API request failed with HTTP ${response.status}. ${summarizeErrorPayload(parsedBody)}`,
-    );
+    throw toAliasApiError(response.status, parsedBody);
   }
 
   return `https://${aliasHostname}`;
+}
+
+async function createPublishAliasWithRetry(input: {
+  deploymentId: string;
+  publishId: string;
+  vercelEnv: VercelPublishEnv;
+  deployTimeoutMs: number;
+  retryBaseMs: number;
+  retryMaxMs: number;
+}): Promise<string> {
+  const deadlineMs = Date.now() + input.deployTimeoutMs;
+  let attempts = 0;
+
+  while (true) {
+    attempts += 1;
+
+    try {
+      return await createPublishAlias(input);
+    } catch (error) {
+      if (!isRetryableAliasError(error)) {
+        throw error;
+      }
+
+      const remainingMs = deadlineMs - Date.now();
+      if (remainingMs <= 0) {
+        throw new Error(`Vercel alias retry budget exhausted after ${input.deployTimeoutMs}ms.`);
+      }
+
+      const exponentialDelayMs = input.retryBaseMs * 2 ** (attempts - 1);
+      const retryDelayMs = Math.min(exponentialDelayMs, input.retryMaxMs, remainingMs);
+      const retryReason = describeAliasRetryReason(error);
+      console.warn(
+        `[relay] alias creation transient failure for publish_id=${input.publishId}; reason=${retryReason}; attempt=${attempts}; retrying in ${retryDelayMs}ms`,
+      );
+
+      await sleep(retryDelayMs);
+    }
+  }
 }
 
 export async function publishViaVercelApi(
   input: RuntimePublisherInput,
 ): Promise<RelayPublisherResult> {
   const vercelEnv = readManagedVercelEnv(input.env);
+  const deployTimeoutMs =
+    readPositiveInteger(input.deployTimeoutMs) ??
+    readPositiveIntegerEnv(input.env, 'SEATBELT_RELAY_DEPLOY_TIMEOUT_MS') ??
+    DEFAULT_ALIAS_READY_TIMEOUT_MS;
+  const retryBaseMs = readPositiveInteger(input.aliasRetryBaseMs) ?? DEFAULT_ALIAS_RETRY_BASE_MS;
+  const retryMaxMs = readPositiveInteger(input.aliasRetryMaxMs) ?? DEFAULT_ALIAS_RETRY_MAX_MS;
 
   const deployment = await createDeployment({
     artifactRaw: input.artifactRaw,
@@ -562,10 +721,13 @@ export async function publishViaVercelApi(
 
   let artifactBaseUrl = deployment.deploymentUrl;
   try {
-    artifactBaseUrl = await createPublishAlias({
+    artifactBaseUrl = await createPublishAliasWithRetry({
       deploymentId: deployment.id,
       publishId: input.publishLogEntry.publish_id,
       vercelEnv,
+      deployTimeoutMs,
+      retryBaseMs,
+      retryMaxMs,
     });
   } catch (error) {
     console.warn(

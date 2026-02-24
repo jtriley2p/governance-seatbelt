@@ -102,7 +102,7 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
                   <Link2Icon className="h-3.5 w-3.5" />
                 )}
                 <span className="font-medium">
-                  {isGenerating ? 'Building…' : hasArtifact ? 'Copy Link' : 'Share'}
+                  {isGenerating ? 'Generating…' : hasArtifact ? 'Copy Link' : 'Share'}
                 </span>
               </Button>
 
