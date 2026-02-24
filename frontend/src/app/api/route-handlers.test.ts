@@ -126,6 +126,20 @@ function readFetchRequestUrl(input: RequestInfo | URL): string {
   return input.url;
 }
 
+function readArtifactRawFromRelayRequest(init?: RequestInit): string | null {
+  if (!init || typeof init.body !== 'string') return null;
+
+  try {
+    const payload: unknown = JSON.parse(init.body);
+    if (!payload || typeof payload !== 'object') return null;
+
+    const artifactRaw = Reflect.get(payload, 'artifactRaw');
+    return typeof artifactRaw === 'string' ? artifactRaw : null;
+  } catch {
+    return null;
+  }
+}
+
 beforeEach(() => {
   restoreEnvironment();
   restoreSimulationResultsFile();
@@ -329,6 +343,46 @@ describe('/api/share-link', () => {
       'https://seatbelt-publish.vercel.app/simulation-results.json',
     );
     expect(readViewerUrl(payload)).toBe('https://seatbelt.app');
+  });
+
+  it('strips markdownReport before publishing artifact via relay', async () => {
+    writeSimulationResultsFile(VALID_SIMULATION_RESULTS_JSON);
+    process.env.SEATBELT_RELAY_URL = 'https://seatbelt-relay-beta.vercel.app';
+
+    let publishedArtifactRaw: string | null = null;
+    globalThis.fetch = createMockFetch(
+      async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        publishedArtifactRaw = readArtifactRawFromRelayRequest(init);
+
+        return new Response(
+          JSON.stringify({
+            artifactUrl: 'https://seatbelt-publish.vercel.app/simulation-results.json',
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          },
+        );
+      },
+    );
+
+    const response = await postShareLink(
+      new Request('http://localhost/api/share-link', {
+        method: 'POST',
+        headers: {
+          'x-forwarded-for': '203.0.113.11',
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(publishedArtifactRaw).not.toBeNull();
+    const publishedPayload = publishedArtifactRaw
+      ? (JSON.parse(publishedArtifactRaw) as unknown)
+      : null;
+    expect(readMarkdownReport(publishedPayload)).toBe('');
   });
 
   it('returns 429 when share-link endpoint exceeds rate limit', async () => {
