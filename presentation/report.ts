@@ -1050,22 +1050,13 @@ export async function generateAndSaveReports(params: GenerateReportsParams) {
     daoName,
     contracts,
     proposalState,
-    outputId,
   } = params;
   console.log(`[Report] Generating report for proposal ${proposal.id} (${proposal.proposalId})`);
-  if (outputId && outputId !== formatProposalId(governorType, proposal.id!)) {
-    console.log(
-      `[Report] Using outputId override '${outputId}' (proposal payload id remains ${formatProposalId(
-        governorType,
-        proposal.id!,
-      )})`,
-    );
-  }
   console.log(`[Report] Output directory: ${outputDir}`);
 
   // Prepare the output folder and filename.
   if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
-  const id = outputId ?? formatProposalId(governorType, proposal.id!);
+  const id = formatProposalId(governorType, proposal.id!);
   const path = `${outputDir}/${id}`;
 
   // Generate the base markdown proposal report. This is the markdown report which is translated into other file types.

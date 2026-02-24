@@ -792,8 +792,6 @@ export interface GenerateReportsParams {
   contracts?: TenderlyContract[];
   // On-chain proposal state (Issue #165)
   proposalState?: string;
-  // Optional report/output filename override (e.g. SIM_NAME 94/95)
-  outputId?: string;
 }
 
 export interface WriteSimulationResultsJsonParams {
