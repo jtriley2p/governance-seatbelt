@@ -25,11 +25,13 @@ export const checkTargetsNoSelfdestruct: ProposalCheck = {
     }
 
     const blockExplorerUrl = deps.chainConfig.blockExplorer.baseUrl;
+    const contractNames = buildContractNameLookup(sim);
     const { info, warn, error } = await checkNoSelfdestructs(
       [deps.governor.address, deps.timelock.address],
       targets,
       deps.publicClient,
       blockExplorerUrl,
+      contractNames,
     );
     return { info, warnings: warn, errors: error };
   },
@@ -42,11 +44,13 @@ export const checkTouchedContractsNoSelfdestruct: ProposalCheck = {
   name: 'Check all touched contracts do not contain selfdestruct',
   async checkProposal(_, sim, deps) {
     const blockExplorerUrl = deps.chainConfig.blockExplorer.baseUrl;
+    const contractNames = buildContractNameLookup(sim);
     const { info, warn, error } = await checkNoSelfdestructs(
       [deps.governor.address, deps.timelock.address],
       sim.transaction.addresses.map(getAddress),
       deps.publicClient,
       blockExplorerUrl,
+      contractNames,
     );
     return { info, warnings: warn, errors: error };
   },
@@ -60,6 +64,7 @@ async function checkNoSelfdestructs(
   addresses: `0x${string}`[],
   publicClient: PublicClient,
   blockExplorerUrl: string,
+  contractNamesByAddress: Map<string, string>,
 ): Promise<{ info: string[]; warn: string[]; error: string[] }> {
   const info: string[] = [];
   const warn: string[] = [];
@@ -84,11 +89,18 @@ async function checkNoSelfdestructs(
     } else if (status === 'safe') {
       info.push(`${address}${suffix}: Contract (looks safe)`);
     } else if (status === 'delegatecall') {
-      const warningMsg = `${address}${suffix}: Contract (with DELEGATECALL)`;
-      if (isOurPlaceholder) {
-        placeholderWarnings.push(warningMsg);
+      const contractName = contractNamesByAddress.get(getAddress(addr).toLowerCase());
+      if (isTrustedDelegatecallContract(contractName)) {
+        info.push(
+          `${address}${suffix}: Contract (with DELEGATECALL, advisory for trusted bridge/proxy surface${contractName ? `: ${contractName}` : ''})`,
+        );
       } else {
-        warn.push(warningMsg);
+        const warningMsg = `${address}${suffix}: Contract (with DELEGATECALL)`;
+        if (isOurPlaceholder) {
+          placeholderWarnings.push(warningMsg);
+        } else {
+          warn.push(warningMsg);
+        }
       }
     } else if (status === 'trusted') {
       info.push(`${address}${suffix}: Trusted contract (not checked)`);
@@ -124,6 +136,38 @@ async function checkNoSelfdestructs(
     warn.push(...legitPlaceholderWarnings);
   }
   return { info, warn, error };
+}
+
+const TRUSTED_DELEGATECALL_NAME_PATTERNS = [
+  /^ResolvedDelegateProxy$/i,
+  /^L1CrossDomainMessenger$/i,
+  /^OptimismPortal(?:2)?$/i,
+  /^AddressManager$/i,
+  /^SystemConfig$/i,
+  /^CrossChainAccount$/i,
+  /^Bridge$/i,
+  /^Inbox$/i,
+  /^Outbox$/i,
+];
+
+function buildContractNameLookup(sim: TenderlySimulation): Map<string, string> {
+  const lookup = new Map<string, string>();
+
+  for (const contract of sim.contracts ?? []) {
+    if (!contract.address || !contract.contract_name) continue;
+    try {
+      lookup.set(getAddress(contract.address).toLowerCase(), contract.contract_name);
+    } catch {
+      // Ignore malformed addresses from simulation metadata.
+    }
+  }
+
+  return lookup;
+}
+
+function isTrustedDelegatecallContract(contractName: string | undefined): boolean {
+  if (!contractName) return false;
+  return TRUSTED_DELEGATECALL_NAME_PATTERNS.some((pattern) => pattern.test(contractName));
 }
 
 const STOP = 0x00;

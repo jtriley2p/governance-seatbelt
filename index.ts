@@ -363,6 +363,7 @@ async function processSimulation(
     daoName: config.daoName,
     contracts: sim.contracts,
     proposalState,
+    outputId: proposalId,
   });
 
   // Prepare simulation data
@@ -417,7 +418,7 @@ async function main() {
     const finalResult = await runSimulationPipeline(config);
     console.log(`[Index] Cross-chain handling complete for ${SIM_NAME}.`);
 
-    const { sim, proposal, deps } = finalResult;
+    const { sim, deps } = finalResult;
 
     // Check if source simulation itself failed
     if (!sim.transaction.status) {
@@ -438,7 +439,7 @@ async function main() {
       governorType,
       deps, // Use deps from finalResult
       finalResult,
-      proposal.id.toString(),
+      SIM_NAME,
       'Pending', // State for custom/new simulations (not yet on-chain)
       false, // Don't cache custom simulations
     );

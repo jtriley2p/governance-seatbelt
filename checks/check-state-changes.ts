@@ -149,21 +149,22 @@ export const checkStateChanges: ProposalCheck = {
         } else {
           // TODO arrays and nested mapping are currently not well supported -- find a transaction
           // that changes state of these types to inspect the Tenderly simulation response and
-          // handle it accordingly. In the meantime we show the raw state changes and print a
-          // warning about decoding the data
+          // handle it accordingly. In the meantime we show a clearer fallback view of raw writes.
+          const structuredType = diff.soltype?.type ?? 'unknown';
+          const fallbackKey = `unsupported:${structuredType}`;
+          if (!warningsSeen.has(fallbackKey)) {
+            info.push(
+              `    Structured diff fallback for type \`${structuredType}\`: displaying raw storage slot deltas.`,
+            );
+            warningsSeen.add(fallbackKey);
+          }
+
           for (const w of diff.raw) {
             const oldVal = formatRawValue(w.original);
             const newVal = formatRawValue(w.dirty);
             const changeKey = `${w.key}:${oldVal}:${newVal}`;
             if (!processedChanges.has(changeKey)) {
-              info.push(`    Slot \`${w.key}\` changed from \`${oldVal}\` to \`${newVal}\``);
-              const warningKey = `unsupported:${diff.soltype?.type ?? 'unknown'}`;
-              if (!warningsSeen.has(warningKey)) {
-                warnings.push(
-                  `Could not decode structured state changes for type ${diff.soltype?.type ?? 'unknown'}; showing raw slot writes instead.`,
-                );
-                warningsSeen.add(warningKey);
-              }
+              info.push(`      • Slot \`${w.key}\`: \`${oldVal}\` → \`${newVal}\``);
               processedChanges.add(changeKey);
             }
           }

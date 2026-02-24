@@ -17,9 +17,67 @@ const decodedFunctionCache: Record<string, { name: string; args: unknown[] }> = 
 // If decoding becomes a bottleneck, tune this constant.
 const DECODE_CONCURRENCY = 2;
 
-const KNOWN_ABI_ITEMS_BY_SELECTOR: Record<string, string> = {
-  [toFunctionSelector('sendMessage(address,bytes,uint32)')]:
+const KNOWN_SIGNATURE_FALLBACKS: Record<string, string[]> = {
+  [toFunctionSelector('sendMessage(address,bytes,uint32)')]: [
     'function sendMessage(address target, bytes message, uint32 gasLimit)',
+  ],
+  [toFunctionSelector('depositTransaction(address,uint256,uint64,bool,bytes)')]: [
+    'function depositTransaction(address to, uint256 value, uint64 gasLimit, bool isCreation, bytes data)',
+  ],
+  [toFunctionSelector(
+    'createRetryableTicket(address,uint256,uint256,address,address,uint256,uint256,bytes)',
+  )]: [
+    'function createRetryableTicket(address to, uint256 l2CallValue, uint256 maxSubmissionCost, address excessFeeRefundAddress, address callValueRefundAddress, uint256 gasLimit, uint256 maxFeePerGas, bytes data)',
+  ],
+  [toFunctionSelector(
+    'createRetryableTicketNoRefundAliasRewrite(address,uint256,uint256,address,address,uint256,uint256,bytes)',
+  )]: [
+    'function createRetryableTicketNoRefundAliasRewrite(address to, uint256 l2CallValue, uint256 maxSubmissionCost, address excessFeeRefundAddress, address callValueRefundAddress, uint256 gasLimit, uint256 maxFeePerGas, bytes data)',
+  ],
+  [toFunctionSelector(
+    'unsafeCreateRetryableTicket(address,uint256,uint256,address,address,uint256,uint256,bytes)',
+  )]: [
+    'function unsafeCreateRetryableTicket(address to, uint256 l2CallValue, uint256 maxSubmissionCost, address excessFeeRefundAddress, address callValueRefundAddress, uint256 gasLimit, uint256 maxFeePerGas, bytes data)',
+  ],
+  [toFunctionSelector(
+    'uniswapCreateRetryableTicket(address,uint256,uint256,address,address,uint256,uint256,bytes)',
+  )]: [
+    'function uniswapCreateRetryableTicket(address to, uint256 l2CallValue, uint256 maxSubmissionCost, address excessFeeRefundAddress, address callValueRefundAddress, uint256 gasLimit, uint256 maxFeePerGas, bytes data)',
+  ],
+  [toFunctionSelector('sendL1FundedContractTransaction(uint256,uint256,address,bytes)')]: [
+    'function sendL1FundedContractTransaction(uint256 gasLimit, uint256 maxFeePerGas, address destination, bytes data)',
+  ],
+  [toFunctionSelector('sendL1FundedUnsignedTransaction(uint256,uint256,address,bytes)')]: [
+    'function sendL1FundedUnsignedTransaction(uint256 gasLimit, uint256 maxFeePerGas, address destination, bytes data)',
+  ],
+  [toFunctionSelector('sendL1FundedUnsignedTransactionToFork(uint256,uint256,address,bytes)')]: [
+    'function sendL1FundedUnsignedTransactionToFork(uint256 gasLimit, uint256 maxFeePerGas, address destination, bytes data)',
+  ],
+  [toFunctionSelector('sendContractTransaction(uint256,uint256,address,uint256,bytes)')]: [
+    'function sendContractTransaction(uint256 gasLimit, uint256 maxFeePerGas, address destination, uint256 amount, bytes data)',
+  ],
+  [toFunctionSelector('sendUnsignedTransaction(uint256,uint256,address,uint256,bytes)')]: [
+    'function sendUnsignedTransaction(uint256 gasLimit, uint256 maxFeePerGas, address destination, uint256 amount, bytes data)',
+  ],
+  [toFunctionSelector('sendUnsignedTransactionToFork(uint256,uint256,address,uint256,bytes)')]: [
+    'function sendUnsignedTransactionToFork(uint256 gasLimit, uint256 maxFeePerGas, address destination, uint256 amount, bytes data)',
+  ],
+  [toFunctionSelector('setOwner(address)')]: ['function setOwner(address owner)'],
+  [toFunctionSelector('setFeeTo(address)')]: ['function setFeeTo(address feeTo)'],
+};
+
+type MatchKind =
+  | 'strict-from-calldata'
+  | 'target-calldata'
+  | 'calldata-only'
+  | 'target-selector-order'
+  | 'selector-order';
+
+type DecodeSource = 'cache' | 'abi' | 'signature' | 'token' | 'generic' | 'eth-transfer';
+
+type CalldataDescriptionResult = {
+  description: string;
+  decodeSource: DecodeSource;
 };
 
 async function mapWithConcurrency<T, R>(
@@ -75,54 +133,82 @@ export const checkDecodeCalldata: ProposalCheck = {
 
     // Find the call with that calldata and parse it
     const calls = sim.transaction.transaction_info.call_trace.calls;
+    const flattenedCalls = flattenCalls(calls || []);
+    const selectorOrdinalByAction = computeSelectorOrdinals(proposal.targets, calldatas);
     const warningsByCalldataIndex: string[][] = Array.from({ length: calldatas.length }, () => []);
+    const advisoryByCalldataIndex: string[][] = Array.from({ length: calldatas.length }, () => []);
+
     const descriptions = await mapWithConcurrency(
       calldatas,
       DECODE_CONCURRENCY,
       async (calldata, i) => {
         const localWarnings = warningsByCalldataIndex[i];
+        const localAdvisories = advisoryByCalldataIndex[i];
+        const targetAddress = proposal.targets[i];
 
-        // Find the first matching call
-        let call = findMatchingCall(getAddress(deps.timelock.address), calldata, calls || []);
-        if (!call) {
-          // If we can't find the call in the trace, add a warning
-          // Skip the warning for ETH transfers which might not appear in the trace
+        const match = findMatchingCallWithFallback(
+          getAddress(deps.timelock.address),
+          getAddress(targetAddress),
+          calldata,
+          flattenedCalls,
+          selectorOrdinalByAction[i],
+        );
+
+        let call: DecodedCall;
+        let traceMatchWarning: string | null = null;
+
+        if (!match) {
           if (!(calldata === '0x' && BigInt(proposal.values?.[i].toString() ?? '0') > 0n)) {
-            const msg = `Could not find matching call for target ${proposal.targets[i]} with calldata ${calldata}`;
-            localWarnings.push(msg);
+            traceMatchWarning = `Could not find matching call for target ${targetAddress} with calldata ${calldata}`;
           }
 
-          // Create a synthetic call
           call = {
             from: deps.timelock.address,
-            to: proposal.targets[i],
+            to: targetAddress,
             input: calldata,
             value: proposal.values?.[i].toString() ?? '0',
-          } as DecodedCall;
+          };
         } else {
-          // If we found the call, check for subcalls with the same input data
-          call = returnCallOrMatchingSubcall(calldata, call);
+          call = returnCallOrMatchingSubcall(calldata, match.call);
         }
 
-        // Get the contract information from the simulation
-        const targetAddress = proposal.targets[i];
         const contract = sim.contracts.find(
           (c) => getAddress(c.address) === getAddress(targetAddress),
         );
 
-        return prettifyCalldata(
+        const descriptionResult = await prettifyCalldata(
           call,
           targetAddress,
           localWarnings,
           contract,
           deps.chainConfig.chainId,
         );
+
+        if (traceMatchWarning) {
+          if (['abi', 'signature', 'cache', 'token'].includes(descriptionResult.decodeSource)) {
+            localAdvisories.push(
+              `Advisory: no exact trace match for target ${targetAddress}; decoded calldata via ${descriptionResult.decodeSource} fallback.`,
+            );
+          } else {
+            localWarnings.push(traceMatchWarning);
+          }
+        } else if (match && match.kind !== 'strict-from-calldata') {
+          localAdvisories.push(
+            `Advisory: matched target ${targetAddress} calldata using ${match.kind.replaceAll('-', ' ')} heuristic.`,
+          );
+        }
+
+        return descriptionResult.description;
       },
     );
 
     for (const localWarnings of warningsByCalldataIndex) warnings.push(...localWarnings);
 
-    const info = descriptions.filter((d) => d !== null).map((d) => d);
+    const info: string[] = [];
+    for (let i = 0; i < descriptions.length; i++) {
+      info.push(...advisoryByCalldataIndex[i]);
+      if (descriptions[i]) info.push(descriptions[i]);
+    }
     return { info, warnings, errors: [] };
   },
 };
@@ -161,7 +247,7 @@ async function handleL2CrossChainCalldata(
 
   for (const localWarnings of warningsByCallIndex) warnings.push(...localWarnings);
 
-  const validDescriptions = descriptions.filter((d) => d !== null);
+  const validDescriptions = descriptions.map((d) => d.description).filter((d) => d !== null);
   if (validDescriptions.length === 0) {
     warnings.push('Could not decode any L2 cross-chain execution calls');
     return { info: [], warnings, errors: [] };
@@ -220,24 +306,127 @@ function extractMeaningfulL2Calls(
 // --- Helper methods ---
 
 /**
- * Given an array of calls, find the call matching the provided from address and calldata by
- * recursively traversing all calls in the trace. This is required because the call we're looking
- * for is not always at the same depth of the call stack. If all governor `execute` calls were made
- * from an EOA this would be true, but because calls to `execute` can also be made from contracts
- * we don't know the depth of the call containing `calldata`
- * @dev Using any[] due to incompatible call types (CallTraceCall, DecodedCall) that share common properties
+ * Flatten nested call traces preserving traversal order.
  */
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-function findMatchingCall(from: string, calldata: string, calls: any[]): DecodedCall | null {
-  const callMatches = (f: string, c: string) =>
-    getAddress(f) === getAddress(from) && c === calldata;
-  for (const call of calls) {
-    if (callMatches(call.from, call.input)) return call;
-    if (call.calls) {
-      const foundCall = findMatchingCall(from, calldata, call.calls);
-      if (foundCall) return foundCall;
+type TraceCallLike = {
+  from?: string;
+  to?: string;
+  input?: string;
+  value?: string;
+  calls?: TraceCallLike[];
+  function_name?: string;
+  decoded_input?: DecodedCall['decoded_input'];
+  decoded_output?: DecodedCall['decoded_output'];
+};
+
+function isTraceCallLike(value: unknown): value is TraceCallLike {
+  return typeof value === 'object' && value !== null;
+}
+
+function flattenCalls(calls: readonly unknown[]): DecodedCall[] {
+  const flattened: DecodedCall[] = [];
+
+  const traverse = (nodes: readonly unknown[]) => {
+    for (const node of nodes) {
+      if (!isTraceCallLike(node)) continue;
+
+      if (
+        typeof node.from === 'string' &&
+        typeof node.to === 'string' &&
+        typeof node.input === 'string'
+      ) {
+        flattened.push({
+          from: node.from,
+          to: node.to,
+          input: node.input,
+          value: node.value ?? '0',
+          function_name: node.function_name,
+          decoded_input: node.decoded_input,
+          decoded_output: node.decoded_output,
+        });
+      }
+
+      if (Array.isArray(node.calls) && node.calls.length > 0) {
+        traverse(node.calls);
+      }
     }
+  };
+
+  traverse(calls);
+  return flattened;
+}
+
+/**
+ * Compute per-action ordinal for (target, selector) pairs so we can choose stable fallback matches.
+ */
+function computeSelectorOrdinals(
+  targets: readonly string[],
+  calldatas: readonly string[],
+): number[] {
+  const ordinalByKey = new Map<string, number>();
+
+  return calldatas.map((calldata, index) => {
+    const target = getAddress(targets[index]).toLowerCase();
+    const selector = calldata.slice(0, 10).toLowerCase();
+    const key = `${target}:${selector}`;
+    const current = ordinalByKey.get(key) ?? 0;
+    ordinalByKey.set(key, current + 1);
+    return current;
+  });
+}
+
+function addressesEqual(left: string | undefined, right: string | undefined): boolean {
+  if (!left || !right) return false;
+  try {
+    return getAddress(left) === getAddress(right);
+  } catch {
+    return false;
   }
+}
+
+function findMatchingCallWithFallback(
+  from: string,
+  target: string,
+  calldata: string,
+  flattenedCalls: readonly DecodedCall[],
+  targetSelectorOrdinal: number,
+): { call: DecodedCall; kind: MatchKind } | null {
+  const selector = calldata.slice(0, 10).toLowerCase();
+
+  const findLastCall = (predicate: (call: DecodedCall) => boolean): DecodedCall | null => {
+    for (let i = flattenedCalls.length - 1; i >= 0; i--) {
+      if (predicate(flattenedCalls[i])) return flattenedCalls[i];
+    }
+    return null;
+  };
+
+  const strict = findLastCall((call) => addressesEqual(call.from, from) && call.input === calldata);
+  if (strict) return { call: strict, kind: 'strict-from-calldata' };
+
+  const targetAndCalldata = findLastCall(
+    (call) => addressesEqual(call.to, target) && call.input === calldata,
+  );
+  if (targetAndCalldata) return { call: targetAndCalldata, kind: 'target-calldata' };
+
+  const calldataOnly = findLastCall((call) => call.input === calldata);
+  if (calldataOnly) return { call: calldataOnly, kind: 'calldata-only' };
+
+  const targetSelectorMatches = flattenedCalls.filter(
+    (call) => addressesEqual(call.to, target) && call.input.slice(0, 10).toLowerCase() === selector,
+  );
+  if (targetSelectorMatches.length > 0) {
+    const ordinal = Math.min(targetSelectorOrdinal, targetSelectorMatches.length - 1);
+    return { call: targetSelectorMatches[ordinal], kind: 'target-selector-order' };
+  }
+
+  const selectorMatches = flattenedCalls.filter(
+    (call) => call.input.slice(0, 10).toLowerCase() === selector,
+  );
+  if (selectorMatches.length > 0) {
+    const ordinal = Math.min(targetSelectorOrdinal, selectorMatches.length - 1);
+    return { call: selectorMatches[ordinal], kind: 'selector-order' };
+  }
+
   return null;
 }
 
@@ -343,11 +532,14 @@ async function prettifyCalldata(
   warnings: string[],
   contract: TenderlyContract | undefined,
   chainId: number,
-) {
+): Promise<CalldataDescriptionResult> {
   // Handle ETH transfers (empty calldata with value)
   if (call.input === '0x' && call.value && BigInt(call.value) > 0n) {
     const ethAmount = formatUnits(BigInt(call.value), 18);
-    return `\`${call.from}\` transfers ${ethAmount} ETH to \`${target}\` (formatted)`;
+    return {
+      description: `\`${call.from}\` transfers ${ethAmount} ETH to \`${target}\` (formatted)`,
+      decodeSource: 'eth-transfer',
+    };
   }
 
   // Get the function selector (first 4 bytes of the calldata)
@@ -366,10 +558,10 @@ async function prettifyCalldata(
       description += formattedArgs;
     }
     description += `)\` on ${contractIdentifier} (decoded from cache)`;
-    return description;
+    return { description, decodeSource: 'cache' };
   }
 
-  // Try to decode using Etherscan ABI first
+  // Try to decode using block explorer ABI first
   let abiDecodeError: string | null = null;
   try {
     const decoded = await BlockExplorerFactory.decodeFunctionWithAbi(
@@ -378,22 +570,16 @@ async function prettifyCalldata(
       chainId,
     );
     if (decoded) {
-      // Cache the decoded function
       decodedFunctionCache[cacheKey] = decoded;
 
-      // Format the decoded function call
       let description = `\`${call.from}\` calls \`${decoded.name}(`;
-
-      // Format the arguments
       const formattedArgs = formatArgs(decoded.args);
-
-      // Add the arguments to the description (if any)
       if (formattedArgs) {
         description += formattedArgs;
       }
 
       description += `)\` on ${contractIdentifier} (decoded from ABI)`;
-      return description;
+      return { description, decodeSource: 'abi' };
     }
 
     abiDecodeError = `Failed to decode function with selector ${selector} for contract ${target} using block explorer ABI`;
@@ -403,30 +589,30 @@ async function prettifyCalldata(
   }
 
   // Fallback: decode using known function signatures (useful for proxies where ABI lookup fails)
-  const knownAbiItem = KNOWN_ABI_ITEMS_BY_SELECTOR[selector];
-  if (knownAbiItem) {
-    try {
-      const parsed = parseAbiItem(knownAbiItem);
-      if (parsed.type !== 'function') {
-        throw new Error(`Known ABI item for selector ${selector} is not a function`);
+  const knownAbiItems = KNOWN_SIGNATURE_FALLBACKS[selector] ?? [];
+  if (knownAbiItems.length > 0) {
+    for (const knownAbiItem of knownAbiItems) {
+      try {
+        const parsed = parseAbiItem(knownAbiItem);
+        if (parsed.type !== 'function') {
+          continue;
+        }
+        const { args } = decodeFunctionData({
+          abi: [parsed],
+          data: call.input as `0x${string}`,
+        });
+
+        const fnName = parsed.name;
+        decodedFunctionCache[cacheKey] = { name: fnName, args: Array.from(args) };
+
+        let description = `\`${call.from}\` calls \`${fnName}(`;
+        const formattedArgs = formatArgs(args);
+        if (formattedArgs) description += formattedArgs;
+        description += `)\` on ${contractIdentifier} (decoded from signature)`;
+        return { description, decodeSource: 'signature' };
+      } catch {
+        // Try next known candidate for this selector.
       }
-      const { args } = decodeFunctionData({
-        abi: [parsed],
-        data: call.input as `0x${string}`,
-      });
-
-      const fnName = parsed.name;
-      decodedFunctionCache[cacheKey] = { name: fnName, args: Array.from(args) };
-
-      let description = `\`${call.from}\` calls \`${fnName}(`;
-      const formattedArgs = formatArgs(args);
-      if (formattedArgs) description += formattedArgs;
-      description += `)\` on ${contractIdentifier} (decoded from signature)`;
-      return description;
-    } catch (error) {
-      warnings.push(
-        `Error decoding function with selector ${selector} for contract ${target} using known signature: ${error}`,
-      );
     }
   }
 
@@ -434,14 +620,24 @@ async function prettifyCalldata(
   const isTokenAction = selector in TOKEN_HANDLERS;
   if (isTokenAction) {
     const { symbol, decimals } = await fetchTokenMetadata(call.to as `0x${string}`);
-    return TOKEN_HANDLERS[selector](call, decimals || 0, symbol ?? null, contractIdentifier);
+    return {
+      description: TOKEN_HANDLERS[selector](
+        call,
+        decimals || 0,
+        symbol ?? null,
+        contractIdentifier,
+      ),
+      decodeSource: 'token',
+    };
   }
 
   if (abiDecodeError) warnings.push(abiDecodeError);
 
-  // Generic handling for non-token actions
   const sig = getSignature(call);
-  return getDescription(contractIdentifier, sig, call);
+  return {
+    description: getDescription(contractIdentifier, sig, call),
+    decodeSource: 'generic',
+  };
 }
 
 // Handlers for token-related function calls
