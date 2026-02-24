@@ -13,13 +13,16 @@ import { useMemo } from 'react';
 type VerificationStatus = 'verified' | 'unverified' | 'eoa' | 'unknown';
 
 interface ParsedContract {
+  key: string;
   address: string;
   status: VerificationStatus;
   statusLabel: string;
   isPlaceholder: boolean;
 }
 
-function parseVerificationLine(line: string): ParsedContract | null {
+type ParsedContractBase = Omit<ParsedContract, 'key'>;
+
+function parseVerificationLine(line: string): ParsedContractBase | null {
   const addressMatch = line.match(/\[(0x[a-fA-F0-9]{40})\]/) || line.match(/(0x[a-fA-F0-9]{40})/);
   if (!addressMatch) return null;
 
@@ -107,7 +110,13 @@ function ContractCard({ contract, variant }: ContractCardProps) {
 export function ContractVerificationList({ details, info }: ContractVerificationListProps) {
   const contracts = useMemo(() => {
     const lines = info || details.split('\n').filter((l) => l.trim());
-    return lines.map(parseVerificationLine).filter((c): c is ParsedContract => c !== null);
+    return lines
+      .map((line, index) => {
+        const contract = parseVerificationLine(line);
+        if (!contract) return null;
+        return { ...contract, key: `${contract.address}-${index}` };
+      })
+      .filter((c): c is ParsedContract => c !== null);
   }, [details, info]);
 
   const grouped = useMemo(() => {
@@ -164,7 +173,7 @@ export function ContractVerificationList({ details, info }: ContractVerification
           </h4>
           <div className="space-y-2">
             {grouped.unverified.map((contract) => (
-              <ContractCard key={contract.address} contract={contract} variant="danger" />
+              <ContractCard key={contract.key} contract={contract} variant="danger" />
             ))}
           </div>
         </div>
@@ -178,7 +187,7 @@ export function ContractVerificationList({ details, info }: ContractVerification
           </h4>
           <div className="space-y-2">
             {grouped.verified.map((contract) => (
-              <ContractCard key={contract.address} contract={contract} variant="success" />
+              <ContractCard key={contract.key} contract={contract} variant="success" />
             ))}
           </div>
         </div>
@@ -192,7 +201,7 @@ export function ContractVerificationList({ details, info }: ContractVerification
           </h4>
           <div className="space-y-2">
             {grouped.eoa.map((contract) => (
-              <ContractCard key={contract.address} contract={contract} variant="neutral" />
+              <ContractCard key={contract.key} contract={contract} variant="neutral" />
             ))}
           </div>
         </div>
@@ -206,7 +215,7 @@ export function ContractVerificationList({ details, info }: ContractVerification
           </h4>
           <div className="space-y-2">
             {grouped.unknown.map((contract) => (
-              <ContractCard key={contract.address} contract={contract} variant="neutral" />
+              <ContractCard key={contract.key} contract={contract} variant="neutral" />
             ))}
           </div>
         </div>
