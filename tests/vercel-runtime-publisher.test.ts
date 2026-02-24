@@ -162,4 +162,82 @@ describe('vercel runtime publisher', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  it('retries alias creation when deployment is not ready, then returns branded alias urls', async () => {
+    const originalFetch = globalThis.fetch;
+
+    let aliasAttempts = 0;
+
+    const mockedFetch: typeof fetch = async (input) => {
+      const requestUrl = typeof input === 'string' ? input : input.toString();
+
+      if (requestUrl.includes('/v13/deployments')) {
+        return new Response(
+          JSON.stringify({ id: 'dpl_retry', url: 'seatbelt-publish-retry.vercel.app' }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (requestUrl.includes('/v2/deployments/dpl_retry/aliases')) {
+        aliasAttempts += 1;
+
+        if (aliasAttempts < 3) {
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: 'deployment_not_ready',
+                message: 'The deployment `readyState` is not `READY`',
+              },
+            }),
+            {
+              status: 400,
+              headers: { 'content-type': 'application/json' },
+            },
+          );
+        }
+
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      throw new Error(`Unexpected request: ${requestUrl}`);
+    };
+
+    globalThis.fetch = mockedFetch;
+
+    try {
+      const result = await publishViaVercelApi({
+        artifactRaw: '{"ok":true}\n',
+        publishLogEntry: {
+          publish_id: 'pub-retry',
+          artifact_hash: 'retry123',
+          published_at: '2026-02-24T00:00:00.000Z',
+        },
+        env: {
+          SEATBELT_RELAY_VERCEL_TOKEN: 'token',
+          SEATBELT_RELAY_VERCEL_PROJECT_ID: 'project-id',
+          SEATBELT_RELAY_VERCEL_ORG_ID: 'team-id',
+          SEATBELT_RELAY_ALIAS_RETRY_BASE_MS: '1',
+          SEATBELT_RELAY_ALIAS_RETRY_MAX_MS: '1',
+        },
+        deployTimeoutMs: 1_000,
+      });
+
+      expect(aliasAttempts).toBe(3);
+      expect(result.deploymentUrl).toBe('https://seatbelt-publish-retry.vercel.app');
+      expect(result.artifactUrl).toBe(
+        'https://a-pub-retry.publish.scopelift.co/simulation-results.json',
+      );
+      expect(result.metadataUrl).toBe(
+        'https://a-pub-retry.publish.scopelift.co/publish-metadata.json',
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

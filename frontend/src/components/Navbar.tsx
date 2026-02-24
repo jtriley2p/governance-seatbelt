@@ -151,7 +151,7 @@ export function Navbar() {
                 )}
                 <span className="font-medium">
                   {isGenerating
-                    ? 'Building Report…'
+                    ? 'Generating Link…'
                     : hasArtifact
                       ? 'Copy Share Link'
                       : 'Generate Share Link'}

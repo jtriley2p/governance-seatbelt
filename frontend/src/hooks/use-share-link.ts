@@ -163,20 +163,21 @@ export function useShareLink() {
       return;
     }
 
+    const loadingToastId = toast.loading('Generating share link. This can take up to a minute…');
     try {
       const shareArtifactResult = await generateMutation.mutateAsync();
       const artifactUrl = shareArtifactResult.artifactUrl;
       const publishViewerUrl = resolveViewerUrl(shareArtifactResult.viewerUrl);
       const shareUrl = buildCanonicalShareUrl(publishViewerUrl, artifactUrl);
       await copyToClipboard(shareUrl);
-      toast.success('Share link ready — copied to clipboard');
+      toast.success('Share link ready — copied to clipboard', { id: loadingToastId });
     } catch (error) {
       console.error('Error generating share link:', error);
       const message =
         error instanceof Error && error.message
           ? error.message
           : 'Couldn’t generate share link. Try again.';
-      toast.error(message);
+      toast.error(message, { id: loadingToastId });
     }
   };
 
