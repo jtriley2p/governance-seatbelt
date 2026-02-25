@@ -32,6 +32,7 @@ export const checkTargetsNoSelfdestruct: ProposalCheck = {
       deps.publicClient,
       blockExplorerUrl,
       contractNames,
+      'warn',
     );
     return { info, warnings: warn, errors: error };
   },
@@ -51,6 +52,7 @@ export const checkTouchedContractsNoSelfdestruct: ProposalCheck = {
       deps.publicClient,
       blockExplorerUrl,
       contractNames,
+      'info',
     );
     return { info, warnings: warn, errors: error };
   },
@@ -65,6 +67,7 @@ async function checkNoSelfdestructs(
   publicClient: PublicClient,
   blockExplorerUrl: string,
   contractNamesByAddress: Map<string, string>,
+  emptyAccountSeverity: 'info' | 'warn',
 ): Promise<{ info: string[]; warn: string[]; error: string[] }> {
   const info: string[] = [];
   const warn: string[] = [];
@@ -80,11 +83,13 @@ async function checkNoSelfdestructs(
     if (status === 'eoa') {
       info.push(`${address}${suffix}: EOA`);
     } else if (status === 'empty') {
-      const warningMsg = `${address}${suffix}: EOA (may have code later)`;
-      if (isOurPlaceholder) {
-        placeholderWarnings.push(warningMsg);
+      const emptyAccountMsg = `${address}${suffix}: Empty account (could deploy code later)`;
+      if (emptyAccountSeverity === 'info') {
+        info.push(emptyAccountMsg);
+      } else if (isOurPlaceholder) {
+        placeholderWarnings.push(emptyAccountMsg);
       } else {
-        warn.push(warningMsg);
+        warn.push(emptyAccountMsg);
       }
     } else if (status === 'safe') {
       info.push(`${address}${suffix}: Contract (looks safe)`);

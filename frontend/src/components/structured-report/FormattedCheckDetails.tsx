@@ -138,6 +138,7 @@ export function FormattedCheckDetails({
             processedLine.includes('Trusted contract') ||
             processedLine.includes('Contract (with DELEGATECALL)') ||
             processedLine.includes('Contract (with SELFDESTRUCT)') ||
+            processedLine.includes('Empty account (could deploy code later)') ||
             processedLine.includes('EOA (may have code later)') ||
             processedLine.includes(': EOA') ||
             processedLine.includes('Trusted contract (not checked)');
@@ -164,6 +165,8 @@ export function FormattedCheckDetails({
                 status = 'Contract (with DELEGATECALL)';
               else if (processedLine.includes('Contract (with SELFDESTRUCT)'))
                 status = 'Contract (with SELFDESTRUCT)';
+              else if (processedLine.includes('Empty account (could deploy code later)'))
+                status = 'Empty account (could deploy code later)';
               else if (processedLine.includes('EOA (may have code later)'))
                 status = 'EOA (may have code later)';
               else if (processedLine.includes(': EOA')) status = 'EOA';
@@ -174,6 +177,7 @@ export function FormattedCheckDetails({
                   : status === 'Unverified' || status === 'Contract (with SELFDESTRUCT)'
                     ? 'bg-red-100 text-red-800 border-red-300'
                     : status === 'Contract (with DELEGATECALL)' ||
+                        status === 'Empty account (could deploy code later)' ||
                         status === 'EOA (may have code later)'
                       ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
                       : 'bg-gray-100 text-gray-700 border-gray-300';
