@@ -16,6 +16,17 @@ function topicAddress(address: string): `0x${string}` {
   return padTopic(address);
 }
 
+function createDeps(chainId: number, blockExplorerBaseUrl: string): ProposalData {
+  return {
+    chainConfig: {
+      chainId,
+      blockExplorer: {
+        baseUrl: blockExplorerBaseUrl,
+      },
+    },
+  } as unknown as ProposalData;
+}
+
 describe('checkPermissionDiff', () => {
   test('detects ownership, roles, and timelock admin changes and emits structured diff', async () => {
     const ownershipTopic0 = eventTopic('OwnershipTransferred(address,address)');
@@ -100,7 +111,7 @@ describe('checkPermissionDiff', () => {
       },
     } as unknown as TenderlySimulation;
 
-    const deps = { chainConfig: { chainId: 1 } } as unknown as ProposalData;
+    const deps = createDeps(1, 'https://etherscan.io');
 
     const result = await checkPermissionDiff.checkProposal(
       {} as unknown as ProposalEvent,
@@ -139,7 +150,7 @@ describe('checkPermissionDiff', () => {
       contracts: [],
       transaction: { status: true, transaction_info: { logs: [], state_diff: [] } },
     } as unknown as TenderlySimulation;
-    const deps = { chainConfig: { chainId: 1 } } as unknown as ProposalData;
+    const deps = createDeps(1, 'https://etherscan.io');
 
     const result = await checkPermissionDiff.checkProposal(
       {} as unknown as ProposalEvent,
@@ -151,5 +162,95 @@ describe('checkPermissionDiff', () => {
     expect(result.warnings).toHaveLength(0);
     expect(result.permissionsDiff).toEqual([]);
     expect(result.info).toContain('Permission changes: none');
+  });
+
+  test('renders cross-chain permission warnings with destination explorer links', async () => {
+    const ownershipTopic0 = eventTopic('OwnershipTransferred(address,address)');
+
+    const contractOwnable = '0x4444444444444444444444444444444444444444';
+    const prevOwner = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const nextOwner = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+    const contractTimelock = '0x5555555555555555555555555555555555555555';
+    const prevAdmin = '0xcccccccccccccccccccccccccccccccccccccccc';
+    const nextAdmin = '0xdddddddddddddddddddddddddddddddddddddddd';
+
+    const sim = {
+      contracts: [
+        { address: contractOwnable, contract_name: 'PoolManager' },
+        { address: contractTimelock, contract_name: 'BridgeTimelock' },
+      ],
+      transaction: {
+        status: true,
+        transaction_info: {
+          logs: [
+            {
+              name: null,
+              anonymous: false,
+              inputs: [],
+              raw: {
+                address: contractOwnable,
+                topics: [ownershipTopic0, topicAddress(prevOwner), topicAddress(nextOwner)],
+                data: '0x',
+              },
+            },
+          ],
+          state_diff: [
+            {
+              soltype: {
+                name: 'admin',
+                type: 'address',
+                storage_location: 'storage',
+                components: null,
+                offset: 0,
+                index: '0',
+                indexed: false,
+                simple_type: { type: 'address' },
+              },
+              original: prevAdmin,
+              dirty: nextAdmin,
+              raw: [
+                { address: contractTimelock, key: zeroHash, original: prevAdmin, dirty: nextAdmin },
+              ],
+            },
+          ],
+        },
+      },
+    } as unknown as TenderlySimulation;
+
+    const blockExplorerBaseUrl = 'https://worldscan.org';
+    const deps = createDeps(480, blockExplorerBaseUrl);
+
+    const result = await checkPermissionDiff.checkProposal(
+      {} as unknown as ProposalEvent,
+      sim,
+      deps,
+    );
+
+    const ownershipWarning = result.warnings.find((warning) =>
+      warning.startsWith('Ownership transfer on'),
+    );
+    expect(ownershipWarning).toContain(
+      `[${getAddress(contractOwnable)}](${blockExplorerBaseUrl}/address/${getAddress(contractOwnable)})`,
+    );
+    expect(ownershipWarning).toContain(
+      `[${getAddress(prevOwner)}](${blockExplorerBaseUrl}/address/${getAddress(prevOwner)})`,
+    );
+    expect(ownershipWarning).toContain(
+      `[${getAddress(nextOwner)}](${blockExplorerBaseUrl}/address/${getAddress(nextOwner)})`,
+    );
+
+    const adminWarning = result.warnings.find((warning) =>
+      warning.startsWith('Timelock admin changed on'),
+    );
+    expect(adminWarning).toContain(
+      `[${getAddress(contractTimelock)}](${blockExplorerBaseUrl}/address/${getAddress(contractTimelock)})`,
+    );
+    expect(adminWarning).toContain(
+      `[${getAddress(prevAdmin)}](${blockExplorerBaseUrl}/address/${getAddress(prevAdmin)})`,
+    );
+    expect(adminWarning).toContain(
+      `[${getAddress(nextAdmin)}](${blockExplorerBaseUrl}/address/${getAddress(nextAdmin)})`,
+    );
   });
 });
