@@ -1,0 +1,70 @@
+name: Deploy Seatbelt relay
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "relay/**"
+      - "api/**"
+      - "utils/publish/**"
+      - "package.json"
+      - "bun.lockb"
+      - "tsconfig.json"
+      - ".github/workflows/deploy-seatbelt-relay.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-seatbelt-relay-production
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy relay to Vercel production
+    runs-on: ubuntu-24.04
+
+    # Required repository secret:
+    # - VERCEL_TOKEN: Vercel token with access to project "seatbelt-relay"
+    #   in scope "marcos-projects-5a62a7ed"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4
+        with:
+          node-version: 20
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Ensure VERCEL_TOKEN is configured
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "Missing required secret: VERCEL_TOKEN"
+            exit 1
+          fi
+
+      - name: Link Vercel project (non-interactive)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          vercel link \
+            --yes \
+            --project seatbelt-relay \
+            --scope marcos-projects-5a62a7ed \
+            --token "$VERCEL_TOKEN"
+
+      - name: Deploy to production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          vercel deploy \
+            --prod \
+            --yes \
+            --scope marcos-projects-5a62a7ed \
+            --token "$VERCEL_TOKEN"
