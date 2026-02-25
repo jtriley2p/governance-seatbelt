@@ -2,7 +2,7 @@
  * Simulation for ActivateL2sProposal: activate V3 protocol fees on Celo, Soneium,
  * Worldchain, XLayer, and Zora.
  *
- * Mirrors the 6 actions from the Solidity script. Replace placeholder addresses
+ * Mirrors the 10 actions from the Solidity script. Replace placeholder addresses
  * (fee adapters, Celo CrossChainAccount, Celo TokenJar) with actual deployed
  * addresses before running against a real proposal.
  */
@@ -65,7 +65,7 @@ const OPTIMISM_PORTAL_ABI = parseAbi([
 ]);
 const V2_FACTORY_ABI = parseAbi(['function setFeeTo(address)']);
 
-// Action 0: Soneium — depositTransaction to transfer v3 factory to fee adapter
+// Soneium — depositTransaction to transfer v3 factory to fee adapter
 const call0 = {
   target: SONEIUM_PORTAL,
   calldata: encodeFunctionData({
@@ -87,7 +87,7 @@ const call0 = {
   signature: EMPTY_SIG,
 };
 
-// Action 2: Soneium V2 factory — setFeeTo to TokenJar
+// Soneium V2 factory — setFeeTo to TokenJar
 const call1 = {
   target: SONEIUM_PORTAL,
   calldata: encodeFunctionData({
@@ -109,7 +109,7 @@ const call1 = {
   signature: EMPTY_SIG,
 };
 
-// Action 1: XLayer — depositTransaction to transfer factory to fee adapter
+// XLayer — depositTransaction to transfer factory to fee adapter
 const call2 = {
   target: XLAYER_PORTAL,
   calldata: encodeFunctionData({
@@ -131,7 +131,7 @@ const call2 = {
   signature: EMPTY_SIG,
 };
 
-// Action 3: XLayer V2 factory — setFeeTo to TokenJar
+// XLayer V2 factory — setFeeTo to TokenJar
 const call3 = {
   target: XLAYER_PORTAL,
   calldata: encodeFunctionData({
@@ -153,7 +153,7 @@ const call3 = {
   signature: EMPTY_SIG,
 };
 
-// Action 4: Celo — XDM to transfer V3 factory to fee adapter
+// Celo — XDM to transfer V3 factory to fee adapter
 const celoV3Forward = encodeFunctionData({
   abi: FORWARD_ABI,
   functionName: 'forward',
@@ -178,7 +178,7 @@ const call4 = {
   signature: EMPTY_SIG,
 };
 
-// Action 5: Celo — set V2 factory feeTo to TokenJar
+// Celo — set V2 factory feeTo to TokenJar
 const celoV2FeeToForward = encodeFunctionData({
   abi: FORWARD_ABI,
   functionName: 'forward',
@@ -203,7 +203,7 @@ const call5 = {
   signature: EMPTY_SIG,
 };
 
-// Action 7: Worldchain — XDM to transfer V3 factory to fee adapter
+// Worldchain — XDM to transfer V3 factory to fee adapter
 const worldchainV3Forward = encodeFunctionData({
   abi: FORWARD_ABI,
   functionName: 'forward',
@@ -228,7 +228,7 @@ const call6 = {
   signature: EMPTY_SIG,
 };
 
-// Action 8: Worldchain — V2 factory setFeeTo to TokenJar
+// Worldchain — V2 factory setFeeTo to TokenJar
 const worldchainV2FeeToForward = encodeFunctionData({
   abi: FORWARD_ABI,
   functionName: 'forward',
@@ -252,7 +252,7 @@ const call7 = {
   signature: EMPTY_SIG,
 };
 
-// Action 9: Zora — XDM to transfer V3 factory to fee adapter
+// Zora — XDM to transfer V3 factory to fee adapter
 const zoraV3Forward = encodeFunctionData({
   abi: FORWARD_ABI,
   functionName: 'forward',
@@ -277,7 +277,7 @@ const call8 = {
   signature: EMPTY_SIG,
 };
 
-// Action 10: Zora — V2 factory setFeeTo to TokenJar
+// Zora — V2 factory setFeeTo to TokenJar
 const zoraV2FeeToForward = encodeFunctionData({
   abi: FORWARD_ABI,
   functionName: 'forward',
@@ -312,23 +312,116 @@ export const config: SimulationConfigNew = {
   values: calls.map((c) => c.value),
   signatures: calls.map((c) => c.signature),
   calldatas: calls.map((c) => c.calldata),
-  description: `# Activate V3 Protocol Fees on Celo, Soneium, Worldchain, XLayer, and Zora
+  description: `# Protocol Fee Expansion: Vote 2
 
-This simulation runs the 10 actions from ActivateL2sProposal (V3 ownership + V2 setFeeTo):
+## Proposal Spec
 
-**Phase 1 — Unify ownership (depositTransaction):**
-1. **Soneium** — OptimismPortal.depositTransaction → V3Factory.setOwner(SONEIUM_FEE_ADAPTER)
-2. **XLayer** — OptimismPortal.depositTransaction → V3Factory.setOwner(XLAYER_FEE_ADAPTER)
-3. **Soneium V2** — OptimismPortal.depositTransaction → V2Factory.setFeeTo(SONEIUM_TOKEN_JAR)
-4. **XLayer V2** — OptimismPortal.depositTransaction → V2Factory.setFeeTo(XLAYER_TOKEN_JAR)
+If this proposal passes, it will execute ten transactions: 
 
-**Phase 2 — Activate via XDM:**
-5. **Celo** — L1CrossDomainMessenger → CrossChainAccount.forward(V3Factory, setOwner(CELO_FEE_ADAPTER))
-6. **Celo** — L1CrossDomainMessenger → CrossChainAccount.forward(V2Factory, setFeeTo(CELO_TOKEN_JAR))
-7. **Worldchain** — L1CrossDomainMessenger → CrossChainAccount.forward(V3Factory, setOwner(WORLDCHAIN_FEE_ADAPTER))
-8. **Worldchain V2** — L1CrossDomainMessenger → CrossChainAccount.forward(V2Factory, setFeeTo(WORLDCHAIN_TOKEN_JAR))
-9. **Zora** — L1CrossDomainMessenger → CrossChainAccount.forward(V3Factory, setOwner(ZORA_FEE_ADAPTER))
-10. **Zora V2** — L1CrossDomainMessenger → CrossChainAccount.forward(V2Factory, setFeeTo(ZORA_TOKEN_JAR))
+\`\`\`
+/// Enable fees on Soneium, XLayer, Celo, Woldchain, and Zora. For each chain:
 
-Placeholder addresses are used for fee adapters, Celo CrossChainAccount, and Celo TokenJar; replace with deployed addresses for production. XLAYER_V2_FACTORY and ZORA_V2_FACTORY use placeholder 'xx'; replace before running.`,
+/// Set the owner of the V3 Factory to the V3OpenFeeAdapter
+V3_FACTORY.setOwner(address(v3OpenFeeAdapter));
+
+/// Set the recipient of V2 protocol fees to the TokenJar
+V2_FACTORY.setFeeTo(address(tokenJar));
+\`\`\`
+
+Because these transactions are crosschain, governance front ends may not decode them correctly. We recommend reviewing the [Seatbelt simulation report](https://github.com/uniswapfoundation/governance-seatbelt/actions) to confirm their validity. Three other things to note:
+
+- Soneium and XLayer deployments are owned by DUNI's alias address on those chains. Celo, Worldchain, and Zora deployments are owned by CrossChainAccount contracts owned by DUNI. Standardizing ownership across chains will be addressed in a future governance proposal.
+- On Celo, Uniswap v2 and v3 admin roles are being transferred from Wormhole to a DUNI-owned CrossChainAccount in [proposal 94](https://vote.uniswapfoundation.org/proposals/94), which will execute prior to this proposal. This proposal makes use of that CrossChainAccount, so simulations fail as the admin transfer has not yet happened.
+- Tenderly, a dependency for these simulations, does not support Zora so those calls cannot be simulated.
+
+### Relevant Addresses
+
+**Soneium**
+
+| **Contract** | **Address** |
+| --- | --- |
+| TokenJar | [\`0x85aeb792b94a9d79741002FC871423Ec5dAD29e9\`](https://soneium.blockscout.com/address/0x85aeb792b94a9d79741002FC871423Ec5dAD29e9) |
+| Releaser (OptimismBridgedResourceFirepit) | [\`0xc9CC50A75cE2a5f88fa77B43e3b050480c731b6e\`](https://soneium.blockscout.com/address/0xc9CC50A75cE2a5f88fa77B43e3b050480c731b6e) |
+| V3OpenFeeAdapter | [\`0x47Cf920815344Fd684A48BBEFcbfbed9C7AE09CF\`](https://soneium.blockscout.com/address/0x47Cf920815344Fd684A48BBEFcbfbed9C7AE09CF) |
+| UniswapV3Factory | [\`0x42aE7Ec7ff020412639d443E245D936429Fbe717\`](https://soneium.blockscout.com/address/0x42aE7Ec7ff020412639d443E245D936429Fbe717) |
+| UniswapV2Factory | [\`0x97FeBbC2AdBD5644ba22736E962564B23F5828CE\`](https://soneium.blockscout.com/address/0x97FeBbC2AdBD5644ba22736E962564B23F5828CE) |
+| Mainnet Bridge | [\`0x88e529A6ccd302c948689Cd5156C83D4614FAE92\`](https://etherscan.io/address/0x88e529A6ccd302c948689Cd5156C83D4614FAE92) |
+
+**XLayer**
+
+| **Contract** | **Address** |
+| --- | --- |
+| TokenJar | [\`0x8Dd8B6D56e4a4A158EDbBfE7f2f703B8FFC1a754\`](https://www.oklink.com/x-layer/address/0x8dd8b6d56e4a4a158edbbfe7f2f703b8ffc1a754/contract) |
+| Releaser (OptimismBridgedResourceFirepit) | [\`0xe122E231cb52aea99690963Fd73E91e33E97468f\`](https://www.oklink.com/xlayer/address/0xe122E231cb52aea99690963Fd73E91e33E97468f) |
+| V3OpenFeeAdapter | [\`0x6A88EF2e6511CAFfE2D006e260e7A5d1E7D4d7D7\`](https://www.oklink.com/x-layer/address/0x6a88ef2e6511caffe2d006e260e7a5d1e7d4d7d7/contract) |
+| UniswapV3Factory | [\`0x4B2ab38DBF28D31D467aA8993f6c2585981D6804\`](https://www.oklink.com/x-layer/address/0x4b2ab38dbf28d31d467aa8993f6c2585981d6804/contract) |
+| UniswapV2Factory | [\`0xDf38F24fE153761634Be942F9d859f3DBA857E95\`](https://www.oklink.com/x-layer/address/0xdf38f24fe153761634be942f9d859f3dba857e95) |
+| Mainnet Bridge | [\`0x64057ad1DdAc804d0D26A7275b193D9DACa19993\`](https://etherscan.io/address/0x64057ad1DdAc804d0D26A7275b193D9DACa19993#code) |
+
+**Celo**
+
+| **Contract** | **Address** |
+| --- | --- |
+| TokenJar | [\`0x190c22c5085640D1cB60CeC88a4F736Acb59bb6B\`](https://celoscan.io/address/0x190c22c5085640D1cB60CeC88a4F736Acb59bb6B#code) |
+| Releaser (OptimismBridgedResourceFirepit) | [\`0x2758FbaA228D7d3c41dD139F47dab1a27bF9bc25\`](https://celoscan.io/address/0x2758FbaA228D7d3c41dD139F47dab1a27bF9bc25) |
+| V3OpenFeeAdapter | [\`0xAfE208a311B21f13EF87E33A90049fC17A7acDEc\`](https://celoscan.io/address/0xafe208a311b21f13ef87e33a90049fc17a7acdec) |
+| UniswapV3Factory | [\`0xAfE208a311B21f13EF87E33A90049fC17A7acDEc\`](https://celoscan.io/address/0xafe208a311b21f13ef87e33a90049fc17a7acdec) |
+| UniswapV2Factory | [\`0x79a530c8e2fA8748B7B40dd3629C0520c2cCf03f\`](https://celoscan.io/address/0x79a530c8e2fA8748B7B40dd3629C0520c2cCf03f#code) |
+| Mainnet Bridge | [\`0x1AC1181fc4e4F877963680587AEAa2C90D7EbB95\`](https://etherscan.io/address/0x1AC1181fc4e4F877963680587AEAa2C90D7EbB95) |
+| Celo CrossChainAccount | [\`0x044aAF330d7fD6AE683EEc5c1C1d1fFf5196B6b7\`](https://celoscan.io/address/0x044aaf330d7fd6ae683eec5c1c1d1fff5196b6b7) |
+
+**Worldchain**
+
+| **Contract** | **Address** |
+| --- | --- |
+| TokenJar | [\`0xbDb82c2dE7D8748A3e499e771604ef8ef8544918\`](https://worldscan.org/address/0xbDb82c2dE7D8748A3e499e771604ef8ef8544918#code) |
+| Releaser (OptimismBridgedResourceFirepit) | [\`0xbDb82c2dE7D8748A3e499e771604ef8ef8544918\`](https://worldscan.org/address/0xbDb82c2dE7D8748A3e499e771604ef8ef8544918) |
+| V3OpenFeeAdapter | [\`0x1CE9d4DfB474Ef9ea7dc0e804a333202e40d6201\`](https://worldscan.org/address/0x1CE9d4DfB474Ef9ea7dc0e804a333202e40d6201#code) |
+| UniswapV3Factory | [\`0x7a5028BDa40e7B173C278C5342087826455ea25a\`](https://worldscan.org/address/0x7a5028bda40e7b173c278c5342087826455ea25a#code) |
+| UniswapV2Factory | [\`0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f\`](https://worldscan.org/address/0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f#code) |
+| Mainnet Bridge | [\`0xf931a81D18B1766d15695ffc7c1920a62b7e710a\`](https://etherscan.io/address/0xf931a81D18B1766d15695ffc7c1920a62b7e710a) |
+| CrossChainAccount | [\`0xcb2436774C3e191c85056d248EF4260ce5f27A9D\`](https://worldscan.org/address/0xcb2436774c3e191c85056d248ef4260ce5f27a9d) |
+
+**Zora**
+
+| **Contract** | **Address** |
+| --- | --- |
+| TokenJar | [\`0x4753C137002D802f45302b118E265c41140e73C2\`](https://explorer.zora.energy/address/0x4753C137002D802f45302b118E265c41140e73C2) |
+| Releaser (OptimismBridgedResourceFirepit) | [\`0x2f98eD4D04e633169FbC941BFCc54E785853b143\`](https://explorer.zora.energy/address/0x2f98eD4D04e633169FbC941BFCc54E785853b143) |
+| V3OpenFeeAdapter | [\`0xbfc49b47637a4DC9b7B8dE8E71BF41E519103B95\`](https://explorer.zora.energy/address/0xbfc49b47637a4DC9b7B8dE8E71BF41E519103B95) |
+| UniswapV3Factory | [\`0x7145F8aeef1f6510E92164038E1B6F8cB2c42Cbb\`](https://explorer.zora.energy/address/0x7145F8aeef1f6510E92164038E1B6F8cB2c42Cbb) |
+| UniswapV2Factory | [\`0x0F797dC7efaEA995bB916f268D919d0a1950eE3C\`](https://explorer.zora.energy/address/0x0F797dC7efaEA995bB916f268D919d0a1950eE3C) |
+| Mainnet Bridge | [\`0xdC40a14d9abd6F410226f1E6de71aE03441ca506\`](https://etherscan.io/address/0xdc40a14d9abd6f410226f1e6de71ae03441ca506) |
+| CrossChainAccount | [\`0x36eEC182D0B24Df3DC23115D64DB521A93D5154f\`](https://explorer.zora.energy/address/0x36eEC182D0B24Df3DC23115D64DB521A93D5154f) |
+
+## Proposal
+
+*This is the first proposal to use the new governance process [approved](https://gov.uniswap.org/t/unification-proposal/25881#p-57882-protocol-fee-rollout-4) in UNIfication. The new process only applies to fee parameter updates, where proposals can bypass the RFC stage and go directly to a five-day Snapshot followed by an onchain vote. This allows for faster updates to protocol fees, while retaining the security of onchain governance.*
+
+Snapshot vote [here](https://snapshot.box/#/s:uniswapgovernance.eth/proposal/0x0242a914c60945d25873d2a98c6abd9f69cb889c6616e27f3c0ab759f9e8d783).
+
+Since UNIfication went live in late December we have been monitoring protocol fees, which were rolled out gradually to ensure protocol health. This started with v2 and select v3 pools on Ethereum mainnet. This rollout has gone well, with market-adjusted TVL [up](https://defillama.com/protocol/uniswap?fees=false&events=false&denomination=ETH) on Ethereum mainnet since December. The burn system is working as expected, permissionlessly converting fees in [many different tokens](https://dune.com/queries/6711845) into UNI burns.
+
+Now, we propose to:
+
+- Expand protocol fees on v2 and v3 to Arbitrum, Base, Celo, OP Mainnet, Soneium, X Layer, Worldchain, and Zora
+- Enable protocol fees on all v3 pools via a new tier-based [v3OpenFeeAdapter](https://github.com/Uniswap/protocol-fees/blob/main/src/feeAdapters/V3OpenFeeAdapter.sol) on mainnet and the above L2s
+
+### **Implementation Details**
+
+**Expand protocol fees to L2s and burn UNI on mainnet**
+
+This proposal introduces v2 and v3 protocol fees on eight chains. Fees on each chain will be routed to the TokenJar on that respective chain.
+
+UNI burned on L2s doesn't stay on L2s - it is bridged back to mainnet and sent to 0xdead. This uses the same infrastructure used for burning Unichain sequencer fees ([OptimismBridgedResourceFirepit](https://github.com/Uniswap/protocol-fees/blob/main/src/releasers/OptimismBridgedResourceFirepit.sol) for OP Stack chains, and [ArbitrumBridgedResourceFirepit](https://github.com/Uniswap/protocol-fees/blob/main/src/releasers/ArbitrumBridgedResourceFirepit.sol) for Arbitrum).
+
+**Enable fees on all v3 pools**
+
+The current v3FeeAdapter manages protocol fees pool by pool and governance maintains a list of individual pools and their fee levels. Today, those pools account for a significant majority of v3 volume on Ethereum mainnet.
+
+v3OpenFeeAdapter replaces this with a tier-based system. Protocol fees are set uniformly across all pools sharing the same LP fee tier. For example, all 1bps LP fee pools could have protocol fees set to 25%. Any pool automatically gets the default protocol fee for its tier, no governance action is needed. This means if this proposal passes, protocol fees will be active on every v3 pool. Governance retains the ability to override fees on individual pools.
+
+### **Governance Process**
+
+Please note that because of GovernorBravo's limit of 10 actions per proposal, there will be two separate onchain votes posted in parallel. One proposal will include the change to mainnet's fee controller and turn on fees on Base, OP Mainnet, and Arbitrum, the other will turn on fees on Celo, Soneium, Worldchain, X Layer, and Zora.`,
 };
