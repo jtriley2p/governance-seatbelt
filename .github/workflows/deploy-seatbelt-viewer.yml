@@ -1,0 +1,67 @@
+name: Deploy Seatbelt viewer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/deploy-seatbelt-viewer.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-seatbelt-viewer-production
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy frontend to Vercel production
+    runs-on: ubuntu-24.04
+
+    # Required repository secret:
+    # - VERCEL_TOKEN: Vercel token with access to project "seatbelt-viewer"
+    #   in scope "marcos-projects-5a62a7ed"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4
+        with:
+          node-version: 20
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Ensure VERCEL_TOKEN is configured
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "Missing required secret: VERCEL_TOKEN"
+            exit 1
+          fi
+
+      - name: Link Vercel project (non-interactive)
+        working-directory: frontend
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          vercel link \
+            --yes \
+            --project seatbelt-viewer \
+            --scope marcos-projects-5a62a7ed \
+            --token "$VERCEL_TOKEN"
+
+      - name: Deploy to production
+        working-directory: frontend
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          vercel deploy \
+            --prod \
+            --yes \
+            --scope marcos-projects-5a62a7ed \
+            --token "$VERCEL_TOKEN"
