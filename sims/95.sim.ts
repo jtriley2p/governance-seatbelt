@@ -28,7 +28,7 @@ const SONEIUM_TOKEN_JAR = getAddress('0x85aeb792b94a9d79741002FC871423Ec5dAD29e9
 
 // ─── XLayer (owner = aliased Timelock → depositTransaction) ───
 const XLAYER_PORTAL = getAddress('0x64057ad1DdAc804d0D26A7275b193D9DACa19993');
-const XLAYER_V2_FACTORY = getAddress('0xDf38F24fE153761634Be942F9d859f3DBA857E95'); 
+const XLAYER_V2_FACTORY = getAddress('0xDf38F24fE153761634Be942F9d859f3DBA857E95');
 const XLAYER_V3_FACTORY = getAddress('0x4B2ab38DBF28D31D467aA8993f6c2585981D6804');
 const XLAYER_FEE_ADAPTER = getAddress('0x6A88EF2e6511CAFfE2D006e260e7A5d1E7D4d7D7');
 const XLAYER_TOKEN_JAR = getAddress('0x8Dd8B6D56e4a4A158EDbBfE7f2f703B8FFC1a754');
@@ -36,7 +36,7 @@ const XLAYER_TOKEN_JAR = getAddress('0x8Dd8B6D56e4a4A158EDbBfE7f2f703B8FFC1a754'
 // ─── Celo (owner = CrossChainAccount after Wormhole handoff → XDM) ───
 const CELO_L1_MESSENGER = getAddress('0x1AC1181fc4e4F877963680587AEAa2C90D7EbB95');
 const CELO_CROSS_CHAIN_ACCOUNT = getAddress('0x044aAF330d7fD6AE683EEc5c1C1d1fFf5196B6b7');
-const CELO_V2_FACTORY = getAddress('0x79a530c8e2fA8748B7B40dd3629C0520c2cCf03f'); // currently owned by wormhole, will be handed off 
+const CELO_V2_FACTORY = getAddress('0x79a530c8e2fA8748B7B40dd3629C0520c2cCf03f'); // currently owned by wormhole, will be handed off
 const CELO_V3_FACTORY = getAddress('0xAfE208a311B21f13EF87E33A90049fC17A7acDEc');
 const CELO_FEE_ADAPTER = getAddress('0xB9952C01830306ea2fAAe1505f6539BD260Bfc48');
 const CELO_TOKEN_JAR = getAddress('0x190c22c5085640D1cB60CeC88a4F736Acb59bb6B');
@@ -44,7 +44,7 @@ const CELO_TOKEN_JAR = getAddress('0x190c22c5085640D1cB60CeC88a4F736Acb59bb6B');
 // ─── Worldchain (owner = CrossChainAccount → XDM) ───
 const WORLDCHAIN_L1_MESSENGER = getAddress('0xf931a81D18B1766d15695ffc7c1920a62b7e710a');
 const WORLDCHAIN_CROSS_CHAIN_ACCOUNT = getAddress('0xcb2436774C3e191c85056d248EF4260ce5f27A9D');
-const WORLDCHAIN_V2_FACTORY = getAddress('0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f'); 
+const WORLDCHAIN_V2_FACTORY = getAddress('0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f');
 const WORLDCHAIN_V3_FACTORY = getAddress('0x7a5028BDa40e7B173C278C5342087826455ea25a');
 const WORLDCHAIN_FEE_ADAPTER = getAddress('0x1CE9d4DfB474Ef9ea7dc0e804a333202e40d6201');
 const WORLDCHAIN_TOKEN_JAR = getAddress('0xbDb82c2dE7D8748A3e499e771604ef8ef8544918');
@@ -52,7 +52,7 @@ const WORLDCHAIN_TOKEN_JAR = getAddress('0xbDb82c2dE7D8748A3e499e771604ef8ef8544
 // ─── Zora (owner = CrossChainAccount → XDM) ───
 const ZORA_L1_MESSENGER = getAddress('0xdC40a14d9abd6F410226f1E6de71aE03441ca506');
 const ZORA_CROSS_CHAIN_ACCOUNT = getAddress('0x36eEC182D0B24Df3DC23115D64DB521A93D5154f');
-const ZORA_V2_FACTORY = getAddress('0x0F797dC7efaEA995bB916f268D919d0a1950eE3C'); 
+const ZORA_V2_FACTORY = getAddress('0x0F797dC7efaEA995bB916f268D919d0a1950eE3C');
 const ZORA_V3_FACTORY = getAddress('0x7145F8aeef1f6510E92164038E1B6F8cB2c42Cbb');
 const ZORA_FEE_ADAPTER = getAddress('0xbfc49b47637a4DC9b7B8dE8E71BF41E519103B95');
 const ZORA_TOKEN_JAR = getAddress('0x4753C137002D802f45302b118E265c41140e73C2');
@@ -301,18 +301,7 @@ const call9 = {
   signature: EMPTY_SIG,
 };
 
-const calls = [
-  call0,
-  call1,
-  call2,
-  call3,
-  call4,
-  call5,
-  call6,
-  call7,
-  call8,
-  call9,
-];
+const calls = [call0, call1, call2, call3, call4, call5, call6, call7, call8, call9];
 
 export const config: SimulationConfigNew = {
   type: 'new',
