@@ -858,6 +858,7 @@ function generateStructuredReport(
 
   const mainStateChanges = extractStateChanges(checks);
   const mainEvents = extractEvents(checks);
+  const mainPermissionsDiff = extractPermissionsDiff(checks);
 
   const chainReports: StructuredSimulationReport['chainReports'] = [
     {
@@ -868,6 +869,7 @@ function generateStructuredReport(
       checks: formattedChecks,
       stateChanges: mainStateChanges,
       events: mainEvents,
+      permissionsDiff: mainPermissionsDiff,
     },
     ...Object.entries(destinationChecks ?? {}).map(([chainIdStr, destChecks]) => {
       const destChainId = Number(chainIdStr);
@@ -887,6 +889,7 @@ function generateStructuredReport(
         checks: formatChecksForStructuredReport(destChecks, destChainId),
         stateChanges: extractStateChanges(destChecks),
         events: extractEvents(destChecks),
+        permissionsDiff: extractPermissionsDiff(destChecks),
       };
     }),
   ];
@@ -900,7 +903,7 @@ function generateStructuredReport(
     stateChanges: mainStateChanges,
     events: mainEvents,
     chainReports,
-    permissionsDiff: extractPermissionsDiff(checks),
+    permissionsDiff: mainPermissionsDiff,
     calldata: extractCalldata(checks, proposal),
     metadata: {
       proposalId: formatProposalId(governorType, proposal.id!),

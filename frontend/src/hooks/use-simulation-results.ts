@@ -165,6 +165,7 @@ export interface ChainSimulationReport {
   checks: SimulationCheck[];
   stateChanges: SimulationStateChange[];
   events: SimulationEvent[];
+  permissionsDiff?: PermissionsDiffItem[];
 }
 
 export interface StructuredSimulationReport {
