@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { getAddress, keccak256, toBytes, zeroHash } from 'viem';
 import type { ProposalData, ProposalEvent, TenderlySimulation } from '../../types';
+import { BlockExplorerSource } from '../../utils/clients/client';
 import { checkPermissionDiff } from '../check-permission-diff';
+import { createMockSimulation } from './test-utils';
 
 function eventTopic(signature: string): `0x${string}` {
   return keccak256(toBytes(signature));
@@ -18,13 +20,71 @@ function topicAddress(address: string): `0x${string}` {
 
 function createDeps(chainId: number, blockExplorerBaseUrl: string): ProposalData {
   return {
+    governor: {},
+    timelock: {},
+    publicClient: {},
     chainConfig: {
       chainId,
+      rpcUrl: 'https://example.invalid',
       blockExplorer: {
         baseUrl: blockExplorerBaseUrl,
+        apiUrl: `${blockExplorerBaseUrl}/api`,
+        source: BlockExplorerSource.Etherscan,
       },
     },
-  } as unknown as ProposalData;
+    targets: [],
+    touchedContracts: [],
+  };
+}
+
+function createProposalEvent(): ProposalEvent {
+  return {
+    id: 1n,
+    proposalId: 1n,
+    proposer: '0x0000000000000000000000000000000000000001',
+    startBlock: 1n,
+    endBlock: 2n,
+    description: 'test proposal',
+    targets: [],
+    values: [],
+    signatures: [],
+    calldatas: [],
+  };
+}
+
+type SimulationLog = NonNullable<
+  TenderlySimulation['transaction']['transaction_info']['logs']
+>[number];
+
+type SimulationStateDiffInput = {
+  soltype: {
+    name: string;
+    type: string;
+    storage_location: string;
+    components: null;
+    offset: number;
+    index: string;
+    indexed: boolean;
+    simple_type: { type: string };
+  };
+  original: string;
+  dirty: string;
+  raw: Array<{ address: string; key: string; original: string; dirty: string }>;
+};
+
+function createSimulation({
+  logs = [],
+  stateDiff = [],
+}: {
+  logs?: SimulationLog[];
+  stateDiff?: SimulationStateDiffInput[];
+}): TenderlySimulation {
+  const simulation = createMockSimulation([]);
+  Object.assign(simulation.transaction.transaction_info, {
+    logs,
+    state_diff: stateDiff,
+  });
+  return simulation;
 }
 
 describe('checkPermissionDiff', () => {
@@ -46,78 +106,68 @@ describe('checkPermissionDiff', () => {
     const prevAdmin = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
     const nextAdmin = '0xffffffffffffffffffffffffffffffffffffffff';
 
-    const sim = {
-      contracts: [],
-      transaction: {
-        status: true,
-        transaction_info: {
-          logs: [
-            {
-              name: null,
-              anonymous: false,
-              inputs: [],
-              raw: {
-                address: contractOwnable,
-                topics: [ownershipTopic0, topicAddress(prevOwner), topicAddress(nextOwner)],
-                data: '0x',
-              },
-            },
-            {
-              name: null,
-              anonymous: false,
-              inputs: [],
-              raw: {
-                address: contractAccess,
-                topics: [
-                  roleGrantedTopic0,
-                  padTopic(proposerRole),
-                  topicAddress(roleAccount),
-                  topicAddress(roleSender),
-                ],
-                data: '0x',
-              },
-            },
-            {
-              name: null,
-              anonymous: false,
-              inputs: [],
-              raw: {
-                address: contractTimelock,
-                topics: [newAdminTopic0, topicAddress(nextAdmin)],
-                data: '0x',
-              },
-            },
-          ],
-          state_diff: [
-            {
-              soltype: {
-                name: 'admin',
-                type: 'address',
-                storage_location: 'storage',
-                components: null,
-                offset: 0,
-                index: '0',
-                indexed: false,
-                simple_type: { type: 'address' },
-              },
-              original: prevAdmin,
-              dirty: nextAdmin,
-              raw: [
-                { address: contractTimelock, key: zeroHash, original: prevAdmin, dirty: nextAdmin },
-              ],
-            },
+    const sim = createSimulation({
+      logs: [
+        {
+          name: null,
+          anonymous: false,
+          inputs: [],
+          raw: {
+            address: contractOwnable,
+            topics: [ownershipTopic0, topicAddress(prevOwner), topicAddress(nextOwner)],
+            data: '0x',
+          },
+        },
+        {
+          name: null,
+          anonymous: false,
+          inputs: [],
+          raw: {
+            address: contractAccess,
+            topics: [
+              roleGrantedTopic0,
+              padTopic(proposerRole),
+              topicAddress(roleAccount),
+              topicAddress(roleSender),
+            ],
+            data: '0x',
+          },
+        },
+        {
+          name: null,
+          anonymous: false,
+          inputs: [],
+          raw: {
+            address: contractTimelock,
+            topics: [newAdminTopic0, topicAddress(nextAdmin)],
+            data: '0x',
+          },
+        },
+      ],
+      stateDiff: [
+        {
+          soltype: {
+            name: 'admin',
+            type: 'address',
+            storage_location: 'storage',
+            components: null,
+            offset: 0,
+            index: '0',
+            indexed: false,
+            simple_type: { type: 'address' },
+          },
+          original: prevAdmin,
+          dirty: nextAdmin,
+          raw: [
+            { address: contractTimelock, key: zeroHash, original: prevAdmin, dirty: nextAdmin },
           ],
         },
-      },
-    } as unknown as TenderlySimulation;
+      ],
+    });
 
     const deps = createDeps(1, 'https://etherscan.io');
 
-    const result = await checkPermissionDiff.checkProposal(
-      {} as unknown as ProposalEvent,
-      sim,
-      deps,
-    );
+    const result = await checkPermissionDiff.checkProposal(createProposalEvent(), sim, deps);
 
     expect(result.errors).toHaveLength(0);
     expect(result.permissionsDiff?.length).toBe(3);
@@ -146,17 +196,10 @@ describe('checkPermissionDiff', () => {
   });
 
   test('reports none when there are no permission changes', async () => {
-    const sim = {
-      contracts: [],
-      transaction: { status: true, transaction_info: { logs: [], state_diff: [] } },
-    } as unknown as TenderlySimulation;
+    const sim = createSimulation({ logs: [], stateDiff: [] });
     const deps = createDeps(1, 'https://etherscan.io');
 
-    const result = await checkPermissionDiff.checkProposal(
-      {} as unknown as ProposalEvent,
-      sim,
-      deps,
-    );
+    const result = await checkPermissionDiff.checkProposal(createProposalEvent(), sim, deps);
 
     expect(result.errors).toHaveLength(0);
     expect(result.warnings).toHaveLength(0);
@@ -175,57 +218,44 @@ describe('checkPermissionDiff', () => {
     const prevAdmin = '0xcccccccccccccccccccccccccccccccccccccccc';
     const nextAdmin = '0xdddddddddddddddddddddddddddddddddddddddd';
 
-    const sim = {
-      contracts: [
-        { address: contractOwnable, contract_name: 'PoolManager' },
-        { address: contractTimelock, contract_name: 'BridgeTimelock' },
+    const sim = createSimulation({
+      logs: [
+        {
+          name: null,
+          anonymous: false,
+          inputs: [],
+          raw: {
+            address: contractOwnable,
+            topics: [ownershipTopic0, topicAddress(prevOwner), topicAddress(nextOwner)],
+            data: '0x',
+          },
+        },
       ],
-      transaction: {
-        status: true,
-        transaction_info: {
-          logs: [
-            {
-              name: null,
-              anonymous: false,
-              inputs: [],
-              raw: {
-                address: contractOwnable,
-                topics: [ownershipTopic0, topicAddress(prevOwner), topicAddress(nextOwner)],
-                data: '0x',
-              },
-            },
-          ],
-          state_diff: [
-            {
-              soltype: {
-                name: 'admin',
-                type: 'address',
-                storage_location: 'storage',
-                components: null,
-                offset: 0,
-                index: '0',
-                indexed: false,
-                simple_type: { type: 'address' },
-              },
-              original: prevAdmin,
-              dirty: nextAdmin,
-              raw: [
-                { address: contractTimelock, key: zeroHash, original: prevAdmin, dirty: nextAdmin },
-              ],
-            },
+      stateDiff: [
+        {
+          soltype: {
+            name: 'admin',
+            type: 'address',
+            storage_location: 'storage',
+            components: null,
+            offset: 0,
+            index: '0',
+            indexed: false,
+            simple_type: { type: 'address' },
+          },
+          original: prevAdmin,
+          dirty: nextAdmin,
+          raw: [
+            { address: contractTimelock, key: zeroHash, original: prevAdmin, dirty: nextAdmin },
           ],
         },
-      },
-    } as unknown as TenderlySimulation;
+      ],
+    });
 
     const blockExplorerBaseUrl = 'https://worldscan.org';
     const deps = createDeps(480, blockExplorerBaseUrl);
 
-    const result = await checkPermissionDiff.checkProposal(
-      {} as unknown as ProposalEvent,
-      sim,
-      deps,
-    );
+    const result = await checkPermissionDiff.checkProposal(createProposalEvent(), sim, deps);
 
     const ownershipWarning = result.warnings.find((warning) =>
       warning.startsWith('Ownership transfer on'),
