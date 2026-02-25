@@ -1,10 +1,6 @@
 /**
- * Simulation for ActivateL2sProposal: activate V3 protocol fees on Celo, Soneium,
+ * Simulation for ActivateL2sProposal: activate v2 and V3 protocol fees on Celo, Soneium,
  * Worldchain, XLayer, and Zora.
- *
- * Mirrors the 10 actions from the Solidity script. Replace placeholder addresses
- * (fee adapters, Celo CrossChainAccount, Celo TokenJar) with actual deployed
- * addresses before running against a real proposal.
  */
 import { encodeFunctionData, getAddress, parseAbi } from 'viem';
 
