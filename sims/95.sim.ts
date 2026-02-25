@@ -327,7 +327,7 @@ V2_FACTORY.setFeeTo(address(tokenJar));
 Because these transactions are crosschain, governance front ends may not decode them correctly. We recommend reviewing the [Seatbelt simulation report](https://github.com/uniswapfoundation/governance-seatbelt/actions) to confirm their validity. Three other things to note:
 
 - Soneium and XLayer deployments are owned by DUNI's alias address on those chains. Celo, Worldchain, and Zora deployments are owned by CrossChainAccount contracts owned by DUNI. Standardizing ownership across chains will be addressed in a future governance proposal.
-- On Celo, Uniswap v2 and v3 admin roles are being transferred from Wormhole to a DUNI-owned CrossChainAccount in [proposal 94](https://vote.uniswapfoundation.org/proposals/94), which will execute prior to this proposal. This proposal makes use of that CrossChainAccount, so simulations fail as the admin transfer has not yet happened.
+- On Celo, Uniswap v2 and v3 admin roles are being transferred from Wormhole to a DUNI-owned CrossChainAccount in proposal 94, which will execute prior to this proposal if passed. Because this proposal uses that CrossChainAccount, simulations currently fail.
 - Tenderly, a dependency for these simulations, does not support Zora so those calls cannot be simulated.
 
 ### Relevant Addresses
