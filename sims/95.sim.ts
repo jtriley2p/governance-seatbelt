@@ -360,7 +360,7 @@ Because these transactions are crosschain, governance front ends may not decode 
 | --- | --- |
 | TokenJar | [\`0x190c22c5085640D1cB60CeC88a4F736Acb59bb6B\`](https://celoscan.io/address/0x190c22c5085640D1cB60CeC88a4F736Acb59bb6B#code) |
 | Releaser (OptimismBridgedResourceFirepit) | [\`0x2758FbaA228D7d3c41dD139F47dab1a27bF9bc25\`](https://celoscan.io/address/0x2758FbaA228D7d3c41dD139F47dab1a27bF9bc25) |
-| V3OpenFeeAdapter | [\`0xAfE208a311B21f13EF87E33A90049fC17A7acDEc\`](https://celoscan.io/address/0xafe208a311b21f13ef87e33a90049fc17a7acdec) |
+| V3OpenFeeAdapter | [\`0xB9952C01830306ea2fAAe1505f6539BD260Bfc48\`](https://celoscan.io/address/0xB9952C01830306ea2fAAe1505f6539BD260Bfc48) |
 | UniswapV3Factory | [\`0xAfE208a311B21f13EF87E33A90049fC17A7acDEc\`](https://celoscan.io/address/0xafe208a311b21f13ef87e33a90049fc17a7acdec) |
 | UniswapV2Factory | [\`0x79a530c8e2fA8748B7B40dd3629C0520c2cCf03f\`](https://celoscan.io/address/0x79a530c8e2fA8748B7B40dd3629C0520c2cCf03f#code) |
 | Mainnet Bridge | [\`0x1AC1181fc4e4F877963680587AEAa2C90D7EbB95\`](https://etherscan.io/address/0x1AC1181fc4e4F877963680587AEAa2C90D7EbB95) |
