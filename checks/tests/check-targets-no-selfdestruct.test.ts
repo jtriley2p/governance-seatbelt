@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import { zeroAddress, zeroHash } from 'viem';
 import type { ProposalData, ProposalEvent, TenderlySimulation } from '../../types';
+import { BlockExplorerSource } from '../../utils/clients/client';
 import {
   checkTargetsNoSelfdestruct,
   checkTouchedContractsNoSelfdestruct,
 } from '../check-targets-no-selfdestruct';
+import { createMockSimulation } from './test-utils';
 
 const GOVERNOR = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const TIMELOCK = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -13,16 +16,96 @@ const EMPTY_TARGET = '0x3333333333333333333333333333333333333333';
 const TOUCHED_EMPTY = '0x4444444444444444444444444444444444444444';
 const TOUCHED_DELEGATECALL = '0x5555555555555555555555555555555555555555';
 
-function makeDeps(publicClient: ProposalData['publicClient']): ProposalData {
+type MockPublicClient = {
+  getCode: (args: { address: `0x${string}` }) => Promise<`0x${string}`>;
+  getTransactionCount: (args: { address: `0x${string}` }) => Promise<number>;
+};
+
+function makeDeps(publicClient: MockPublicClient): ProposalData {
   return {
     governor: { address: GOVERNOR },
     timelock: { address: TIMELOCK },
     chainConfig: {
       chainId: 1,
-      blockExplorer: { baseUrl: 'https://etherscan.io' },
+      blockExplorer: {
+        baseUrl: 'https://etherscan.io',
+        apiUrl: 'https://api.etherscan.io/v2/api',
+        source: BlockExplorerSource.Etherscan,
+      },
+      rpcUrl: 'https://example-rpc.invalid',
     },
     publicClient,
-  } as unknown as ProposalData;
+    targets: [],
+    touchedContracts: [],
+  };
+}
+
+function makeProposal(targets: string[]): ProposalEvent {
+  return {
+    id: 1n,
+    proposalId: 1n,
+    proposer: GOVERNOR,
+    startBlock: 0n,
+    endBlock: 1n,
+    description: 'selfdestruct test',
+    targets,
+    values: targets.map(() => 0n),
+    signatures: targets.map(() => '0x'),
+    calldatas: targets.map(() => '0x'),
+  };
+}
+
+function makeTenderlyContract(
+  address: string,
+  contractName: string,
+): TenderlySimulation['contracts'][number] {
+  return {
+    id: `${address}-id`,
+    contract_id: `${address}-contract-id`,
+    balance: '0',
+    network_id: '1',
+    public: true,
+    verified_by: 'test',
+    verification_date: null,
+    address,
+    contract_name: contractName,
+    ens_domain: null,
+    type: 'contract',
+    evm_version: 'paris',
+    compiler_version: '0.8.24',
+    optimizations_used: false,
+    optimization_runs: 0,
+    libraries: null,
+    data: {
+      main_contract: 0,
+      contract_info: [],
+      abi: [],
+      raw_abi: null,
+    },
+    creation_block: 0,
+    creation_tx: zeroHash,
+    creator_address: zeroAddress,
+    created_at: new Date('2023-01-01T00:00:00Z'),
+    number_of_watches: null,
+    language: 'solidity',
+    in_project: false,
+    number_of_files: 1,
+  };
+}
+
+function makeSimulation({
+  addresses = [],
+  namedContracts = [],
+}: {
+  addresses?: string[];
+  namedContracts?: Array<{ address: string; contractName: string }>;
+} = {}): TenderlySimulation {
+  const simulation = createMockSimulation([]);
+  simulation.transaction.addresses = addresses;
+  simulation.contracts = namedContracts.map(({ address, contractName }) =>
+    makeTenderlyContract(address, contractName),
+  );
+  return simulation;
 }
 
 describe('checkTargetsNoSelfdestruct', () => {
@@ -30,25 +113,21 @@ describe('checkTargetsNoSelfdestruct', () => {
     const delegatecallBytecode = '0x5b6000f4';
 
     const deps = makeDeps({
-      getCode: async ({ address }: { address: `0x${string}` }) => {
+      getCode: async ({ address }) => {
         if (address.toLowerCase() === TRUSTED_PROXY.toLowerCase()) return delegatecallBytecode;
         if (address.toLowerCase() === UNKNOWN_SURFACE.toLowerCase()) return delegatecallBytecode;
         return '0x';
       },
       getTransactionCount: async () => 1,
-    } as ProposalData['publicClient']);
+    });
 
-    const proposal = {
-      targets: [TRUSTED_PROXY, UNKNOWN_SURFACE],
-    } as unknown as ProposalEvent;
-
-    const sim = {
-      contracts: [
-        { address: TRUSTED_PROXY, contract_name: 'L1CrossDomainMessenger' },
-        { address: UNKNOWN_SURFACE, contract_name: 'CustomBridgeExecutor' },
+    const proposal = makeProposal([TRUSTED_PROXY, UNKNOWN_SURFACE]);
+    const sim = makeSimulation({
+      namedContracts: [
+        { address: TRUSTED_PROXY, contractName: 'L1CrossDomainMessenger' },
+        { address: UNKNOWN_SURFACE, contractName: 'CustomBridgeExecutor' },
       ],
-      transaction: { addresses: [] },
-    } as unknown as TenderlySimulation;
+    });
 
     const result = await checkTargetsNoSelfdestruct.checkProposal(proposal, sim, deps);
 
@@ -63,16 +142,10 @@ describe('checkTargetsNoSelfdestruct', () => {
     const deps = makeDeps({
       getCode: async () => '0x',
       getTransactionCount: async () => 0,
-    } as ProposalData['publicClient']);
+    });
 
-    const proposal = {
-      targets: [EMPTY_TARGET],
-    } as unknown as ProposalEvent;
-
-    const sim = {
-      contracts: [],
-      transaction: { addresses: [] },
-    } as unknown as TenderlySimulation;
+    const proposal = makeProposal([EMPTY_TARGET]);
+    const sim = makeSimulation();
 
     const result = await checkTargetsNoSelfdestruct.checkProposal(proposal, sim, deps);
 
@@ -87,24 +160,21 @@ describe('checkTouchedContractsNoSelfdestruct', () => {
     const delegatecallBytecode = '0x5b6000f4';
 
     const deps = makeDeps({
-      getCode: async ({ address }: { address: `0x${string}` }) => {
+      getCode: async ({ address }) => {
         if (address.toLowerCase() === TOUCHED_DELEGATECALL.toLowerCase())
           return delegatecallBytecode;
         return '0x';
       },
-      getTransactionCount: async ({ address }: { address: `0x${string}` }) => {
+      getTransactionCount: async ({ address }) => {
         if (address.toLowerCase() === TOUCHED_DELEGATECALL.toLowerCase()) return 1;
         return 0;
       },
-    } as ProposalData['publicClient']);
+    });
 
-    const sim = {
-      contracts: [],
-      transaction: { addresses: [TOUCHED_EMPTY, TOUCHED_DELEGATECALL] },
-    } as unknown as TenderlySimulation;
+    const sim = makeSimulation({ addresses: [TOUCHED_EMPTY, TOUCHED_DELEGATECALL] });
 
     const result = await checkTouchedContractsNoSelfdestruct.checkProposal(
-      {} as ProposalEvent,
+      makeProposal([]),
       sim,
       deps,
     );

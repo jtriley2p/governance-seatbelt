@@ -32,7 +32,7 @@ export const checkTargetsNoSelfdestruct: ProposalCheck = {
       deps.publicClient,
       blockExplorerUrl,
       contractNames,
-      'warn',
+      'targets',
     );
     return { info, warnings: warn, errors: error };
   },
@@ -52,11 +52,13 @@ export const checkTouchedContractsNoSelfdestruct: ProposalCheck = {
       deps.publicClient,
       blockExplorerUrl,
       contractNames,
-      'info',
+      'touched-contracts',
     );
     return { info, warnings: warn, errors: error };
   },
 };
+
+type SelfdestructCheckScope = 'targets' | 'touched-contracts';
 
 /**
  * For a given simulation response, check if a set of addresses contain selfdestruct.
@@ -67,7 +69,7 @@ async function checkNoSelfdestructs(
   publicClient: PublicClient,
   blockExplorerUrl: string,
   contractNamesByAddress: Map<string, string>,
-  emptyAccountSeverity: 'info' | 'warn',
+  scope: SelfdestructCheckScope,
 ): Promise<{ info: string[]; warn: string[]; error: string[] }> {
   const info: string[] = [];
   const warn: string[] = [];
@@ -84,7 +86,7 @@ async function checkNoSelfdestructs(
       info.push(`${address}${suffix}: EOA`);
     } else if (status === 'empty') {
       const emptyAccountMsg = `${address}${suffix}: Empty account (could deploy code later)`;
-      if (emptyAccountSeverity === 'info') {
+      if (scope === 'touched-contracts') {
         info.push(emptyAccountMsg);
       } else if (isOurPlaceholder) {
         placeholderWarnings.push(emptyAccountMsg);

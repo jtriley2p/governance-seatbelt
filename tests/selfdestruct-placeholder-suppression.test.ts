@@ -1,26 +1,33 @@
 import { describe, expect, test } from 'bun:test';
 import { getAddress } from 'viem';
 import { checkTargetsNoSelfdestruct } from '../checks/check-targets-no-selfdestruct';
+import { createMockSimulation } from '../checks/tests/test-utils';
 import type { ProposalData, ProposalEvent, TenderlySimulation } from '../types';
+import { BlockExplorerSource } from '../utils/clients/client';
 import { DEFAULT_SIMULATION_ADDRESS } from '../utils/clients/tenderly';
 
-function makeDeps(overrides?: Partial<ProposalData>): ProposalData {
+type MockPublicClient = {
+  getCode: (args: { address: `0x${string}` }) => Promise<`0x${string}`>;
+  getTransactionCount: (args: { address: `0x${string}` }) => Promise<number>;
+};
+
+function makeDeps(publicClient: MockPublicClient): ProposalData {
   return {
     governor: { address: getAddress('0x1111111111111111111111111111111111111111') },
     timelock: { address: getAddress('0x2222222222222222222222222222222222222222') },
-    publicClient: overrides?.publicClient ?? {
-      // default EOA (empty account)
-      getCode: async (_: { address: string }) => '0x',
-      getTransactionCount: async (_: { address: string }) => 0,
-    },
+    publicClient,
     chainConfig: {
       chainId: 1,
-      blockExplorer: { baseUrl: 'https://etherscan.io' },
+      blockExplorer: {
+        baseUrl: 'https://etherscan.io',
+        apiUrl: 'https://api.etherscan.io/v2/api',
+        source: BlockExplorerSource.Etherscan,
+      },
+      rpcUrl: 'https://example-rpc.invalid',
     },
     targets: [],
     touchedContracts: [],
-    ...overrides,
-  } as unknown as ProposalData;
+  };
 }
 
 function makeProposal(targets: string[]): ProposalEvent {
@@ -32,10 +39,14 @@ function makeProposal(targets: string[]): ProposalEvent {
     endBlock: 1n,
     description: 'placeholder suppression test',
     targets,
-    values: [0n],
-    signatures: ['0x'],
-    calldatas: ['0x'],
+    values: targets.map(() => 0n),
+    signatures: targets.map(() => '0x'),
+    calldatas: targets.map(() => '0x'),
   };
+}
+
+function makeSimulation(): TenderlySimulation {
+  return createMockSimulation([]);
 }
 
 describe('Selfdestruct checks - placeholder warning suppression', () => {
@@ -43,34 +54,25 @@ describe('Selfdestruct checks - placeholder warning suppression', () => {
     const placeholder = DEFAULT_SIMULATION_ADDRESS;
     const realEoa = getAddress('0x1234567890abcdef1234567890abcdef12345678');
 
-    // Configure PC to return: placeholder -> empty (warning), realEoa -> eoa (info)
     const deps = makeDeps({
-      publicClient: {
-        getCode: async ({ address }: { address: string }) => {
-          const a = getAddress(address);
-          if (a === getAddress(placeholder)) return '0x'; // empty
-          if (a === realEoa) return '0x'; // still 0x, but we'll set nonce > 0 to mark EOA
-          return '0x';
-        },
-        getTransactionCount: async ({ address }: { address: string }) => {
-          const a = getAddress(address);
-          if (a === getAddress(placeholder)) return 0; // empty -> warning
-          if (a === realEoa) return 1; // eoa -> info
-          return 0;
-        },
+      getCode: async ({ address }) => {
+        const resolvedAddress = getAddress(address);
+        if (resolvedAddress === getAddress(placeholder)) return '0x';
+        if (resolvedAddress === realEoa) return '0x';
+        return '0x';
+      },
+      getTransactionCount: async ({ address }) => {
+        const resolvedAddress = getAddress(address);
+        if (resolvedAddress === getAddress(placeholder)) return 0;
+        if (resolvedAddress === realEoa) return 1;
+        return 0;
       },
     });
 
     const proposal = makeProposal([placeholder, realEoa]);
-    const res = await checkTargetsNoSelfdestruct.checkProposal(
-      proposal,
-      {} as unknown as TenderlySimulation,
-      deps,
-    );
+    const res = await checkTargetsNoSelfdestruct.checkProposal(proposal, makeSimulation(), deps);
 
-    // Only placeholder would have triggered a warning; suppression should clear all warnings
     expect(res.warnings.length).toBe(0);
-    // The info should contain the real EOA, placeholder warning was suppressed entirely
     expect(res.info.join('\n')).toContain('0x1234567890abCdEf1234567890AbCDEF12345678');
   });
 
@@ -78,22 +80,14 @@ describe('Selfdestruct checks - placeholder warning suppression', () => {
     const placeholder = DEFAULT_SIMULATION_ADDRESS;
     const otherEmpty = getAddress('0xabcdefabcdefabcdefabcdefabcdefabcdefabcd');
 
-    // Configure PC to return: placeholder -> empty (warning), otherEmpty -> empty (warning)
     const deps = makeDeps({
-      publicClient: {
-        getCode: async (_: { address: string }) => '0x',
-        getTransactionCount: async (_: { address: string }) => 0,
-      },
+      getCode: async () => '0x',
+      getTransactionCount: async () => 0,
     });
 
     const proposal = makeProposal([placeholder, otherEmpty]);
-    const res = await checkTargetsNoSelfdestruct.checkProposal(
-      proposal,
-      {} as unknown as TenderlySimulation,
-      deps,
-    );
+    const res = await checkTargetsNoSelfdestruct.checkProposal(proposal, makeSimulation(), deps);
 
-    // Two warnings should remain (no suppression because non-placeholder also warns)
     expect(res.warnings.length).toBeGreaterThanOrEqual(1);
     expect(res.warnings.join('\n')).toContain('(simulation placeholder)');
   });
