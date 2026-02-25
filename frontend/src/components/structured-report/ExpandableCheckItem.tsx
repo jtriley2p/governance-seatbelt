@@ -326,7 +326,10 @@ export function ExpandableCheckItem({
             ) : isPermissionChangesCheck ? (
               <div className="mt-4">
                 {permissionsDiff && permissionsDiff.length > 0 ? (
-                  <PermissionsDiff items={permissionsDiff} />
+                  <PermissionsDiff
+                    items={permissionsDiff}
+                    blockExplorerBaseUrl={metadata?.blockExplorerBaseUrl}
+                  />
                 ) : (
                   <div className="flex items-center justify-center p-6 text-muted-foreground">
                     <InfoIcon className="h-4 w-4 mr-2" />

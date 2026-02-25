@@ -1,6 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { ArrowRightIcon, ExternalLinkIcon, KeyIcon, ShieldIcon, UserIcon } from 'lucide-react';
 import type { Address } from 'viem';
+import { buildAddressLinkForExplorer } from './structured-report/explorer';
 
 type PermissionsDiffItem =
   | {
@@ -38,6 +39,7 @@ type PermissionsDiffItem =
 
 interface PermissionsDiffProps {
   items: PermissionsDiffItem[];
+  blockExplorerBaseUrl?: string;
 }
 
 function truncateAddress(address: string): string {
@@ -45,14 +47,22 @@ function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
-function AddressDisplay({ address, label }: { address: string; label?: string }) {
+function AddressDisplay({
+  address,
+  label,
+  blockExplorerBaseUrl,
+}: {
+  address: string;
+  label?: string;
+  blockExplorerBaseUrl?: string;
+}) {
   const truncated = truncateAddress(address);
 
   return (
     <div className="flex flex-col gap-1">
       {label && <span className="text-xs text-muted-foreground">{label}</span>}
       <a
-        href={`https://etherscan.io/address/${address}`}
+        href={buildAddressLinkForExplorer(address, blockExplorerBaseUrl ?? '')}
         target="_blank"
         rel="noopener noreferrer"
         className="inline-flex items-center gap-1 font-mono text-sm bg-muted px-2 py-1.5 rounded hover:bg-muted-foreground/20 transition-colors"
@@ -70,11 +80,13 @@ function AddressTransition({
   to,
   fromLabel = 'From',
   toLabel = 'To',
+  blockExplorerBaseUrl,
 }: {
   from?: string;
   to: string;
   fromLabel?: string;
   toLabel?: string;
+  blockExplorerBaseUrl?: string;
 }) {
   return (
     <div className="flex items-center gap-3 flex-wrap">
@@ -82,7 +94,7 @@ function AddressTransition({
         <span className="text-xs text-muted-foreground">{fromLabel}</span>
         {from ? (
           <a
-            href={`https://etherscan.io/address/${from}`}
+            href={buildAddressLinkForExplorer(from, blockExplorerBaseUrl ?? '')}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 font-mono text-sm bg-muted px-2 py-1.5 rounded hover:bg-muted-foreground/20 transition-colors"
@@ -103,7 +115,7 @@ function AddressTransition({
       <div className="flex flex-col gap-1">
         <span className="text-xs text-muted-foreground">{toLabel}</span>
         <a
-          href={`https://etherscan.io/address/${to}`}
+          href={buildAddressLinkForExplorer(to, blockExplorerBaseUrl ?? '')}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 font-mono text-sm bg-muted px-2 py-1.5 rounded hover:bg-muted-foreground/20 transition-colors"
@@ -120,9 +132,11 @@ function AddressTransition({
 function ContractHeader({
   contractName,
   contractAddress,
+  blockExplorerBaseUrl,
 }: {
   contractName?: string;
   contractAddress: string;
+  blockExplorerBaseUrl?: string;
 }) {
   // Parse contract name to extract just the name part (without address)
   const displayName = contractName?.replace(/\s+at\s+`0x[a-fA-F0-9]+`$/, '') || 'Contract';
@@ -131,7 +145,7 @@ function ContractHeader({
     <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3">
       <span>{displayName}</span>
       <a
-        href={`https://etherscan.io/address/${contractAddress}`}
+        href={buildAddressLinkForExplorer(contractAddress, blockExplorerBaseUrl ?? '')}
         target="_blank"
         rel="noopener noreferrer"
         className="inline-flex items-center gap-1 font-mono text-xs bg-muted-foreground/10 px-1.5 py-0.5 rounded hover:underline"
@@ -146,8 +160,10 @@ function ContractHeader({
 
 function OwnershipTransferredCard({
   item,
+  blockExplorerBaseUrl,
 }: {
   item: Extract<PermissionsDiffItem, { kind: 'ownership_transferred' }>;
+  blockExplorerBaseUrl?: string;
 }) {
   return (
     <div className="border border-muted rounded-lg p-4 bg-card">
@@ -155,12 +171,17 @@ function OwnershipTransferredCard({
         <UserIcon className="h-4 w-4 text-orange-500" />
         <span className="font-medium">Ownership Transferred</span>
       </div>
-      <ContractHeader contractName={item.contractName} contractAddress={item.contractAddress} />
+      <ContractHeader
+        contractName={item.contractName}
+        contractAddress={item.contractAddress}
+        blockExplorerBaseUrl={blockExplorerBaseUrl}
+      />
       <AddressTransition
         from={item.previous}
         to={item.next}
         fromLabel="Previous Owner"
         toLabel="New Owner"
+        blockExplorerBaseUrl={blockExplorerBaseUrl}
       />
     </div>
   );
@@ -168,8 +189,10 @@ function OwnershipTransferredCard({
 
 function RoleChangeCard({
   item,
+  blockExplorerBaseUrl,
 }: {
   item: Extract<PermissionsDiffItem, { kind: 'role_granted' | 'role_revoked' }>;
+  blockExplorerBaseUrl?: string;
 }) {
   const isGranted = item.kind === 'role_granted';
   const roleName = item.role.name || truncateAddress(item.role.id);
@@ -190,10 +213,22 @@ function RoleChangeCard({
           {roleName}
         </Badge>
       </div>
-      <ContractHeader contractName={item.contractName} contractAddress={item.contractAddress} />
+      <ContractHeader
+        contractName={item.contractName}
+        contractAddress={item.contractAddress}
+        blockExplorerBaseUrl={blockExplorerBaseUrl}
+      />
       <div className="space-y-3">
-        <AddressDisplay address={item.account} label={isGranted ? 'Granted To' : 'Revoked From'} />
-        <AddressDisplay address={item.sender} label="By" />
+        <AddressDisplay
+          address={item.account}
+          label={isGranted ? 'Granted To' : 'Revoked From'}
+          blockExplorerBaseUrl={blockExplorerBaseUrl}
+        />
+        <AddressDisplay
+          address={item.sender}
+          label="By"
+          blockExplorerBaseUrl={blockExplorerBaseUrl}
+        />
       </div>
     </div>
   );
@@ -201,11 +236,13 @@ function RoleChangeCard({
 
 function TimelockAdminCard({
   item,
+  blockExplorerBaseUrl,
 }: {
   item: Extract<
     PermissionsDiffItem,
     { kind: 'timelock_admin_changed' | 'timelock_pending_admin_changed' }
   >;
+  blockExplorerBaseUrl?: string;
 }) {
   const isPending = item.kind === 'timelock_pending_admin_changed';
 
@@ -220,15 +257,24 @@ function TimelockAdminCard({
           </Badge>
         )}
       </div>
-      <ContractHeader contractName={item.contractName} contractAddress={item.contractAddress} />
+      <ContractHeader
+        contractName={item.contractName}
+        contractAddress={item.contractAddress}
+        blockExplorerBaseUrl={blockExplorerBaseUrl}
+      />
       {isPending && !item.previous ? (
-        <AddressDisplay address={item.next} label="Pending Admin Set" />
+        <AddressDisplay
+          address={item.next}
+          label="Pending Admin Set"
+          blockExplorerBaseUrl={blockExplorerBaseUrl}
+        />
       ) : (
         <AddressTransition
           from={item.previous}
           to={item.next}
           fromLabel={isPending ? 'Previous Pending Admin' : 'Previous Admin'}
           toLabel={isPending ? 'New Pending Admin' : 'New Admin'}
+          blockExplorerBaseUrl={blockExplorerBaseUrl}
         />
       )}
     </div>
@@ -238,9 +284,11 @@ function TimelockAdminCard({
 function TimelockAdminTransferCard({
   pending,
   admin,
+  blockExplorerBaseUrl,
 }: {
   pending: Extract<PermissionsDiffItem, { kind: 'timelock_pending_admin_changed' }>;
   admin: Extract<PermissionsDiffItem, { kind: 'timelock_admin_changed' }>;
+  blockExplorerBaseUrl?: string;
 }) {
   return (
     <div className="border border-muted rounded-lg p-4 bg-card">
@@ -254,6 +302,7 @@ function TimelockAdminTransferCard({
       <ContractHeader
         contractName={pending.contractName || admin.contractName}
         contractAddress={admin.contractAddress}
+        blockExplorerBaseUrl={blockExplorerBaseUrl}
       />
 
       <div className="space-y-4">
@@ -263,22 +312,28 @@ function TimelockAdminTransferCard({
             to={pending.next}
             fromLabel="Previous Pending Admin"
             toLabel="New Pending Admin"
+            blockExplorerBaseUrl={blockExplorerBaseUrl}
           />
         ) : (
-          <AddressDisplay address={pending.next} label="Pending Admin Set" />
+          <AddressDisplay
+            address={pending.next}
+            label="Pending Admin Set"
+            blockExplorerBaseUrl={blockExplorerBaseUrl}
+          />
         )}
         <AddressTransition
           from={admin.previous}
           to={admin.next}
           fromLabel="Previous Admin"
           toLabel="New Admin"
+          blockExplorerBaseUrl={blockExplorerBaseUrl}
         />
       </div>
     </div>
   );
 }
 
-export function PermissionsDiff({ items }: PermissionsDiffProps) {
+export function PermissionsDiff({ items, blockExplorerBaseUrl }: PermissionsDiffProps) {
   if (!items || items.length === 0) {
     return <div className="text-muted-foreground text-sm p-4">No permission changes detected.</div>;
   }
@@ -385,6 +440,7 @@ export function PermissionsDiff({ items }: PermissionsDiffProps) {
                     key={`timelock-transfer-${displayItem.admin.contractAddress}-${displayItem.admin.next}-${index}`}
                     pending={displayItem.pending}
                     admin={displayItem.admin}
+                    blockExplorerBaseUrl={blockExplorerBaseUrl}
                   />
                 );
               }
@@ -393,6 +449,7 @@ export function PermissionsDiff({ items }: PermissionsDiffProps) {
                 <TimelockAdminCard
                   key={`timelock-${displayItem.item.contractAddress}-${index}`}
                   item={displayItem.item}
+                  blockExplorerBaseUrl={blockExplorerBaseUrl}
                 />
               );
             })}
@@ -410,6 +467,7 @@ export function PermissionsDiff({ items }: PermissionsDiffProps) {
               <OwnershipTransferredCard
                 key={`ownership-${item.contractAddress}-${index}`}
                 item={item}
+                blockExplorerBaseUrl={blockExplorerBaseUrl}
               />
             ))}
           </div>
@@ -426,6 +484,7 @@ export function PermissionsDiff({ items }: PermissionsDiffProps) {
               <RoleChangeCard
                 key={`role-${item.contractAddress}-${item.account}-${index}`}
                 item={item}
+                blockExplorerBaseUrl={blockExplorerBaseUrl}
               />
             ))}
           </div>

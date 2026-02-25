@@ -11,6 +11,10 @@ const ROLE_REVOKED_TOPIC = eventTopic('RoleRevoked(bytes32,address,address)');
 const NEW_ADMIN_TOPIC = eventTopic('NewAdmin(address)');
 const NEW_PENDING_ADMIN_TOPIC = eventTopic('NewPendingAdmin(address)');
 
+function toAddressLink(address: string, blockExplorerBaseUrl: string): string {
+  return `[${address}](${blockExplorerBaseUrl}/address/${address})`;
+}
+
 const KNOWN_ROLE_NAMES: Array<{ name: string; id: `0x${string}` }> = [
   { name: 'DEFAULT_ADMIN_ROLE', id: zeroHash },
   { name: 'PROPOSER_ROLE', id: keccak256(toBytes('PROPOSER_ROLE')) },
@@ -56,6 +60,29 @@ function getContractNameFromSimulation(contract: TenderlyContract | undefined): 
 
   const contractName = contract.contract_name || 'Unknown Contract';
   return `${contractName} at \`${contractAddress}\``;
+}
+
+function formatAddressOrUnknown(address: string | undefined, blockExplorerBaseUrl: string): string {
+  return address ? toAddressLink(address, blockExplorerBaseUrl) : '`unknown`';
+}
+
+function formatContractWithLinkedAddress(
+  contractName: string | undefined,
+  contractAddress: string,
+  blockExplorerBaseUrl: string,
+): string {
+  const contractLink = toAddressLink(contractAddress, blockExplorerBaseUrl);
+
+  if (!contractName) {
+    return contractLink;
+  }
+
+  const nameMatch = contractName.match(/^(.+?)\s+at\s+`0x[0-9a-fA-F]{40}`$/);
+  if (nameMatch) {
+    return `${nameMatch[1]} at ${contractLink}`;
+  }
+
+  return `${contractName} (${contractLink})`;
 }
 
 function mergeTimelockAdminChanges(items: PermissionsDiffItem[]): PermissionsDiffItem[] {
@@ -349,36 +376,49 @@ export const checkPermissionDiff: ProposalCheck = {
       return { info, warnings, errors: [], permissionsDiff: [] };
     }
 
+    const blockExplorerBaseUrl = deps.chainConfig.blockExplorer.baseUrl;
+
     for (const item of deduped) {
+      const contractWithLink = formatContractWithLinkedAddress(
+        item.contractName,
+        item.contractAddress,
+        blockExplorerBaseUrl,
+      );
+
       if (item.kind === 'ownership_transferred') {
         warnings.push(
-          `Ownership transfer on ${item.contractName ?? `\`${item.contractAddress}\``}: ${
-            item.previous ? `\`${item.previous}\`` : '`unknown`'
-          } → \`${item.next}\``,
+          `Ownership transfer on ${contractWithLink}: ${formatAddressOrUnknown(
+            item.previous,
+            blockExplorerBaseUrl,
+          )} → ${toAddressLink(item.next, blockExplorerBaseUrl)}`,
         );
       } else if (item.kind === 'role_granted') {
         warnings.push(
-          `Role granted on ${item.contractName ?? `\`${item.contractAddress}\``}: ${
-            item.role.name ?? item.role.id
-          } to \`${item.account}\` (by \`${item.sender}\`)`,
+          `Role granted on ${contractWithLink}: ${item.role.name ?? item.role.id} to ${toAddressLink(
+            item.account,
+            blockExplorerBaseUrl,
+          )} (by ${toAddressLink(item.sender, blockExplorerBaseUrl)})`,
         );
       } else if (item.kind === 'role_revoked') {
         warnings.push(
-          `Role revoked on ${item.contractName ?? `\`${item.contractAddress}\``}: ${
-            item.role.name ?? item.role.id
-          } from \`${item.account}\` (by \`${item.sender}\`)`,
+          `Role revoked on ${contractWithLink}: ${item.role.name ?? item.role.id} from ${toAddressLink(
+            item.account,
+            blockExplorerBaseUrl,
+          )} (by ${toAddressLink(item.sender, blockExplorerBaseUrl)})`,
         );
       } else if (item.kind === 'timelock_admin_changed') {
         warnings.push(
-          `Timelock admin changed on ${item.contractName ?? `\`${item.contractAddress}\``}: ${
-            item.previous ? `\`${item.previous}\`` : '`unknown`'
-          } → \`${item.next}\``,
+          `Timelock admin changed on ${contractWithLink}: ${formatAddressOrUnknown(
+            item.previous,
+            blockExplorerBaseUrl,
+          )} → ${toAddressLink(item.next, blockExplorerBaseUrl)}`,
         );
       } else if (item.kind === 'timelock_pending_admin_changed') {
         warnings.push(
-          `Timelock pending admin changed on ${item.contractName ?? `\`${item.contractAddress}\``}: ${
-            item.previous ? `\`${item.previous}\`` : '`unknown`'
-          } → \`${item.next}\``,
+          `Timelock pending admin changed on ${contractWithLink}: ${formatAddressOrUnknown(
+            item.previous,
+            blockExplorerBaseUrl,
+          )} → ${toAddressLink(item.next, blockExplorerBaseUrl)}`,
         );
       }
     }
