@@ -130,13 +130,18 @@ export function FormattedCheckDetails({
           const parts: React.ReactNode[] = [];
           let lastIndex = 0;
 
+          const delegatecallAdvisoryContextMatch = processedLine.match(
+            /Contract \(with DELEGATECALL,\s*([^)]+)\)/,
+          );
+          const delegatecallAdvisoryContext = delegatecallAdvisoryContextMatch?.[1]?.trim();
+
           const isTargetLine =
             processedLine.includes('Contract (verified)') ||
             processedLine.includes('EOA (verification not applicable)') ||
             processedLine.includes('Contract (looks safe)') ||
             processedLine.includes('Contract (unverified)') ||
             processedLine.includes('Trusted contract') ||
-            processedLine.includes('Contract (with DELEGATECALL)') ||
+            processedLine.includes('Contract (with DELEGATECALL') ||
             processedLine.includes('Contract (with SELFDESTRUCT)') ||
             processedLine.includes('Empty account (could deploy code later)') ||
             processedLine.includes('EOA (may have code later)') ||
@@ -161,7 +166,7 @@ export function FormattedCheckDetails({
               else if (processedLine.includes('Contract (looks safe)')) status = 'Looks Safe';
               else if (processedLine.includes('Trusted contract (not checked)')) status = 'Trusted';
               else if (processedLine.includes('Trusted contract')) status = 'Trusted';
-              else if (processedLine.includes('Contract (with DELEGATECALL)'))
+              else if (processedLine.includes('Contract (with DELEGATECALL'))
                 status = 'Contract (with DELEGATECALL)';
               else if (processedLine.includes('Contract (with SELFDESTRUCT)'))
                 status = 'Contract (with SELFDESTRUCT)';
@@ -203,6 +208,11 @@ export function FormattedCheckDetails({
                       </Badge>
                     </div>
                   </div>
+                  {delegatecallAdvisoryContext && (
+                    <p className="mt-1 px-2 text-xs text-muted-foreground">
+                      {delegatecallAdvisoryContext}
+                    </p>
+                  )}
                 </div>
               );
             }
