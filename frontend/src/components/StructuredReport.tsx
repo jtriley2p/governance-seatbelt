@@ -72,6 +72,7 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
           checks: report.checks,
           stateChanges: report.stateChanges,
           events: report.events,
+          permissionsDiff: report.permissionsDiff,
         },
       ];
 
@@ -335,6 +336,8 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
               blockExplorerBaseUrl:
                 chainReport.blockExplorerBaseUrl || report.metadata.blockExplorerBaseUrl,
             };
+            const chainPermissionsDiff =
+              chainReport.permissionsDiff ?? (isMainChain ? report.permissionsDiff : undefined);
 
             return (
               <section
@@ -392,7 +395,7 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
                     stateChanges={chainReport.stateChanges}
                     metadata={effectiveMetadata}
                     coverageByCheckId={coverageByCheckId}
-                    permissionsDiff={report.permissionsDiff}
+                    permissionsDiff={chainPermissionsDiff}
                   />
                 )}
               </section>
