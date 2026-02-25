@@ -1,4 +1,14 @@
-import { decodeEventLog, getAddress, isHex, keccak256, toBytes, zeroAddress, zeroHash } from 'viem';
+import {
+  decodeEventLog,
+  decodeFunctionData,
+  getAddress,
+  isHex,
+  keccak256,
+  parseAbi,
+  toBytes,
+  zeroAddress,
+  zeroHash,
+} from 'viem';
 import type { PermissionsDiffItem, ProposalCheck, TenderlyContract } from '../types';
 
 function eventTopic(signature: string): `0x${string}` {
@@ -14,6 +24,18 @@ const NEW_PENDING_ADMIN_TOPIC = eventTopic('NewPendingAdmin(address)');
 function toAddressLink(address: string, blockExplorerBaseUrl: string): string {
   return `[${address}](${blockExplorerBaseUrl}/address/${address})`;
 }
+
+const OWNERSHIP_FUNCTION_ABI = parseAbi([
+  'function setOwner(address owner)',
+  'function transferOwnership(address newOwner)',
+]);
+
+const OWNERSHIP_SELECTOR_TO_FUNCTION_NAME: Record<string, 'setOwner' | 'transferOwnership'> = {
+  '0x13af4035': 'setOwner',
+  '0xf2fde38b': 'transferOwnership',
+};
+
+const OWNER_ARG_NAMES = new Set(['owner', '_owner', 'newowner', 'new_owner']);
 
 const KNOWN_ROLE_NAMES: Array<{ name: string; id: `0x${string}` }> = [
   { name: 'DEFAULT_ADMIN_ROLE', id: zeroHash },
@@ -41,6 +63,218 @@ function maybeAddress(value: unknown): `0x${string}` | null {
   } catch {
     return null;
   }
+}
+
+type TraceCallLike = {
+  to?: string;
+  input?: string;
+  function_name?: string;
+  decoded_input?: Array<{ soltype?: { name?: string; type?: string }; value?: unknown }>;
+  calls?: TraceCallLike[];
+};
+
+type OwnershipIntentEvidence = {
+  contractAddress: `0x${string}`;
+  newOwner: `0x${string}`;
+  functionName: 'setOwner' | 'transferOwnership';
+};
+
+type RawAddressTransition = {
+  contractAddress: `0x${string}`;
+  slot: string;
+  previous?: `0x${string}`;
+  next: `0x${string}`;
+};
+
+function isTraceCallLike(value: unknown): value is TraceCallLike {
+  return typeof value === 'object' && value !== null;
+}
+
+function normalizeOwnershipFunctionName(
+  value: string | undefined,
+): 'setOwner' | 'transferOwnership' | null {
+  if (!value) return null;
+  const normalized = value.replace(/\s+/g, '').toLowerCase();
+  if (normalized === 'setowner' || normalized.startsWith('setowner(')) return 'setOwner';
+  if (normalized === 'transferownership' || normalized.startsWith('transferownership(')) {
+    return 'transferOwnership';
+  }
+  return null;
+}
+
+function extractOwnerArgFromDecodedInput(decodedInput: unknown): `0x${string}` | null {
+  if (!Array.isArray(decodedInput)) return null;
+
+  const ownerNamedArg = decodedInput.find((input) => {
+    if (typeof input !== 'object' || input === null) return false;
+    const soltype = 'soltype' in input ? input.soltype : undefined;
+    if (typeof soltype !== 'object' || soltype === null) return false;
+    if (typeof soltype.type !== 'string' || soltype.type.toLowerCase() !== 'address') return false;
+    if (typeof soltype.name !== 'string') return false;
+    return OWNER_ARG_NAMES.has(soltype.name.toLowerCase());
+  });
+
+  if (ownerNamedArg && typeof ownerNamedArg === 'object' && 'value' in ownerNamedArg) {
+    const parsed = maybeAddress(ownerNamedArg.value);
+    if (parsed) return parsed;
+  }
+
+  const anyAddressTypedArg = decodedInput.find((input) => {
+    if (typeof input !== 'object' || input === null) return false;
+    const soltype = 'soltype' in input ? input.soltype : undefined;
+    if (typeof soltype !== 'object' || soltype === null) return false;
+    return typeof soltype.type === 'string' && soltype.type.toLowerCase() === 'address';
+  });
+
+  if (
+    anyAddressTypedArg &&
+    typeof anyAddressTypedArg === 'object' &&
+    'value' in anyAddressTypedArg
+  ) {
+    const parsed = maybeAddress(anyAddressTypedArg.value);
+    if (parsed) return parsed;
+  }
+
+  for (const input of decodedInput) {
+    if (typeof input !== 'object' || input === null || !('value' in input)) continue;
+    const parsed = maybeAddress(input.value);
+    if (parsed) return parsed;
+  }
+
+  return null;
+}
+
+function parseOwnershipIntentFromInput(input: string | undefined): {
+  functionName: 'setOwner' | 'transferOwnership';
+  newOwner: `0x${string}`;
+} | null {
+  if (!input || !isHex(input) || input.length < 10) return null;
+
+  const selector = input.slice(0, 10).toLowerCase();
+  const functionName = OWNERSHIP_SELECTOR_TO_FUNCTION_NAME[selector];
+  if (!functionName) return null;
+
+  try {
+    const decoded = decodeFunctionData({ abi: OWNERSHIP_FUNCTION_ABI, data: input });
+    const newOwner = maybeAddress(decoded.args[0]);
+    if (!newOwner) return null;
+    return { functionName, newOwner };
+  } catch {
+    return null;
+  }
+}
+
+function extractOwnershipIntentEvidence(callTrace: unknown): OwnershipIntentEvidence[] {
+  const intents: OwnershipIntentEvidence[] = [];
+  const nodes: TraceCallLike[] = [];
+
+  const walk = (node: unknown) => {
+    if (!isTraceCallLike(node)) return;
+    nodes.push(node);
+    if (Array.isArray(node.calls)) {
+      for (const child of node.calls) {
+        walk(child);
+      }
+    }
+  };
+
+  walk(callTrace);
+
+  for (const node of nodes) {
+    const contractAddress = maybeAddress(node.to);
+    if (!contractAddress) continue;
+
+    const functionName = normalizeOwnershipFunctionName(node.function_name);
+    if (functionName) {
+      const newOwner = extractOwnerArgFromDecodedInput(node.decoded_input);
+      if (newOwner) {
+        intents.push({
+          contractAddress,
+          functionName,
+          newOwner,
+        });
+        continue;
+      }
+    }
+
+    const parsedFromInput = parseOwnershipIntentFromInput(node.input);
+    if (!parsedFromInput) continue;
+
+    intents.push({
+      contractAddress,
+      functionName: parsedFromInput.functionName,
+      newOwner: parsedFromInput.newOwner,
+    });
+  }
+
+  return intents;
+}
+
+function parseAddressFromStorageWord(value: unknown): `0x${string}` | null {
+  if (typeof value !== 'string' || !isHex(value)) return null;
+
+  if (value.length === 42) {
+    return maybeAddress(value);
+  }
+
+  if (value.length !== 66) return null;
+
+  const raw = value.slice(2).toLowerCase();
+  if (!/^0{24}[0-9a-f]{40}$/.test(raw)) return null;
+
+  return maybeAddress(`0x${raw.slice(24)}`);
+}
+
+function extractRawAddressTransitions(stateDiffs: unknown): RawAddressTransition[] {
+  if (!Array.isArray(stateDiffs)) return [];
+
+  const transitions: RawAddressTransition[] = [];
+
+  for (const diff of stateDiffs) {
+    if (typeof diff !== 'object' || diff === null || !('raw' in diff)) continue;
+    const rawEntries = diff.raw;
+    if (!Array.isArray(rawEntries)) continue;
+
+    for (const raw of rawEntries) {
+      if (typeof raw !== 'object' || raw === null) continue;
+      if (!('address' in raw) || !('dirty' in raw)) continue;
+
+      const contractAddress = maybeAddress(raw.address);
+      if (!contractAddress) continue;
+
+      const next = parseAddressFromStorageWord(raw.dirty);
+      if (!next) continue;
+
+      const previous = 'original' in raw ? parseAddressFromStorageWord(raw.original) : null;
+      if (previous && previous.toLowerCase() === next.toLowerCase()) continue;
+
+      const slot =
+        'key' in raw && typeof raw.key === 'string' && raw.key.length > 0 ? raw.key : 'unknown';
+
+      transitions.push({
+        contractAddress,
+        slot,
+        previous: previous ?? undefined,
+        next,
+      });
+    }
+  }
+
+  return transitions;
+}
+
+function hasOwnershipDiff(
+  items: PermissionsDiffItem[],
+  contractAddress: `0x${string}`,
+  next: `0x${string}`,
+): boolean {
+  return items.some((item) => {
+    if (item.kind !== 'ownership_transferred') return false;
+    return (
+      item.contractAddress.toLowerCase() === contractAddress.toLowerCase() &&
+      item.next.toLowerCase() === next.toLowerCase()
+    );
+  });
 }
 
 function stableKey(item: PermissionsDiffItem): string {
@@ -359,6 +593,34 @@ export const checkPermissionDiff: ProposalCheck = {
           via: 'state_diff',
         });
       }
+    }
+
+    // --- Ownership fallback: correlate ownership-changing call intent with raw state diff writes ---
+    const ownershipIntentEvidence = extractOwnershipIntentEvidence(
+      sim.transaction.transaction_info.call_trace,
+    );
+    const rawAddressTransitions = extractRawAddressTransitions(
+      sim.transaction.transaction_info.state_diff,
+    );
+
+    for (const intent of ownershipIntentEvidence) {
+      const matchedTransition = rawAddressTransitions.find(
+        (transition) =>
+          transition.contractAddress.toLowerCase() === intent.contractAddress.toLowerCase() &&
+          transition.next.toLowerCase() === intent.newOwner.toLowerCase(),
+      );
+
+      if (!matchedTransition) continue;
+      if (hasOwnershipDiff(permissionsDiff, intent.contractAddress, intent.newOwner)) continue;
+
+      permissionsDiff.push({
+        kind: 'ownership_transferred',
+        contractAddress: intent.contractAddress,
+        contractName: getContractLabel(intent.contractAddress),
+        previous: matchedTransition.previous,
+        next: intent.newOwner,
+        via: 'state_diff',
+      });
     }
 
     const merged = mergeTimelockAdminChanges(permissionsDiff);
