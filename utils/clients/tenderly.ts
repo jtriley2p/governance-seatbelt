@@ -36,6 +36,7 @@ import {
   parseOptimismL1L2Messages,
   parseOptimismL1L2MessagesFromProposal,
 } from '../bridges/optimism';
+import { supportsTenderlyDestinationSimulation } from '../chains/capabilities';
 import {
   BLOCK_GAS_LIMIT,
   TENDERLY_ACCESS_TOKEN,
@@ -832,19 +833,6 @@ async function simulateExecuted(config: SimulationConfigExecuted): Promise<Simul
  * @returns The potentially augmented SimulationResult including destination sim info.
  */
 
-const TENDERLY_DESTINATION_SUPPORTED_CHAIN_IDS = new Set([
-  10, // Optimism
-  130, // Unichain
-  8453, // Base
-  42161, // Arbitrum
-  57073, // Ink
-  60808, // Bob
-  1868, // Soneium
-  196, // XLayer
-  42220, // Celo
-  480, // Worldchain
-]);
-
 export async function handleCrossChainSimulations(
   sourceResult: SimulationResult,
 ): Promise<SimulationResult> {
@@ -935,7 +923,7 @@ export async function handleCrossChainSimulations(
       const destinationChainId = Number(message.destinationChainId);
       console.log(`[CrossChainHandler] Simulating L2 message to: ${message.l2TargetAddress}`);
 
-      if (!TENDERLY_DESTINATION_SUPPORTED_CHAIN_IDS.has(destinationChainId)) {
+      if (!supportsTenderlyDestinationSimulation(destinationChainId)) {
         const reason = `Skipping destination sim: chain ${destinationChainId} is not currently supported in this Tenderly workflow.`;
         console.warn(`[CrossChainHandler] ${reason}`);
         return {

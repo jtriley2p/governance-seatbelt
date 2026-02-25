@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 import type { AllCheckResults, ProposalEvent } from '../types';
+import { getChainName } from '../utils/chains/capabilities';
 import { generateProposalSummary } from '../utils/proposal-summary';
 
 describe('Proposal Summary Generation', () => {
+  const arbitrumName = getChainName(42161);
+  const optimismName = getChainName(10);
+
   // Helper function to create a basic proposal
   function createProposal(overrides?: Partial<ProposalEvent>): ProposalEvent {
     return {
@@ -142,7 +146,7 @@ describe('Proposal Summary Generation', () => {
       ]);
 
       const summary = generateProposalSummary(proposal, checks);
-      expect(summary).toContain('Sends via Arbitrum bridge');
+      expect(summary).toContain(`Sends via ${arbitrumName} bridge`);
     });
 
     it('should detect Optimism sendMessage calls', () => {
@@ -152,7 +156,7 @@ describe('Proposal Summary Generation', () => {
       ]);
 
       const summary = generateProposalSummary(proposal, checks);
-      expect(summary).toContain('Sends via Optimism bridge');
+      expect(summary).toContain(`Sends via ${optimismName} bridge`);
     });
 
     it('should NOT falsely detect base/l2 in parameter names', () => {
@@ -179,7 +183,7 @@ describe('Proposal Summary Generation', () => {
       };
 
       const summary = generateProposalSummary(proposal, checks, undefined, l2Checks);
-      expect(summary).toContain('Transfers ARB on Arbitrum');
+      expect(summary).toContain(`Transfers ARB on ${arbitrumName}`);
     });
 
     it('should extract token symbol from contract name when null', () => {
@@ -195,7 +199,7 @@ describe('Proposal Summary Generation', () => {
       };
 
       const summary = generateProposalSummary(proposal, checks, undefined, l2Checks);
-      expect(summary).toContain('Transfers ARB on Arbitrum');
+      expect(summary).toContain(`Transfers ARB on ${arbitrumName}`);
       expect(summary).not.toContain('null');
     });
 
@@ -250,7 +254,7 @@ describe('Proposal Summary Generation', () => {
 
       const summary = generateProposalSummary(proposal, checks, undefined, l2Checks);
       // With 3 transfers of ARB, should say "Transfers ARB on Arbitrum to 3 recipients"
-      expect(summary).toContain('Transfers ARB on Arbitrum');
+      expect(summary).toContain(`Transfers ARB on ${arbitrumName}`);
     });
   });
 
@@ -297,7 +301,7 @@ describe('Proposal Summary Generation', () => {
 
       const summary = generateProposalSummary(proposal, checks);
       // Cross-chain should be first (highest priority)
-      expect(summary.startsWith('Sends via Arbitrum bridge')).toBe(true);
+      expect(summary.startsWith(`Sends via ${arbitrumName} bridge`)).toBe(true);
       // Should include upgrade and transfer
       expect(summary.toLowerCase()).toContain('upgrades proxy');
       expect(summary.toLowerCase()).toContain('transfers 1000 usdc');

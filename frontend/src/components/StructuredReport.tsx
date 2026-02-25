@@ -85,6 +85,15 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
     return primary ? [primary, ...rest] : rest;
   }, [chainReports, mainChainId]);
 
+  const crossChainNamesByChainId = useMemo(() => {
+    const names = new Map<number, string>();
+    for (const message of report.crossChain?.messages ?? []) {
+      const resolved = resolveChainName(message.chainId, message.chainName);
+      names.set(message.chainId, resolved);
+    }
+    return names;
+  }, [report.crossChain?.messages]);
+
   const noCheckChainStatuses = useMemo(() => {
     const coveredChainIds = new Set(sortedChainReports.map((chainReport) => chainReport.chainId));
     const byChain = new Map<
@@ -101,7 +110,7 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
       const next = {
         status: entry.status,
         reason: entry.skipReason,
-        chainName: resolveChainName(entry.chainId),
+        chainName: resolveChainName(entry.chainId, crossChainNamesByChainId.get(entry.chainId)),
       } as const;
 
       // Prefer failed over skipped when multiple summary entries exist for a chain.
@@ -121,7 +130,7 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
       .sort((a, b) => a.chainName.localeCompare(b.chainName));
 
     return primary ? [primary, ...rest] : rest;
-  }, [sortedChainReports, report.coverage?.checks, mainChainId]);
+  }, [sortedChainReports, report.coverage?.checks, mainChainId, crossChainNamesByChainId]);
 
   return (
     <div className="w-full space-y-4">

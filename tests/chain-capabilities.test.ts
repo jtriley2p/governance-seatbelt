@@ -1,0 +1,33 @@
+import { describe, expect, test } from 'bun:test';
+import {
+  getChainName,
+  getOpStackDestinationChainIds,
+  supportsL2Checks,
+  supportsTenderlyDestinationSimulation,
+} from '../utils/chains/capabilities';
+
+describe('chain capabilities registry', () => {
+  test('returns canonical chain names when known', () => {
+    expect(getChainName(1)).toBe('Ethereum');
+    expect(getChainName(42161)).toContain('Arbitrum');
+    expect(getChainName(10)).toBeTruthy();
+  });
+
+  test('falls back to generic chain label for unknown chain ids', () => {
+    expect(getChainName(999999999)).toBe('Chain 999999999');
+  });
+
+  test('keeps l2-check and tenderly-destination capability differences explicit', () => {
+    expect(supportsL2Checks(7777777)).toBe(true);
+    expect(supportsTenderlyDestinationSimulation(7777777)).toBe(false);
+
+    expect(supportsL2Checks(42161)).toBe(true);
+    expect(supportsTenderlyDestinationSimulation(42161)).toBe(true);
+  });
+
+  test('exposes OP Stack destination ordering used for summaries', () => {
+    expect(getOpStackDestinationChainIds()).toEqual([
+      10, 8453, 130, 196, 480, 42220, 57073, 1868, 60808, 7777777,
+    ]);
+  });
+});
