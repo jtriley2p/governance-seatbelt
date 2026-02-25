@@ -30,10 +30,7 @@ const OWNERSHIP_FUNCTION_ABI = parseAbi([
   'function transferOwnership(address newOwner)',
 ]);
 
-const OWNERSHIP_SELECTOR_TO_FUNCTION_NAME: Record<string, 'setOwner' | 'transferOwnership'> = {
-  '0x13af4035': 'setOwner',
-  '0xf2fde38b': 'transferOwnership',
-};
+const OWNERSHIP_SELECTORS = new Set(['0x13af4035', '0xf2fde38b']);
 
 const OWNER_ARG_NAMES = new Set(['owner', '_owner', 'newowner', 'new_owner']);
 
@@ -76,12 +73,10 @@ type TraceCallLike = {
 type OwnershipIntentEvidence = {
   contractAddress: `0x${string}`;
   newOwner: `0x${string}`;
-  functionName: 'setOwner' | 'transferOwnership';
 };
 
 type RawAddressTransition = {
   contractAddress: `0x${string}`;
-  slot: string;
   previous?: `0x${string}`;
   next: `0x${string}`;
 };
@@ -92,14 +87,14 @@ function isTraceCallLike(value: unknown): value is TraceCallLike {
 
 function normalizeOwnershipFunctionName(
   value: string | undefined,
-): 'setOwner' | 'transferOwnership' | null {
-  if (!value) return null;
+): boolean {
+  if (!value) return false;
   const normalized = value.replace(/\s+/g, '').toLowerCase();
-  if (normalized === 'setowner' || normalized.startsWith('setowner(')) return 'setOwner';
+  if (normalized === 'setowner' || normalized.startsWith('setowner(')) return true;
   if (normalized === 'transferownership' || normalized.startsWith('transferownership(')) {
-    return 'transferOwnership';
+    return true;
   }
-  return null;
+  return false;
 }
 
 function extractOwnerArgFromDecodedInput(decodedInput: unknown): `0x${string}` | null {
@@ -145,20 +140,18 @@ function extractOwnerArgFromDecodedInput(decodedInput: unknown): `0x${string}` |
 }
 
 function parseOwnershipIntentFromInput(input: string | undefined): {
-  functionName: 'setOwner' | 'transferOwnership';
   newOwner: `0x${string}`;
 } | null {
   if (!input || !isHex(input) || input.length < 10) return null;
 
   const selector = input.slice(0, 10).toLowerCase();
-  const functionName = OWNERSHIP_SELECTOR_TO_FUNCTION_NAME[selector];
-  if (!functionName) return null;
+  if (!OWNERSHIP_SELECTORS.has(selector)) return null;
 
   try {
     const decoded = decodeFunctionData({ abi: OWNERSHIP_FUNCTION_ABI, data: input });
     const newOwner = maybeAddress(decoded.args[0]);
     if (!newOwner) return null;
-    return { functionName, newOwner };
+    return { newOwner };
   } catch {
     return null;
   }
@@ -184,13 +177,11 @@ function extractOwnershipIntentEvidence(callTrace: unknown): OwnershipIntentEvid
     const contractAddress = maybeAddress(node.to);
     if (!contractAddress) continue;
 
-    const functionName = normalizeOwnershipFunctionName(node.function_name);
-    if (functionName) {
+    if (normalizeOwnershipFunctionName(node.function_name)) {
       const newOwner = extractOwnerArgFromDecodedInput(node.decoded_input);
       if (newOwner) {
         intents.push({
           contractAddress,
-          functionName,
           newOwner,
         });
         continue;
@@ -202,7 +193,6 @@ function extractOwnershipIntentEvidence(callTrace: unknown): OwnershipIntentEvid
 
     intents.push({
       contractAddress,
-      functionName: parsedFromInput.functionName,
       newOwner: parsedFromInput.newOwner,
     });
   }
@@ -248,12 +238,8 @@ function extractRawAddressTransitions(stateDiffs: unknown): RawAddressTransition
       const previous = 'original' in raw ? parseAddressFromStorageWord(raw.original) : null;
       if (previous && previous.toLowerCase() === next.toLowerCase()) continue;
 
-      const slot =
-        'key' in raw && typeof raw.key === 'string' && raw.key.length > 0 ? raw.key : 'unknown';
-
       transitions.push({
         contractAddress,
-        slot,
         previous: previous ?? undefined,
         next,
       });
