@@ -53,6 +53,22 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 ## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Production deploys for the viewer are automated by GitHub Actions via
+`.github/workflows/deploy-seatbelt-viewer.yml`.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### CI deploy trigger
+
+The workflow deploys to production when:
+
+- a commit is pushed to `main`, and
+- the change touches `frontend/**` (or the workflow file itself)
+
+A manual deploy can also be started with **Actions → Deploy Seatbelt viewer → Run workflow**.
+
+### Required GitHub secret
+
+Configure this repository secret before enabling CI deploys:
+
+- `VERCEL_TOKEN`: Vercel token with access to project `seatbelt-viewer` in scope `marcos-projects-5a62a7ed`
+
+The workflow links the project non-interactively and runs `vercel deploy --prod`.
