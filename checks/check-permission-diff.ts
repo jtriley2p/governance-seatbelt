@@ -11,8 +11,6 @@ import {
 } from 'viem';
 import type { PermissionsDiffItem, ProposalCheck, TenderlyContract } from '../types';
 
-type OwnershipIntentMethod = 'setOwner' | 'transferOwnership';
-
 function eventTopic(signature: string): `0x${string}` {
   return keccak256(toBytes(signature));
 }
@@ -89,12 +87,7 @@ const OWNERSHIP_FUNCTION_ABI = parseAbi([
   'function transferOwnership(address newOwner)',
 ]);
 
-const OWNERSHIP_SELECTOR_TO_METHOD: Record<string, OwnershipIntentMethod> = {
-  '0x13af4035': 'setOwner',
-  '0xf2fde38b': 'transferOwnership',
-};
-
-const OWNERSHIP_SELECTORS = new Set(Object.keys(OWNERSHIP_SELECTOR_TO_METHOD));
+const OWNERSHIP_SELECTORS = new Set(['0x13af4035', '0xf2fde38b']);
 
 const OWNER_ARG_NAMES = new Set(['owner', '_owner', 'newowner', 'new_owner']);
 
@@ -157,7 +150,6 @@ type OwnershipIntentEvidence = {
   contractAddress: `0x${string}`;
   caller: `0x${string}` | null;
   newOwner: `0x${string}`;
-  method: OwnershipIntentMethod;
 };
 
 type RawAddressTransition = {
@@ -170,25 +162,16 @@ function isTraceCallLike(value: unknown): value is TraceCallLike {
   return typeof value === 'object' && value !== null;
 }
 
-function parseOwnershipMethodFromFunctionName(
-  value: string | undefined,
-): OwnershipIntentMethod | null {
-  if (!value) return null;
+function isOwnershipFunctionName(value: string | undefined): boolean {
+  if (!value) return false;
   const normalized = value.replace(/\s+/g, '').toLowerCase();
 
-  if (normalized === 'setowner' || normalized.startsWith('setowner(')) {
-    return 'setOwner';
-  }
-
-  if (normalized === 'transferownership' || normalized.startsWith('transferownership(')) {
-    return 'transferOwnership';
-  }
-
-  return null;
-}
-
-function parseOwnershipMethodFromSelector(selector: string): OwnershipIntentMethod | null {
-  return OWNERSHIP_SELECTOR_TO_METHOD[selector] ?? null;
+  return (
+    normalized === 'setowner' ||
+    normalized.startsWith('setowner(') ||
+    normalized === 'transferownership' ||
+    normalized.startsWith('transferownership(')
+  );
 }
 
 function extractOwnerArgFromDecodedInput(decodedInput: unknown): `0x${string}` | null {
@@ -220,21 +203,17 @@ function extractOwnerArgFromDecodedInput(decodedInput: unknown): `0x${string}` |
 
 function parseOwnershipIntentFromInput(input: string | undefined): {
   newOwner: `0x${string}`;
-  method: OwnershipIntentMethod;
 } | null {
   if (!input || !isHex(input) || input.length < 10) return null;
 
   const selector = input.slice(0, 10).toLowerCase();
   if (!OWNERSHIP_SELECTORS.has(selector)) return null;
 
-  const method = parseOwnershipMethodFromSelector(selector);
-  if (!method) return null;
-
   try {
     const decoded = decodeFunctionData({ abi: OWNERSHIP_FUNCTION_ABI, data: input });
     const newOwner = maybeAddress(decoded.args[0]);
     if (!newOwner) return null;
-    return { newOwner, method };
+    return { newOwner };
   } catch {
     return null;
   }
@@ -262,15 +241,13 @@ function extractOwnershipIntentEvidence(callTrace: unknown): OwnershipIntentEvid
 
     const caller = maybeAddress(node.from);
 
-    const methodFromName = parseOwnershipMethodFromFunctionName(node.function_name);
-    if (methodFromName) {
+    if (isOwnershipFunctionName(node.function_name)) {
       const newOwner = extractOwnerArgFromDecodedInput(node.decoded_input);
       if (newOwner) {
         intents.push({
           contractAddress,
           caller,
           newOwner,
-          method: methodFromName,
         });
         continue;
       }
@@ -283,7 +260,6 @@ function extractOwnershipIntentEvidence(callTrace: unknown): OwnershipIntentEvid
       contractAddress,
       caller,
       newOwner: parsedFromInput.newOwner,
-      method: parsedFromInput.method,
     });
   }
 
