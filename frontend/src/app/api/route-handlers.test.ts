@@ -388,7 +388,7 @@ describe('/api/share-link', () => {
 
     expect(response.status).toBe(200);
     const payload: unknown = await response.json();
-  expect(readArtifactUrl(payload)).toBe(
+    expect(readArtifactUrl(payload)).toBe(
       'https://seatbelt-publish.vercel.app/simulation-results.json',
     );
     expect(readViewerUrl(payload)).toBe('https://seatbelt.app');
