@@ -633,28 +633,21 @@ export const checkPermissionDiff: ProposalCheck = {
     );
 
     for (const intent of ownershipIntentEvidence) {
-      const matchingTransitions = rawAddressTransitions.filter(
-        (transition) =>
-          transition.contractAddress.toLowerCase() === intent.contractAddress.toLowerCase() &&
-          transition.next.toLowerCase() === intent.newOwner.toLowerCase(),
-      );
+      if (!intent.caller) continue;
+      const callerLower = intent.caller.toLowerCase();
 
-      if (matchingTransitions.length === 0) continue;
+      const matchedTransition = rawAddressTransitions.find((transition) => {
+        if (transition.contractAddress.toLowerCase() !== intent.contractAddress.toLowerCase()) {
+          return false;
+        }
+        if (transition.next.toLowerCase() !== intent.newOwner.toLowerCase()) return false;
+        if (!transition.previous) return false;
 
-      let matchedTransition: RawAddressTransition | undefined;
+        const previousLower = transition.previous.toLowerCase();
+        if (previousLower === zeroAddress) return false;
 
-      if (intent.method === 'transferOwnership') {
-        if (!intent.caller) continue;
-        const callerLower = intent.caller.toLowerCase();
-
-        matchedTransition = matchingTransitions.find((transition) => {
-          if (!transition.previous) return false;
-          if (transition.previous.toLowerCase() === zeroAddress) return false;
-          return transition.previous.toLowerCase() === callerLower;
-        });
-      } else {
-        [matchedTransition] = matchingTransitions;
-      }
+        return previousLower === callerLower;
+      });
 
       if (!matchedTransition) continue;
       if (hasOwnershipDiff(permissionsDiff, intent.contractAddress, intent.newOwner)) continue;

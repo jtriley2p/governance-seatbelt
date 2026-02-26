@@ -312,6 +312,48 @@ describe('checkPermissionDiff', () => {
     expect(result.info).toContain('Permission changes: none');
   });
 
+  test('does not infer ownership transfer from setOwner intent alone', async () => {
+    const contract = '0x4b2ab38dbf28d31d467aa8993f6c2585981d6804';
+    const currentOwner = '0x2bad8182c09f50c8318d769245bea52c32be46cd';
+    const intendedOwner = '0x2222222222222222222222222222222222222222';
+
+    const setOwnerCalldata = encodeFunctionData({
+      abi: parseAbi(['function setOwner(address owner)']),
+      functionName: 'setOwner',
+      args: [intendedOwner],
+    });
+
+    const sim = createSimulation({
+      logs: [],
+      callTrace: {
+        from: currentOwner,
+        to: contract,
+        input: setOwnerCalldata,
+      },
+      stateDiff: [
+        {
+          soltype: null,
+          original: {},
+          dirty: {},
+          raw: [
+            {
+              address: contract,
+              key: '0x0000000000000000000000000000000000000000000000000000000000000001',
+              original: topicAddress('0x0000000000000000000000000000000000000000'),
+              dirty: topicAddress(intendedOwner),
+            },
+          ],
+        },
+      ],
+    });
+
+    const deps = createDeps(196, 'https://www.oklink.com/xlayer');
+    const result = await checkPermissionDiff.checkProposal(createProposalEvent(), sim, deps);
+
+    expect(result.permissionsDiff).toEqual([]);
+    expect(result.info).toContain('Permission changes: none');
+  });
+
   test('does not infer ownership transfer from transferOwnership intent alone', async () => {
     const contract = '0x4b2ab38dbf28d31d467aa8993f6c2585981d6804';
     const currentOwner = '0x2bad8182c09f50c8318d769245bea52c32be46cd';
