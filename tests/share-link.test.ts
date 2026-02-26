@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import {
   buildCanonicalShareUrl,
+  buildPrettyShareUrl,
+  extractPublishIdFromPathname,
   normalizeArtifactUrl,
+  normalizePublishId,
   withArtifactParam,
 } from '../frontend/src/lib/share-link';
 
@@ -55,5 +58,31 @@ describe('share-link helpers', () => {
     ].join(':');
 
     expect(normalizeArtifactUrl(artifactUrlWithCredentials)).toBe(null);
+  });
+
+  it('builds pretty publishId share url', () => {
+    const result = buildPrettyShareUrl(
+      'https://seatbelt.scopelift.co/?foo=bar#section',
+      '11111111-1111-4111-8111-111111111111',
+    );
+
+    expect(result).toBe('https://seatbelt.scopelift.co/p/11111111-1111-4111-8111-111111111111');
+  });
+
+  it('extracts publishId from pretty pathname', () => {
+    expect(extractPublishIdFromPathname('/p/11111111-1111-4111-8111-111111111111')).toBe(
+      '11111111-1111-4111-8111-111111111111',
+    );
+
+    expect(extractPublishIdFromPathname('/p/11111111-1111-4111-8111-111111111111/action')).toBe(
+      '11111111-1111-4111-8111-111111111111',
+    );
+  });
+
+  it('normalizes publishId query values', () => {
+    expect(normalizePublishId('11111111-1111-4111-8111-111111111111')).toBe(
+      '11111111-1111-4111-8111-111111111111',
+    );
+    expect(normalizePublishId('not-a-publish-id')).toBeNull();
   });
 });

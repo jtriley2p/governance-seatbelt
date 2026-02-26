@@ -26,6 +26,7 @@ bun upload --publish
 
 On success, the relay returns publish URLs:
 
+- `publishId` — immutable publish identifier used by viewer share paths (when lookup persistence succeeds)
 - `deploymentUrl` — artifact deployment root (may be a publish landing page)
 - `artifactUrl` — published `simulation-results.json` (branded alias when available, deployment URL fallback)
 - `metadataUrl` — published `publish-metadata.json`
@@ -33,7 +34,8 @@ On success, the relay returns publish URLs:
 
 Canonical share links should use:
 
-- `<viewerUrl>?artifact=<artifactUrl>`
+- `<viewerUrl>/p/<publishId>` (preferred)
+- `<viewerUrl>?artifact=<artifactUrl>` (automatic fallback if publish lookup is unavailable)
 
 ## 2) Optional custom paths
 

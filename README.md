@@ -235,11 +235,12 @@ bun upload --validate-only
 bun upload --publish
 ```
 
-A successful publish returns relay response URLs (`deploymentUrl`, `artifactUrl`, `metadataUrl`, and `viewerUrl` when configured).
+A successful publish returns relay response URLs (`publishId`, `deploymentUrl`, `artifactUrl`, `metadataUrl`, and `viewerUrl` when configured).
 
 For share links, use:
 
-- `<viewerUrl>?artifact=<artifactUrl>`
+- `<viewerUrl>/p/<publishId>` (preferred)
+- `<viewerUrl>?artifact=<artifactUrl>` (automatic fallback if publish lookup is unavailable)
 
 Notes:
 - `artifactUrl` points to the published `simulation-results.json`.
