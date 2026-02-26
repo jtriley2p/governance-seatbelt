@@ -11,6 +11,8 @@ import {
 } from 'viem';
 import type { PermissionsDiffItem, ProposalCheck, TenderlyContract } from '../types';
 
+type OwnershipIntentMethod = 'setOwner' | 'transferOwnership';
+
 function eventTopic(signature: string): `0x${string}` {
   return keccak256(toBytes(signature));
 }
@@ -87,10 +89,12 @@ const OWNERSHIP_FUNCTION_ABI = parseAbi([
   'function transferOwnership(address newOwner)',
 ]);
 
-const SET_OWNER_SELECTOR = '0x13af4035';
-const TRANSFER_OWNERSHIP_SELECTOR = '0xf2fde38b';
+const OWNERSHIP_SELECTOR_TO_METHOD: Record<string, OwnershipIntentMethod> = {
+  '0x13af4035': 'setOwner',
+  '0xf2fde38b': 'transferOwnership',
+};
 
-const OWNERSHIP_SELECTORS = new Set([SET_OWNER_SELECTOR, TRANSFER_OWNERSHIP_SELECTOR]);
+const OWNERSHIP_SELECTORS = new Set(Object.keys(OWNERSHIP_SELECTOR_TO_METHOD));
 
 const OWNER_ARG_NAMES = new Set(['owner', '_owner', 'newowner', 'new_owner']);
 
@@ -149,8 +153,6 @@ type TraceCallLike = {
   calls?: TraceCallLike[];
 };
 
-type OwnershipIntentMethod = 'setOwner' | 'transferOwnership';
-
 type OwnershipIntentEvidence = {
   contractAddress: `0x${string}`;
   caller: `0x${string}` | null;
@@ -186,9 +188,7 @@ function parseOwnershipMethodFromFunctionName(
 }
 
 function parseOwnershipMethodFromSelector(selector: string): OwnershipIntentMethod | null {
-  if (selector === SET_OWNER_SELECTOR) return 'setOwner';
-  if (selector === TRANSFER_OWNERSHIP_SELECTOR) return 'transferOwnership';
-  return null;
+  return OWNERSHIP_SELECTOR_TO_METHOD[selector] ?? null;
 }
 
 function extractOwnerArgFromDecodedInput(decodedInput: unknown): `0x${string}` | null {
