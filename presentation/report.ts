@@ -32,6 +32,7 @@ import type {
   TenderlySimulation,
   WriteSimulationResultsJsonParams,
 } from '../types';
+import { getChainName } from '../utils/chains/capabilities';
 import { BlockExplorerFactory } from '../utils/clients/block-explorers/factory';
 import { getChainConfig, publicClient } from '../utils/clients/client';
 import { lookupFunctionSignatureBySelector } from '../utils/clients/function-signature-registry';
@@ -39,28 +40,6 @@ import { DEFAULT_SIMULATION_ADDRESS, getContractName } from '../utils/clients/te
 import { formatProposalId } from '../utils/contracts/governor';
 import { extractAddressesFromReport, resolveLabelsForAddresses } from '../utils/labels';
 import { generateProposalSummary } from '../utils/proposal-summary';
-
-// --- Chain name utility ---
-
-const CHAIN_NAMES: Record<number, string> = {
-  1: 'Ethereum',
-  42161: 'Arbitrum One',
-  10: 'Optimism',
-  8453: 'Base',
-  130: 'Unichain',
-  1301: 'Unichain',
-  57073: 'Ink',
-  1868: 'Soneium',
-  60808: 'BOB',
-  196: 'X Layer',
-  42220: 'Celo',
-  480: 'World Chain',
-  7777777: 'Zora',
-};
-
-function getChainName(chainId: number): string {
-  return CHAIN_NAMES[chainId] || `Chain ${chainId}`;
-}
 
 // --- Cross-chain decoding helpers ---
 

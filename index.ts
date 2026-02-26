@@ -17,6 +17,7 @@ import type {
   SimulationResult,
 } from './types';
 import { cacheProposal, getCachedProposal, needsSimulation } from './utils/cache/proposalCache';
+import { supportsL2Checks } from './utils/chains/capabilities';
 import { getChainConfig, getClientForChain, publicClient } from './utils/clients/client';
 import { handleCrossChainSimulations, simulate } from './utils/clients/tenderly';
 import { DAO_NAME, GOVERNOR_ADDRESS, REPORTS_OUTPUT_DIRECTORY, SIM_NAME } from './utils/constants';
@@ -28,20 +29,6 @@ import {
   inferGovernorType,
 } from './utils/contracts/governor';
 import { PROPOSAL_STATES } from './utils/contracts/governor-bravo';
-
-const L2_CHECK_SUPPORTED_CHAIN_IDS = new Set([
-  10, // Optimism
-  8453, // Base
-  42161, // Arbitrum
-  130, // Unichain
-  57073, // Ink
-  1868, // Soneium
-  60808, // Bob
-  196, // X Layer
-  42220, // Celo
-  480, // World Chain
-  7777777, // Zora
-]);
 
 /**
  * @notice Run the complete simulation pipeline (source + cross-chain)
@@ -178,7 +165,7 @@ async function processDestinationSimulations(
         continue;
       }
 
-      if (!L2_CHECK_SUPPORTED_CHAIN_IDS.has(destSim.chainId)) {
+      if (!supportsL2Checks(destSim.chainId)) {
         console.log(
           `[Index][L2_CHECK_SKIP] Skipping destination checks for unsupported chain ${destSim.chainId}.`,
         );
@@ -309,7 +296,7 @@ async function processSimulation(
       status = 'failed';
       const reasons = failures.map((sim) => sim.error).filter(Boolean);
       skipReason = reasons.length > 0 ? reasons.join(' | ') : 'Destination simulation failed.';
-    } else if (!L2_CHECK_SUPPORTED_CHAIN_IDS.has(chainId)) {
+    } else if (!supportsL2Checks(chainId)) {
       status = 'skipped';
       skipReason = `L2 checks are not supported for chain ${chainId}.`;
     } else if (skips.length > 0) {

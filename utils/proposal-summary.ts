@@ -1,5 +1,6 @@
 import { formatUnits, getAddress } from 'viem';
 import type { AllCheckResults, ProposalEvent, TenderlySimulation } from '../types';
+import { getChainName, getOpStackDestinationChainIds } from './chains/capabilities';
 
 /**
  * Operation types that can be detected in proposals
@@ -91,21 +92,6 @@ function detectOperations(
   return operations;
 }
 
-// Chain ID to name mapping for cross-chain summaries
-const CHAIN_NAMES: Record<number, string> = {
-  42161: 'Arbitrum',
-  10: 'Optimism',
-  8453: 'Base',
-  130: 'Unichain',
-  196: 'XLayer',
-  480: 'Worldchain',
-  42220: 'Celo',
-  57073: 'Ink',
-  1868: 'Soneium',
-  60808: 'BOB',
-  7777777: 'Zora',
-};
-
 function formatHumanList(items: string[]): string {
   if (items.length === 0) return '';
   if (items.length === 1) return items[0];
@@ -144,7 +130,7 @@ function detectCrossChainOperations(
         if (!detectedChains.has('Arbitrum')) {
           detectedChains.add('Arbitrum');
           const description = buildCrossChainDescription(
-            'Arbitrum',
+            getChainName(42161),
             42161,
             l2Checks,
             totalEthForGas,
@@ -169,13 +155,13 @@ function detectCrossChainOperations(
           const description =
             opStackChainIds.length > 1
               ? `Sends via OP Stack bridge to ${formatHumanList(
-                  opStackChainIds.map((chainId) => CHAIN_NAMES[chainId] || `chainId ${chainId}`),
+                  opStackChainIds.map((chainId) => getChainName(chainId)),
                 )}${formatEthForGasSuffix(totalEthForGas)}`
               : (() => {
                   const opStackChainId = opStackChainIds[0];
                   const chainName = opStackChainId
-                    ? CHAIN_NAMES[opStackChainId] || 'L2'
-                    : 'Optimism';
+                    ? getChainName(opStackChainId)
+                    : getChainName(10);
                   return buildCrossChainDescription(
                     chainName,
                     opStackChainId,
@@ -218,9 +204,7 @@ function detectCrossChainOperations(
 function findOpStackChainIds(l2Checks?: Record<number, AllCheckResults>): number[] {
   if (!l2Checks) return [];
 
-  // OP Stack chains in order of priority
-  const opStackChains = [10, 8453, 130, 196, 480, 42220, 57073, 1868, 60808, 7777777];
-  return opStackChains.filter((chainId) => Boolean(l2Checks[chainId]));
+  return getOpStackDestinationChainIds().filter((chainId) => Boolean(l2Checks[chainId]));
 }
 
 /**
