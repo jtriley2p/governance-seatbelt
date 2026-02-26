@@ -1,13 +1,21 @@
 'use client';
 
-import { buildCanonicalShareUrl, buildViewerUrl, normalizeArtifactUrl } from '@/lib/share-link';
+import {
+  buildCanonicalShareUrl,
+  buildPrettyShareUrl,
+  buildViewerUrl,
+  extractPublishIdFromPathname,
+  normalizeArtifactUrl,
+  normalizePublishId,
+} from '@/lib/share-link';
 import { useMutation } from '@tanstack/react-query';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 
 type ShareArtifactResponse = {
   artifactUrl: string;
   viewerUrl: string | null;
+  publishId: string | null;
 };
 
 function readErrorMessage(payload: unknown): string | null {
@@ -80,6 +88,7 @@ async function requestShareArtifact(): Promise<ShareArtifactResponse> {
   }
 
   const artifactUrl = Reflect.get(payload, 'artifactUrl');
+  const publishIdValue = Reflect.get(payload, 'publishId');
   const normalizedArtifactUrl =
     typeof artifactUrl === 'string' ? normalizeArtifactUrl(artifactUrl) : null;
 
@@ -90,6 +99,7 @@ async function requestShareArtifact(): Promise<ShareArtifactResponse> {
   return {
     artifactUrl: normalizedArtifactUrl,
     viewerUrl: normalizeViewerUrl(Reflect.get(payload, 'viewerUrl')),
+    publishId: typeof publishIdValue === 'string' ? normalizePublishId(publishIdValue) : null,
   };
 }
 
@@ -140,15 +150,33 @@ function resolveViewerUrl(preferredViewerUrl: string | null = null): string {
 }
 
 export function useShareLink() {
+  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const artifactFromQuery = normalizeArtifactUrl(searchParams.get('artifact'));
+  const publishIdFromPath = extractPublishIdFromPathname(pathname);
+  const publishIdFromQuery = normalizePublishId(searchParams.get('publishId'));
+  const publishId = publishIdFromPath ?? publishIdFromQuery;
 
   const generateMutation = useMutation({
     mutationFn: requestShareArtifact,
   });
 
   const handleShare = async () => {
+    if (publishId) {
+      try {
+        const viewerUrl = resolveViewerUrl();
+        const shareUrl = buildPrettyShareUrl(viewerUrl, publishId);
+        await copyToClipboard(shareUrl);
+        toast.success('Share link copied');
+      } catch (error) {
+        console.error('Error copying existing share link:', error);
+        toast.error('Couldn’t generate share link. Try again.');
+      }
+
+      return;
+    }
+
     if (artifactFromQuery) {
       try {
         const viewerUrl = resolveViewerUrl();
@@ -170,7 +198,9 @@ export function useShareLink() {
       const shareArtifactResult = await generateMutation.mutateAsync();
       const artifactUrl = shareArtifactResult.artifactUrl;
       const publishViewerUrl = resolveViewerUrl(shareArtifactResult.viewerUrl);
-      const shareUrl = buildCanonicalShareUrl(publishViewerUrl, artifactUrl);
+      const shareUrl = shareArtifactResult.publishId
+        ? buildPrettyShareUrl(publishViewerUrl, shareArtifactResult.publishId)
+        : buildCanonicalShareUrl(publishViewerUrl, artifactUrl);
       await copyToClipboard(shareUrl);
       toast.success('Share link ready — copied to clipboard', { id: loadingToastId });
     } catch (error) {
@@ -184,7 +214,7 @@ export function useShareLink() {
   };
 
   return {
-    hasArtifact: artifactFromQuery !== null,
+    hasArtifact: artifactFromQuery !== null || publishId !== null,
     isGenerating: generateMutation.isPending,
     onShare: handleShare,
   };

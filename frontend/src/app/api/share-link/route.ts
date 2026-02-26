@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizePublishId } from '@/lib/share-link';
 import { SimulationResultsParseError, parseSimulationResultsJson } from '@/lib/simulation-results';
 import { NextResponse } from 'next/server';
 
@@ -17,6 +18,7 @@ type ShareLinkResult =
   | {
       artifactUrl: string;
       viewerUrl?: string;
+      publishId?: string;
     }
   | {
       error: string;
@@ -135,6 +137,14 @@ function readStringProperty(value: unknown, key: string): string | null {
   return typeof propertyValue === 'string' ? propertyValue : null;
 }
 
+function readBooleanProperty(value: unknown, key: string): boolean | null {
+  if (!value || typeof value !== 'object') return null;
+  if (!(key in value)) return null;
+
+  const propertyValue = Reflect.get(value, key);
+  return typeof propertyValue === 'boolean' ? propertyValue : null;
+}
+
 function readRawArtifact(
   maxBytes: number,
 ): { artifactRaw: string } | { error: string; status: number } {
@@ -212,21 +222,26 @@ async function publishViaManagedRelay(
 
     const directArtifactUrl = readStringProperty(parsedResponse, 'artifactUrl');
     const relayViewerUrl = readStringProperty(parsedResponse, 'viewerUrl') ?? undefined;
+    const relayPublishId = normalizePublishId(readStringProperty(parsedResponse, 'publishId'));
+    const publishIdResolvable = readBooleanProperty(parsedResponse, 'publishIdResolvable') === true;
     const deploymentUrl = readStringProperty(parsedResponse, 'deploymentUrl');
-    if (directArtifactUrl) {
-      return {
-        artifactUrl: directArtifactUrl,
-        viewerUrl: relayViewerUrl,
-      };
-    }
-
-    if (!deploymentUrl) {
+    const artifactUrl =
+      directArtifactUrl ??
+      (deploymentUrl ? appendPathToUrl(deploymentUrl, 'simulation-results.json') : null);
+    if (!artifactUrl) {
       return { error: 'Relay publish response is missing deploymentUrl', status: 502 };
     }
 
+    if (relayPublishId && !publishIdResolvable) {
+      console.error(
+        `[share-link] relay did not mark publishId=${relayPublishId} as resolvable; falling back to canonical artifact query links`,
+      );
+    }
+
     return {
-      artifactUrl: appendPathToUrl(deploymentUrl, 'simulation-results.json'),
+      artifactUrl,
       viewerUrl: relayViewerUrl,
+      publishId: relayPublishId && publishIdResolvable ? relayPublishId : undefined,
     };
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
@@ -276,6 +291,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       artifactUrl: publishResult.artifactUrl,
       viewerUrl: publishResult.viewerUrl,
+      publishId: publishResult.publishId,
     });
   } catch (error) {
     if (error instanceof SimulationResultsParseError) {

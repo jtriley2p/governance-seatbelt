@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizePublishId } from '@/lib/share-link';
 import { SimulationResultsParseError, parseSimulationResultsJson } from '@/lib/simulation-results';
 import { NextResponse } from 'next/server';
 
 const DEFAULT_MAX_SIMULATION_RESULTS_BYTES = 25 * 1024 * 1024; // 25MB
 const DEFAULT_ARTIFACT_FETCH_TIMEOUT_MS = 15_000;
+const DEFAULT_RELAY_TIMEOUT_MS = 15_000;
+const DEFAULT_RELAY_URL = 'https://seatbelt-relay-beta.vercel.app';
 const LOCALHOST_ARTIFACT_HOSTS = ['localhost', '127.0.0.1', '::1'];
 const SIMULATION_RESULTS_FILENAME = 'simulation-results.json';
 const LOCAL_SIMULATION_RESULTS_FILE = path.join(
@@ -112,6 +115,25 @@ function getArtifactFetchTimeoutMs(): number {
   return Math.floor(parsed);
 }
 
+function getRelayTimeoutMs(): number {
+  const raw = process.env.SEATBELT_RELAY_TIMEOUT_MS;
+  if (!raw) return DEFAULT_RELAY_TIMEOUT_MS;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_RELAY_TIMEOUT_MS;
+
+  return Math.floor(parsed);
+}
+
+function getRelayUrl(): string {
+  const fromEnv = process.env.SEATBELT_RELAY_URL?.trim();
+  if (fromEnv) {
+    return fromEnv.replace(/\/+$/, '');
+  }
+
+  return DEFAULT_RELAY_URL;
+}
+
 function readSimulationResultsFromLocalFile(
   maxBytes: number,
 ): unknown | SimulationResultsSourceError {
@@ -133,6 +155,53 @@ function readSimulationResultsFromLocalFile(
   } catch (error) {
     console.error('Error reading local simulation results:', error);
     return { error: 'No simulation results found', status: 404 };
+  }
+}
+
+async function resolveArtifactUrlFromPublishId(
+  publishId: string,
+): Promise<string | SimulationResultsSourceError> {
+  const relayEndpoint = `${getRelayUrl()}/api/v1/publishes/${encodeURIComponent(publishId)}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), getRelayTimeoutMs());
+
+  try {
+    const response = await fetch(relayEndpoint, {
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+
+    if (response.status === 404) {
+      return { error: 'Publish not found', status: 404 };
+    }
+
+    if (!response.ok) {
+      return {
+        error: `Failed to resolve publish (HTTP ${response.status})`,
+        status: 502,
+      };
+    }
+
+    const payload = (await response.json()) as unknown;
+    if (!payload || typeof payload !== 'object') {
+      return { error: 'Relay returned invalid publish lookup payload', status: 502 };
+    }
+
+    const artifactUrl = Reflect.get(payload, 'artifactUrl');
+    if (typeof artifactUrl !== 'string' || artifactUrl.trim().length === 0) {
+      return { error: 'Relay publish lookup is missing artifactUrl', status: 502 };
+    }
+
+    return artifactUrl;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      return { error: 'Publish lookup timed out', status: 504 };
+    }
+
+    console.error('Error resolving publish id:', error);
+    return { error: 'Failed to resolve publish', status: 502 };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -313,6 +382,7 @@ export async function GET(request: Request) {
     const requestUrl = new URL(request.url);
     const includeMarkdown = requestUrl.searchParams.get('includeMarkdown') === '1';
     const artifactParam = requestUrl.searchParams.get('artifact');
+    const publishIdParam = normalizePublishId(requestUrl.searchParams.get('publishId'));
     const maxBytes = getMaxSimulationResultsBytes();
 
     let results: unknown | SimulationResultsSourceError;
@@ -324,6 +394,28 @@ export async function GET(request: Request) {
       }
 
       results = await readSimulationResultsFromArtifactUrl(artifactUrl, maxBytes);
+    } else if (requestUrl.searchParams.has('publishId')) {
+      if (!publishIdParam) {
+        return NextResponse.json({ error: 'Invalid publishId' }, { status: 400 });
+      }
+
+      const resolvedArtifactUrl = await resolveArtifactUrlFromPublishId(publishIdParam);
+      if (isSimulationResultsSourceError(resolvedArtifactUrl)) {
+        return NextResponse.json(
+          { error: resolvedArtifactUrl.error },
+          { status: resolvedArtifactUrl.status },
+        );
+      }
+
+      const trustedArtifactUrl = parseArtifactUrl(resolvedArtifactUrl);
+      if (isSimulationResultsSourceError(trustedArtifactUrl)) {
+        return NextResponse.json(
+          { error: trustedArtifactUrl.error },
+          { status: trustedArtifactUrl.status },
+        );
+      }
+
+      results = await readSimulationResultsFromArtifactUrl(trustedArtifactUrl, maxBytes);
     } else {
       results = readSimulationResultsFromLocalFile(maxBytes);
     }

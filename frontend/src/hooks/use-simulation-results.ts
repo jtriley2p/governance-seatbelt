@@ -1,8 +1,12 @@
 'use client';
 
-import { normalizeArtifactUrl } from '@/lib/share-link';
+import {
+  extractPublishIdFromPathname,
+  normalizeArtifactUrl,
+  normalizePublishId,
+} from '@/lib/share-link';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import type { Address } from 'viem';
 
 export interface Proposal {
@@ -287,19 +291,24 @@ function isSimulationResponseArray(value: unknown): value is SimulationResponse[
  * Hook to fetch simulation results from the API
  */
 export function useSimulationResults() {
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const artifactUrl = normalizeArtifactUrl(searchParams.get('artifact'));
+  const publishIdFromPath = extractPublishIdFromPathname(pathname);
+  const publishId = publishIdFromPath ?? normalizePublishId(searchParams.get('publishId'));
 
   return useQuery<
     SimulationResponse[],
     Error,
     { proposalData: Proposal; report: SimulationResponse['report'] }
   >({
-    queryKey: ['simulationResults', artifactUrl ?? 'local'],
+    queryKey: ['simulationResults', artifactUrl ?? null, publishId ?? null],
     queryFn: async () => {
       const requestParams = new URLSearchParams();
       if (artifactUrl) {
         requestParams.set('artifact', artifactUrl);
+      } else if (publishId) {
+        requestParams.set('publishId', publishId);
       }
 
       const endpoint = requestParams.size

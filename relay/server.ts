@@ -27,7 +27,8 @@ type RelayPublishLogEntry = {
 };
 
 type RelaySuccessResponse = {
-  publishId: string;
+  publishId?: string;
+  publishIdResolvable: boolean;
   idempotencyKey: string;
   artifactHash: string;
   deploymentUrl: string;
@@ -62,6 +63,21 @@ type RateLimitBucket = {
   windowStartMs: number;
 };
 
+type PublishLookupRecord = {
+  publishId: string;
+  artifactUrl: string;
+  deploymentUrl: string;
+  metadataUrl: string;
+  artifactHash: string;
+  publishedAt: string;
+};
+
+type PublishLookupStore = {
+  write: (record: PublishLookupRecord) => Promise<void>;
+  read: (publishId: string) => Promise<PublishLookupRecord | null>;
+  mode: 'memory' | 'upstash';
+};
+
 type CommandRunOptions = {
   cwd: string;
   env: Record<string, string | undefined>;
@@ -90,6 +106,7 @@ type RelayDependencies = {
   }) => Promise<RelayPublisherResult>;
   runCommand: CommandRunner;
   nowMs: () => number;
+  publishLookupStore: PublishLookupStore;
 };
 
 export type RelayConfig = {
@@ -136,6 +153,10 @@ type VercelPublishEnv = {
 };
 
 const DEFAULT_DEPLOY_TIMEOUT_MS = 180_000;
+const PUBLISH_ID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PUBLISH_LOOKUP_KEY_PREFIX = 'seatbelt:publish:';
+const UPSTASH_TIMEOUT_MS = 5_000;
 
 class RelayPublishTimeoutError extends Error {
   readonly timeoutMs: number;
@@ -386,6 +407,155 @@ function readConfiguredViewerUrl(env: Record<string, string | undefined>): strin
   } catch {
     return undefined;
   }
+}
+
+function normalizePublishId(value: string): string | null {
+  const trimmed = value.trim().toLowerCase();
+  if (!PUBLISH_ID_REGEX.test(trimmed)) {
+    return null;
+  }
+
+  return trimmed;
+}
+
+function toPublishLookupKey(publishId: string): string {
+  return `${PUBLISH_LOOKUP_KEY_PREFIX}${publishId}`;
+}
+
+function parsePublishLookupRecord(value: unknown): PublishLookupRecord | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const publishId = readOptionalString(value as Record<string, unknown>, 'publishId');
+  const artifactUrl = readOptionalString(value as Record<string, unknown>, 'artifactUrl');
+  const deploymentUrl = readOptionalString(value as Record<string, unknown>, 'deploymentUrl');
+  const metadataUrl = readOptionalString(value as Record<string, unknown>, 'metadataUrl');
+  const artifactHash = readOptionalString(value as Record<string, unknown>, 'artifactHash');
+  const publishedAt = readOptionalString(value as Record<string, unknown>, 'publishedAt');
+
+  if (
+    !publishId ||
+    !artifactUrl ||
+    !deploymentUrl ||
+    !metadataUrl ||
+    !artifactHash ||
+    !publishedAt
+  ) {
+    return null;
+  }
+
+  const normalizedPublishId = normalizePublishId(publishId);
+  if (!normalizedPublishId) {
+    return null;
+  }
+
+  return {
+    publishId: normalizedPublishId,
+    artifactUrl,
+    deploymentUrl,
+    metadataUrl,
+    artifactHash,
+    publishedAt,
+  };
+}
+
+async function runUpstashCommand(
+  restUrl: string,
+  restToken: string,
+  command: string[],
+): Promise<unknown> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), UPSTASH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(restUrl, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${restToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(command),
+      signal: controller.signal,
+    });
+
+    const body = (await response.json()) as Record<string, unknown>;
+    const error = readOptionalString(body, 'error');
+    if (error) {
+      throw new Error(error);
+    }
+
+    if (!response.ok) {
+      throw new Error(`Upstash command failed with HTTP ${response.status}`);
+    }
+
+    return Reflect.get(body, 'result');
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function createInMemoryPublishLookupStore(): PublishLookupStore {
+  const records = new Map<string, PublishLookupRecord>();
+
+  return {
+    mode: 'memory',
+    write: async (record) => {
+      records.set(record.publishId, record);
+      if (records.size > 10_000) {
+        const firstKey = records.keys().next().value;
+        if (typeof firstKey === 'string') {
+          records.delete(firstKey);
+        }
+      }
+    },
+    read: async (publishId) => records.get(publishId) ?? null,
+  };
+}
+
+function createUpstashPublishLookupStore(
+  env: Record<string, string | undefined>,
+): PublishLookupStore | null {
+  const restUrl = readNonEmptyEnv(env, 'UPSTASH_REDIS_REST_URL');
+  const restToken = readNonEmptyEnv(env, 'UPSTASH_REDIS_REST_TOKEN');
+  if (!restUrl || !restToken) {
+    return null;
+  }
+
+  return {
+    mode: 'upstash',
+    write: async (record) => {
+      const key = toPublishLookupKey(record.publishId);
+      await runUpstashCommand(restUrl, restToken, ['SET', key, JSON.stringify(record)]);
+    },
+    read: async (publishId) => {
+      const key = toPublishLookupKey(publishId);
+      const rawResult = await runUpstashCommand(restUrl, restToken, ['GET', key]);
+      if (rawResult == null) {
+        return null;
+      }
+
+      if (typeof rawResult !== 'string') {
+        return null;
+      }
+
+      try {
+        const parsed = JSON.parse(rawResult) as unknown;
+        return parsePublishLookupRecord(parsed);
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
+function createPublishLookupStore(env: Record<string, string | undefined>): PublishLookupStore {
+  const upstashStore = createUpstashPublishLookupStore(env);
+  if (upstashStore) {
+    return upstashStore;
+  }
+
+  return createInMemoryPublishLookupStore();
 }
 
 function isErrorWithCode(value: unknown): value is { code: unknown } {
@@ -984,6 +1154,7 @@ function buildHealthResponse(input: {
   config: RelayConfig;
   completedIdempotencyRecords: Map<string, CompletedIdempotencyRecord>;
   inFlightIdempotencyRecords: Map<string, InFlightIdempotencyRecord>;
+  publishLookupMode: PublishLookupStore['mode'];
 }): OpenJsonObject {
   return {
     ok: true,
@@ -995,6 +1166,7 @@ function buildHealthResponse(input: {
       completedKeys: input.completedIdempotencyRecords.size,
       inFlightKeys: input.inFlightIdempotencyRecords.size,
     },
+    publishLookupMode: input.publishLookupMode,
   };
 }
 
@@ -1067,6 +1239,8 @@ export function createRelayFetchHandler(
   const rateLimitBuckets = new Map<string, RateLimitBucket>();
   const completedIdempotencyRecords = new Map<string, CompletedIdempotencyRecord>();
   const inFlightIdempotencyRecords = new Map<string, InFlightIdempotencyRecord>();
+  const publishLookupStore =
+    options.dependencies?.publishLookupStore ?? createPublishLookupStore(env);
 
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
@@ -1079,8 +1253,95 @@ export function createRelayFetchHandler(
           config,
           completedIdempotencyRecords,
           inFlightIdempotencyRecords,
+          publishLookupMode: publishLookupStore.mode,
         }),
       );
+    }
+
+    const shouldRateLimitPublishEndpoint =
+      (request.method === 'POST' && pathname === '/api/v1/publishes') ||
+      (request.method === 'GET' && pathname.startsWith('/api/v1/publishes/'));
+
+    if (shouldRateLimitPublishEndpoint) {
+      const now = nowMs();
+      maybePruneRateLimitBuckets(rateLimitBuckets, now, config.rateLimitWindowMs);
+
+      const clientAddress = extractClientAddress(request);
+      const rateLimitResult = ensureRateLimitAllowance({
+        key: clientAddress,
+        nowMs: now,
+        config,
+        buckets: rateLimitBuckets,
+      });
+
+      if (!rateLimitResult.ok) {
+        return createJsonResponse(
+          429,
+          {
+            error: 'rate_limited',
+            message: 'Too many publish requests from this client. Please retry later.',
+            retryAfterSeconds: rateLimitResult.retryAfterSeconds,
+          },
+          {
+            'retry-after': String(rateLimitResult.retryAfterSeconds),
+          },
+        );
+      }
+    }
+
+    if (request.method === 'GET' && pathname.startsWith('/api/v1/publishes/')) {
+      let rawPublishId = '';
+      try {
+        rawPublishId = decodeURIComponent(pathname.slice('/api/v1/publishes/'.length));
+      } catch {
+        return createJsonResponse(400, {
+          error: 'invalid_publish_id',
+          message: 'publishId must be a valid UUID.',
+        });
+      }
+      if (!rawPublishId || rawPublishId.includes('/')) {
+        return createJsonResponse(404, {
+          error: 'not_found',
+          message: 'Endpoint not found.',
+        });
+      }
+
+      const publishId = normalizePublishId(rawPublishId);
+      if (!publishId) {
+        return createJsonResponse(400, {
+          error: 'invalid_publish_id',
+          message: 'publishId must be a valid UUID.',
+        });
+      }
+
+      try {
+        const record = await publishLookupStore.read(publishId);
+        if (!record) {
+          return createJsonResponse(404, {
+            error: 'publish_not_found',
+            message: 'Publish was not found.',
+            publishId,
+          });
+        }
+
+        return createJsonResponse(200, {
+          publishId: record.publishId,
+          artifactUrl: record.artifactUrl,
+          deploymentUrl: record.deploymentUrl,
+          metadataUrl: record.metadataUrl,
+          artifactHash: record.artifactHash,
+          publishedAt: record.publishedAt,
+        });
+      } catch (error) {
+        console.error(
+          `[relay] publish lookup failed publish_id=${publishId} mode=${publishLookupStore.mode} error=${error instanceof Error ? error.message : 'unknown'}`,
+        );
+
+        return createJsonResponse(502, {
+          error: 'publish_lookup_failed',
+          message: 'Failed to resolve publish by id.',
+        });
+      }
     }
 
     if (request.method !== 'POST' || pathname !== '/api/v1/publishes') {
@@ -1088,31 +1349,6 @@ export function createRelayFetchHandler(
         error: 'not_found',
         message: 'Endpoint not found.',
       });
-    }
-
-    const now = nowMs();
-    maybePruneRateLimitBuckets(rateLimitBuckets, now, config.rateLimitWindowMs);
-
-    const clientAddress = extractClientAddress(request);
-    const rateLimitResult = ensureRateLimitAllowance({
-      key: clientAddress,
-      nowMs: now,
-      config,
-      buckets: rateLimitBuckets,
-    });
-
-    if (!rateLimitResult.ok) {
-      return createJsonResponse(
-        429,
-        {
-          error: 'rate_limited',
-          message: 'Too many publish requests from this client. Please retry later.',
-          retryAfterSeconds: rateLimitResult.retryAfterSeconds,
-        },
-        {
-          'retry-after': String(rateLimitResult.retryAfterSeconds),
-        },
-      );
     }
 
     let rawBody: string;
@@ -1267,14 +1503,36 @@ export function createRelayFetchHandler(
         deployTimeoutMs: config.deployTimeoutMs,
       });
 
-      const responseBody: RelaySuccessResponse = {
+      const publishLookupRecord: PublishLookupRecord = {
         publishId: publishLogEntry.publish_id,
+        artifactUrl: publishResult.artifactUrl,
+        deploymentUrl: publishResult.deploymentUrl,
+        metadataUrl: publishResult.metadataUrl,
+        artifactHash,
+        publishedAt: publishLogEntry.published_at,
+      };
+
+      let publishLookupWriteSucceeded = true;
+      try {
+        await publishLookupStore.write(publishLookupRecord);
+      } catch (error) {
+        publishLookupWriteSucceeded = false;
+        console.error(
+          `[relay] publish lookup write failed publish_id=${publishLogEntry.publish_id} mode=${publishLookupStore.mode} error=${error instanceof Error ? error.message : 'unknown'}`,
+        );
+      }
+
+      const responseBody: RelaySuccessResponse = {
+        publishIdResolvable: publishLookupWriteSucceeded,
         idempotencyKey,
         artifactHash,
         deploymentUrl: publishResult.deploymentUrl,
         artifactUrl: publishResult.artifactUrl,
         metadataUrl: publishResult.metadataUrl,
       };
+      if (publishLookupWriteSucceeded) {
+        responseBody.publishId = publishLogEntry.publish_id;
+      }
 
       const configuredViewerUrl = readConfiguredViewerUrl(env);
       if (configuredViewerUrl) {
@@ -1282,13 +1540,16 @@ export function createRelayFetchHandler(
       }
 
       const responseBodyRecord: OpenJsonObject = {
-        publishId: responseBody.publishId,
+        publishIdResolvable: responseBody.publishIdResolvable,
         idempotencyKey: responseBody.idempotencyKey,
         artifactHash: responseBody.artifactHash,
         deploymentUrl: responseBody.deploymentUrl,
         artifactUrl: responseBody.artifactUrl,
         metadataUrl: responseBody.metadataUrl,
       };
+      if (responseBody.publishId) {
+        responseBodyRecord.publishId = responseBody.publishId;
+      }
 
       if (responseBody.viewerUrl) {
         responseBodyRecord.viewerUrl = responseBody.viewerUrl;
@@ -1368,6 +1629,7 @@ export function startRelayServer(options: RelayServerOptions = {}): ReturnType<t
 
   console.log(`[relay] seatbelt managed publish relay listening on :${server.port}`);
   console.log('[relay] health endpoint: GET /api/v1/health');
+  console.log('[relay] publish lookup endpoint: GET /api/v1/publishes/:publishId');
   console.log('[relay] publish endpoint: POST /api/v1/publishes');
 
   return server;

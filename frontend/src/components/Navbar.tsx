@@ -113,6 +113,17 @@ export function Navbar() {
     }
   };
 
+  const reportIsActive =
+    pathname === '/' ||
+    /^\/p\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      pathname,
+    );
+  const actionIsActive =
+    pathname === '/action' ||
+    /^\/p\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/action$/i.test(
+      pathname,
+    );
+
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background border-b">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -150,11 +161,11 @@ export function Navbar() {
             </div>
 
             <div className="hidden md:flex items-center gap-1">
-              <NavLink href={reportHref} active={pathname === '/'}>
+              <NavLink href={reportHref} active={reportIsActive}>
                 <FileTextIcon className="h-4 w-4" />
                 Report
               </NavLink>
-              <NavLink href={actionHref} active={pathname === '/action'}>
+              <NavLink href={actionHref} active={actionIsActive}>
                 {getActionIcon()}
                 {getActionLabel()}
               </NavLink>

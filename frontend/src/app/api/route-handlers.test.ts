@@ -114,6 +114,13 @@ function readViewerUrl(payload: unknown): string | null {
   return typeof viewerUrl === 'string' ? viewerUrl : null;
 }
 
+function readPublishId(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+
+  const publishId = Reflect.get(payload, 'publishId');
+  return typeof publishId === 'string' ? publishId : null;
+}
+
 function readFetchRequestUrl(input: RequestInfo | URL): string {
   if (input instanceof URL) {
     return input.toString();
@@ -306,6 +313,48 @@ describe('/api/simulation-results', () => {
     const payload: unknown = await response.json();
     expect(readErrorMessage(payload)).toBe('Simulation results file too large');
   });
+
+  it('resolves publishId via relay lookup before fetching artifact', async () => {
+    const requests: string[] = [];
+    process.env.SEATBELT_RELAY_URL = 'https://seatbelt-relay-beta.vercel.app';
+
+    globalThis.fetch = createMockFetch(async (input: RequestInfo | URL): Promise<Response> => {
+      const requestUrl = readFetchRequestUrl(input);
+      requests.push(requestUrl);
+
+      if (requestUrl.includes('/api/v1/publishes/')) {
+        return new Response(
+          JSON.stringify({
+            publishId: '11111111-1111-4111-8111-111111111111',
+            artifactUrl: 'https://seatbelt-publish.vercel.app/simulation-results.json',
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      return new Response(VALID_SIMULATION_RESULTS_JSON, {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+        },
+      });
+    });
+
+    const response = await getSimulationResults(
+      new Request(
+        'http://localhost/api/simulation-results?publishId=11111111-1111-4111-8111-111111111111',
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(requests).toContain(
+      'https://seatbelt-relay-beta.vercel.app/api/v1/publishes/11111111-1111-4111-8111-111111111111',
+    );
+    expect(requests).toContain('https://seatbelt-publish.vercel.app/simulation-results.json');
+  });
 });
 
 describe('/api/share-link', () => {
@@ -339,7 +388,7 @@ describe('/api/share-link', () => {
 
     expect(response.status).toBe(200);
     const payload: unknown = await response.json();
-    expect(readArtifactUrl(payload)).toBe(
+  expect(readArtifactUrl(payload)).toBe(
       'https://seatbelt-publish.vercel.app/simulation-results.json',
     );
     expect(readViewerUrl(payload)).toBe('https://seatbelt.app');
@@ -383,6 +432,75 @@ describe('/api/share-link', () => {
       ? (JSON.parse(publishedArtifactRaw) as unknown)
       : null;
     expect(readMarkdownReport(publishedPayload)).toBe('');
+  });
+
+  it('returns publishId when relay marks it resolvable', async () => {
+    writeSimulationResultsFile(VALID_SIMULATION_RESULTS_JSON);
+    process.env.SEATBELT_RELAY_URL = 'https://seatbelt-relay-beta.vercel.app';
+
+    globalThis.fetch = createMockFetch(async (): Promise<Response> => {
+      return new Response(
+        JSON.stringify({
+          publishId: '11111111-1111-4111-8111-111111111111',
+          publishIdResolvable: true,
+          artifactUrl: 'https://seatbelt-publish.vercel.app/simulation-results.json',
+          viewerUrl: 'https://seatbelt.app',
+        }),
+        {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+          },
+        },
+      );
+    });
+
+    const response = await postShareLink(
+      new Request('http://localhost/api/share-link', {
+        method: 'POST',
+        headers: {
+          'x-forwarded-for': '203.0.113.10',
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const payload: unknown = await response.json();
+    expect(readPublishId(payload)).toBe('11111111-1111-4111-8111-111111111111');
+  });
+
+  it('omits publishId when relay does not mark it resolvable', async () => {
+    writeSimulationResultsFile(VALID_SIMULATION_RESULTS_JSON);
+    process.env.SEATBELT_RELAY_URL = 'https://seatbelt-relay-beta.vercel.app';
+
+    globalThis.fetch = createMockFetch(async (): Promise<Response> => {
+      return new Response(
+        JSON.stringify({
+          publishId: '11111111-1111-4111-8111-111111111111',
+          artifactUrl: 'https://seatbelt-publish.vercel.app/simulation-results.json',
+          viewerUrl: 'https://seatbelt.app',
+        }),
+        {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+          },
+        },
+      );
+    });
+
+    const response = await postShareLink(
+      new Request('http://localhost/api/share-link', {
+        method: 'POST',
+        headers: {
+          'x-forwarded-for': '203.0.113.10',
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const payload: unknown = await response.json();
+    expect(readPublishId(payload)).toBeNull();
   });
 
   it('returns 429 when share-link endpoint exceeds rate limit', async () => {

@@ -117,6 +117,113 @@ describe('managed publish relay endpoints', () => {
     );
     expect(readStringField(json, 'artifactUrl')).toContain('simulation-results.json');
     expect(readStringField(json, 'metadataUrl')).toContain('publish-metadata.json');
+    expect(json.publishIdResolvable).toBe(true);
+  });
+
+  it('does not return publishId when lookup persistence fails', async () => {
+    const handler = createRelayFetchHandler({
+      config: {
+        rateLimitEnabled: false,
+      },
+      dependencies: {
+        publisher: async () => ({
+          deploymentUrl: 'https://seatbelt-managed-publish.vercel.app',
+          artifactUrl: 'https://seatbelt-managed-publish.vercel.app/simulation-results.json',
+          metadataUrl: 'https://seatbelt-managed-publish.vercel.app/publish-metadata.json',
+        }),
+        publishLookupStore: {
+          mode: 'upstash',
+          write: async () => {
+            throw new Error('lookup store unavailable');
+          },
+          read: async () => null,
+        },
+      },
+    });
+
+    const response = await handler(
+      new Request('http://relay.local/api/v1/publishes', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': 'publish-key-write-fail',
+          'x-forwarded-for': '203.0.113.77',
+        },
+        body: JSON.stringify({
+          artifact: loadFixture('simulation-results.proposed.json'),
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    const json = await readJsonResponse(response);
+    expect(json.publishId).toBeUndefined();
+    expect(json.publishIdResolvable).toBe(false);
+  });
+
+  it('resolves publish lookup by publish id', async () => {
+    const handler = createRelayFetchHandler({
+      config: {
+        rateLimitEnabled: false,
+      },
+      dependencies: {
+        publisher: async () => ({
+          deploymentUrl: 'https://seatbelt-managed-publish.vercel.app',
+          artifactUrl: 'https://seatbelt-managed-publish.vercel.app/simulation-results.json',
+          metadataUrl: 'https://seatbelt-managed-publish.vercel.app/publish-metadata.json',
+        }),
+      },
+    });
+
+    const publishResponse = await handler(
+      new Request('http://relay.local/api/v1/publishes', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': 'lookup-key-1',
+          'x-forwarded-for': '203.0.113.15',
+        },
+        body: JSON.stringify({
+          artifact: loadFixture('simulation-results.proposed.json'),
+        }),
+      }),
+    );
+
+    expect(publishResponse.status).toBe(201);
+    const publishPayload = await readJsonResponse(publishResponse);
+    const publishId = readStringField(publishPayload, 'publishId');
+
+    const lookupResponse = await handler(
+      new Request(`http://relay.local/api/v1/publishes/${encodeURIComponent(publishId)}`),
+    );
+
+    expect(lookupResponse.status).toBe(200);
+    const lookupPayload = await readJsonResponse(lookupResponse);
+    expect(readStringField(lookupPayload, 'publishId')).toBe(publishId);
+    expect(readStringField(lookupPayload, 'artifactUrl')).toContain('simulation-results.json');
+  });
+
+  it('returns 404 for unknown publish id lookup', async () => {
+    const handler = createRelayFetchHandler({
+      config: {
+        rateLimitEnabled: false,
+      },
+      dependencies: {
+        publisher: async () => ({
+          deploymentUrl: 'https://unused-health-check.vercel.app',
+          artifactUrl: 'https://unused-health-check.vercel.app/simulation-results.json',
+          metadataUrl: 'https://unused-health-check.vercel.app/publish-metadata.json',
+        }),
+      },
+    });
+
+    const response = await handler(
+      new Request('http://relay.local/api/v1/publishes/00000000-0000-4000-8000-000000000000'),
+    );
+
+    expect(response.status).toBe(404);
+    const json = await readJsonResponse(response);
+    expect(readStringField(json, 'error')).toBe('publish_not_found');
   });
 
   it('revalidates artifact payload and blocks invalid contracts', async () => {
@@ -279,6 +386,45 @@ describe('managed publish relay endpoints', () => {
     expect(firstResponse.status).toBe(201);
     expect(secondResponse.status).toBe(429);
     expect(publishCallCount).toBe(1);
+  });
+
+  it('enforces rate limit on publish lookup endpoint', async () => {
+    const handler = createRelayFetchHandler({
+      config: {
+        rateLimitEnabled: true,
+        rateLimitMaxRequests: 1,
+        rateLimitWindowMs: 60_000,
+      },
+      dependencies: {
+        publisher: async () => ({
+          deploymentUrl: 'https://unused-lookup-rate-limit.vercel.app',
+          artifactUrl: 'https://unused-lookup-rate-limit.vercel.app/simulation-results.json',
+          metadataUrl: 'https://unused-lookup-rate-limit.vercel.app/publish-metadata.json',
+        }),
+      },
+    });
+
+    const publishId = '00000000-0000-4000-8000-000000000000';
+
+    const firstResponse = await handler(
+      new Request(`http://relay.local/api/v1/publishes/${publishId}`, {
+        headers: {
+          'x-forwarded-for': '198.51.100.9',
+        },
+      }),
+    );
+
+    const secondResponse = await handler(
+      new Request(`http://relay.local/api/v1/publishes/${publishId}`, {
+        headers: {
+          'x-forwarded-for': '198.51.100.9',
+        },
+      }),
+    );
+
+    expect(firstResponse.status).toBe(404);
+    expect(secondResponse.status).toBe(429);
+    expect(secondResponse.headers.get('retry-after')).not.toBeNull();
   });
 
   it('deduplicates duplicate idempotency keys in a single relay instance', async () => {

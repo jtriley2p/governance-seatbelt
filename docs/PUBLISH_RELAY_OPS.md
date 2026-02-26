@@ -20,7 +20,8 @@ Use separate projects for each responsibility:
 
 Share links should resolve to:
 
-- `<viewerUrl>?artifact=<artifactUrl>`
+- `<viewerUrl>/p/<publishId>` (preferred)
+- `<viewerUrl>?artifact=<artifactUrl>` (fallback)
 
 Artifact URL policy:
 
@@ -55,6 +56,7 @@ Success response (`201`):
 ```json
 {
   "publishId": "uuid",
+  "publishIdResolvable": true,
   "idempotencyKey": "key",
   "artifactHash": "sha256",
   "deploymentUrl": "https://...vercel.app",
@@ -65,6 +67,23 @@ Success response (`201`):
 ```
 
 `viewerUrl` is included when `SEATBELT_VIEWER_URL` is configured on relay.
+`publishId` is included when relay lookup persistence succeeds. If persistence fails, `publishId` is omitted and `publishIdResolvable` is `false`.
+
+### `GET /api/v1/publishes/:publishId`
+Resolves a publish identifier to canonical artifact metadata.
+
+Success response (`200`):
+
+```json
+{
+  "publishId": "uuid",
+  "artifactUrl": "https://.../simulation-results.json",
+  "deploymentUrl": "https://...vercel.app",
+  "metadataUrl": "https://.../publish-metadata.json",
+  "artifactHash": "sha256",
+  "publishedAt": "ISO-8601"
+}
+```
 
 Artifact alias prerequisites:
 
@@ -89,6 +108,10 @@ Set these on the `seatbelt-relay` Vercel project (Production + Preview):
 export SEATBELT_RELAY_VERCEL_TOKEN="<token>"
 export SEATBELT_RELAY_VERCEL_PROJECT_ID="<seatbelt-publish-project-id>"
 export SEATBELT_RELAY_VERCEL_ORG_ID="<team-or-user-id>"
+
+# Publish lookup persistence (required for /p/<publishId> share links)
+export UPSTASH_REDIS_REST_URL="https://<instance>.upstash.io"
+export UPSTASH_REDIS_REST_TOKEN="<token>"
 
 # Canonical frontend viewer URL used in share links
 export SEATBELT_VIEWER_URL="https://seatbelt-viewer.vercel.app"
