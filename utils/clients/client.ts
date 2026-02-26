@@ -14,19 +14,33 @@ import {
   xLayer,
   zora,
 } from 'viem/chains';
+import { DEFAULT_BLOCK_EXPLORER_BASE_URL, normalizeBlockExplorerBaseUrl } from '../explorer-links';
 
 export enum BlockExplorerSource {
   Blockscout = 'blockscout',
   Etherscan = 'etherscan',
 }
 
+export enum VerificationBackend {
+  EtherscanV2 = 'etherscan-v2',
+  Blockscout = 'blockscout',
+  SourcifyOnly = 'sourcify-only',
+}
+
 export interface ChainConfig {
   chainId: number;
   blockExplorer: {
     baseUrl: string;
-    apiUrl: string;
-    source: BlockExplorerSource;
+    // Legacy fields retained for test fixture compatibility only.
+    apiUrl?: string;
+    source?: BlockExplorerSource;
     apiKey?: string;
+  };
+  verification?: {
+    backend: VerificationBackend;
+    apiUrl?: string;
+    apiKey?: string;
+    degradedReason?: string;
   };
   rpcUrl: string;
 }
@@ -108,9 +122,11 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     chainId: mainnet.id,
     blockExplorer: {
       baseUrl: mainnet.blockExplorers?.default.url || 'https://etherscan.io',
+    },
+    verification: {
+      backend: VerificationBackend.EtherscanV2,
       apiUrl: ETHERSCAN_V2_API_URL,
       apiKey: process.env.ETHERSCAN_API_KEY,
-      source: BlockExplorerSource.Etherscan,
     },
     rpcUrl: process.env.MAINNET_RPC_URL,
   },
@@ -118,9 +134,11 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     chainId: arbitrum.id,
     blockExplorer: {
       baseUrl: arbitrum.blockExplorers?.default.url || 'https://arbiscan.io',
+    },
+    verification: {
+      backend: VerificationBackend.EtherscanV2,
       apiUrl: ETHERSCAN_V2_API_URL,
       apiKey: process.env.ETHERSCAN_API_KEY,
-      source: BlockExplorerSource.Etherscan,
     },
     rpcUrl: process.env.ARBITRUM_RPC_URL,
   },
@@ -128,9 +146,11 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     chainId: optimism.id,
     blockExplorer: {
       baseUrl: optimism.blockExplorers?.default.url || 'https://optimistic.etherscan.io',
+    },
+    verification: {
+      backend: VerificationBackend.EtherscanV2,
       apiUrl: ETHERSCAN_V2_API_URL,
       apiKey: process.env.ETHERSCAN_API_KEY,
-      source: BlockExplorerSource.Etherscan,
     },
     rpcUrl: OPTIMISM_RPC_URL,
   },
@@ -138,9 +158,11 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     chainId: base.id,
     blockExplorer: {
       baseUrl: base.blockExplorers?.default.url || 'https://basescan.org',
+    },
+    verification: {
+      backend: VerificationBackend.EtherscanV2,
       apiUrl: ETHERSCAN_V2_API_URL,
       apiKey: process.env.ETHERSCAN_API_KEY,
-      source: BlockExplorerSource.Etherscan,
     },
     rpcUrl: BASE_RPC_URL,
   },
@@ -148,9 +170,11 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     chainId: unichain.id,
     blockExplorer: {
       baseUrl: unichain.blockExplorers?.default.url || 'https://uniscan.xyz',
+    },
+    verification: {
+      backend: VerificationBackend.EtherscanV2,
       apiUrl: ETHERSCAN_V2_API_URL,
       apiKey: process.env.ETHERSCAN_API_KEY,
-      source: BlockExplorerSource.Etherscan,
     },
     rpcUrl: UNICHAIN_RPC_URL,
   },
@@ -158,8 +182,10 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     chainId: ink.id,
     blockExplorer: {
       baseUrl: ink.blockExplorers?.default.url,
+    },
+    verification: {
+      backend: VerificationBackend.Blockscout,
       apiUrl: ink.blockExplorers?.default.apiUrl,
-      source: BlockExplorerSource.Blockscout,
     },
     rpcUrl: INK_RPC_URL,
   },
@@ -167,8 +193,10 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     chainId: soneium.id,
     blockExplorer: {
       baseUrl: soneium.blockExplorers?.default.url,
+    },
+    verification: {
+      backend: VerificationBackend.Blockscout,
       apiUrl: 'https://soneium.blockscout.com/api/v2',
-      source: BlockExplorerSource.Blockscout,
     },
     rpcUrl: SONEIUM_RPC_URL,
   },
@@ -176,8 +204,10 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     chainId: bob.id,
     blockExplorer: {
       baseUrl: bob.blockExplorers?.default.url,
+    },
+    verification: {
+      backend: VerificationBackend.Blockscout,
       apiUrl: 'https://explorer.gobob.xyz/api/v2',
-      source: BlockExplorerSource.Blockscout,
     },
     rpcUrl: BOB_RPC_URL,
   },
@@ -185,9 +215,11 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     chainId: celo.id,
     blockExplorer: {
       baseUrl: celo.blockExplorers?.default.url || 'https://celoscan.io',
+    },
+    verification: {
+      backend: VerificationBackend.EtherscanV2,
       apiUrl: ETHERSCAN_V2_API_URL,
       apiKey: process.env.ETHERSCAN_API_KEY,
-      source: BlockExplorerSource.Etherscan,
     },
     rpcUrl: CELO_RPC_URL,
   },
@@ -195,9 +227,11 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     chainId: worldchain.id,
     blockExplorer: {
       baseUrl: worldchain.blockExplorers?.default.url || 'https://worldscan.org',
-      apiUrl: ETHERSCAN_V2_API_URL,
-      apiKey: process.env.ETHERSCAN_API_KEY,
-      source: BlockExplorerSource.Etherscan,
+    },
+    verification: {
+      backend: VerificationBackend.SourcifyOnly,
+      degradedReason:
+        'Worldchain verification backend API is not supported yet; using Sourcify only.',
     },
     rpcUrl: WORLDCHAIN_RPC_URL,
   },
@@ -205,9 +239,10 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     chainId: zora.id,
     blockExplorer: {
       baseUrl: zora.blockExplorers?.default.url || 'https://explorer.zora.energy',
-      apiUrl: ETHERSCAN_V2_API_URL,
-      apiKey: process.env.ETHERSCAN_API_KEY,
-      source: BlockExplorerSource.Etherscan,
+    },
+    verification: {
+      backend: VerificationBackend.Blockscout,
+      apiUrl: 'https://explorer.zora.energy/api/v2',
     },
     rpcUrl: ZORA_RPC_URL,
   },
@@ -215,9 +250,10 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     chainId: xLayer.id,
     blockExplorer: {
       baseUrl: xLayer.blockExplorers?.default.url || 'https://www.oklink.com/xlayer',
-      apiUrl: ETHERSCAN_V2_API_URL,
-      apiKey: process.env.ETHERSCAN_API_KEY,
-      source: BlockExplorerSource.Etherscan,
+    },
+    verification: {
+      backend: VerificationBackend.SourcifyOnly,
+      degradedReason: 'XLayer verification backend API is not supported yet; using Sourcify only.',
     },
     rpcUrl: XLAYER_RPC_URL,
   },
@@ -229,6 +265,47 @@ export function getChainConfig(chainId: number): ChainConfig {
     throw new Error(`No configuration found for chain ID ${chainId}`);
   }
   return config;
+}
+
+export function formatVerificationBackend(backend: VerificationBackend): string {
+  if (backend === VerificationBackend.EtherscanV2) return 'Etherscan v2 API';
+  if (backend === VerificationBackend.Blockscout) return 'Blockscout API';
+  return 'Sourcify-only (no verification API backend)';
+}
+
+export function getBlockExplorerBaseUrlForChain(chainId: number): string {
+  try {
+    return normalizeBlockExplorerBaseUrl(getChainConfig(chainId).blockExplorer.baseUrl);
+  } catch {
+    return DEFAULT_BLOCK_EXPLORER_BASE_URL;
+  }
+}
+
+export interface ResolvedVerificationConfig {
+  backend: VerificationBackend;
+  apiUrl?: string;
+  apiKey?: string;
+  degradedReason?: string;
+}
+
+export function resolveVerificationConfig(config: ChainConfig): ResolvedVerificationConfig {
+  if (config.verification) {
+    return config.verification;
+  }
+
+  if (config.blockExplorer.source === BlockExplorerSource.Blockscout) {
+    return {
+      backend: VerificationBackend.Blockscout,
+      apiUrl: config.blockExplorer.apiUrl,
+      degradedReason: undefined,
+    };
+  }
+
+  return {
+    backend: VerificationBackend.EtherscanV2,
+    apiKey: config.blockExplorer.apiKey,
+    degradedReason: undefined,
+  };
 }
 
 const clients = {

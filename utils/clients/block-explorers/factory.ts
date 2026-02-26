@@ -1,6 +1,11 @@
 import type { Abi } from 'viem';
 import { getAddress } from 'viem';
-import { BlockExplorerSource, getChainConfig } from '../client';
+import {
+  VerificationBackend,
+  formatVerificationBackend,
+  getChainConfig,
+  resolveVerificationConfig,
+} from '../client';
 import { type SourcifyMatch, getSourcifyMatch } from '../sourcify';
 import { BlockscoutExplorer } from './blockscout';
 import { CacheManager } from './cache';
@@ -14,31 +19,59 @@ export interface ContractVerificationResult {
   source: 'sourcify' | 'block-explorer' | 'none' | 'unknown';
   sourcifyMatch?: string;
   blockExplorer?: { name: string };
+  verificationBackend?: VerificationBackend;
   reason?: string;
 }
 
 // biome-ignore lint/complexity/noStaticOnlyClass: Factory pattern with static methods
 export class BlockExplorerFactory {
-  private static explorers: Record<number, BlockExplorer> = {};
+  private static explorers: Record<number, BlockExplorer | null> = {};
 
-  static getExplorer(chainId: number): BlockExplorer {
-    if (!BlockExplorerFactory.explorers[chainId]) {
-      const chainConfig = getChainConfig(chainId);
+  private static setVerificationCache(
+    chainId: number,
+    address: string,
+    verified: boolean,
+    options?: Parameters<typeof CacheManager.setVerificationInMemory>[3],
+  ): void {
+    CacheManager.setVerificationInMemory(chainId, address, verified, options);
+    try {
+      CacheManager.setVerificationInFile(chainId, address, verified, options);
+    } catch (error) {
+      console.warn(
+        `Failed to persist verification cache for ${address} on chain ${chainId}:`,
+        error,
+      );
+    }
+  }
 
-      if (chainConfig.blockExplorer.source === BlockExplorerSource.Blockscout) {
-        BlockExplorerFactory.explorers[chainId] = new BlockscoutExplorer(
-          chainConfig.blockExplorer.baseUrl,
-          chainConfig.blockExplorer.apiUrl,
-        );
-      } else {
-        // Use Etherscan for other chains
-        BlockExplorerFactory.explorers[chainId] = new EtherscanExplorer(
-          chainConfig.blockExplorer.apiKey || '',
-        );
-      }
+  static getExplorer(chainId: number): BlockExplorer | null {
+    if (Object.prototype.hasOwnProperty.call(BlockExplorerFactory.explorers, chainId)) {
+      return BlockExplorerFactory.explorers[chainId] ?? null;
     }
 
-    return BlockExplorerFactory.explorers[chainId];
+    const chainConfig = getChainConfig(chainId);
+    const verificationConfig = resolveVerificationConfig(chainConfig);
+
+    if (verificationConfig.backend === VerificationBackend.Blockscout) {
+      if (!verificationConfig.apiUrl) {
+        throw new Error(`Missing Blockscout API URL for chain ${chainId}`);
+      }
+      BlockExplorerFactory.explorers[chainId] = new BlockscoutExplorer(
+        chainConfig.blockExplorer.baseUrl,
+        verificationConfig.apiUrl,
+      );
+      return BlockExplorerFactory.explorers[chainId];
+    }
+
+    if (verificationConfig.backend === VerificationBackend.EtherscanV2) {
+      BlockExplorerFactory.explorers[chainId] = new EtherscanExplorer(
+        verificationConfig.apiKey || '',
+      );
+      return BlockExplorerFactory.explorers[chainId];
+    }
+
+    BlockExplorerFactory.explorers[chainId] = null;
+    return null;
   }
 
   /**
@@ -47,6 +80,9 @@ export class BlockExplorerFactory {
   static async fetchContractAbi(address: string, chainId: number): Promise<Abi | null> {
     try {
       const explorer = BlockExplorerFactory.getExplorer(chainId);
+      if (!explorer) {
+        return null;
+      }
       return await explorer.fetchContractAbi(address, chainId);
     } catch (error) {
       console.warn(`Failed to fetch ABI for ${address} on chain ${chainId}:`, error);
@@ -60,6 +96,9 @@ export class BlockExplorerFactory {
   static async fetchContractName(address: string, chainId: number): Promise<string | null> {
     try {
       const explorer = BlockExplorerFactory.getExplorer(chainId);
+      if (!explorer) {
+        return null;
+      }
       return await explorer.fetchContractName(address, chainId);
     } catch (error) {
       console.warn(`Failed to fetch contract name for ${address} on chain ${chainId}:`, error);
@@ -75,10 +114,13 @@ export class BlockExplorerFactory {
     chainId: number,
   ): Promise<ContractVerificationResult> {
     try {
+      const chainConfig = getChainConfig(chainId);
+      const verificationConfig = resolveVerificationConfig(chainConfig);
+      const verificationBackend = verificationConfig.backend;
       const normalizedAddress = getAddress(address);
 
       const memoryEntry = CacheManager.getVerificationEntryFromMemory(chainId, normalizedAddress);
-      if (memoryEntry) {
+      if (memoryEntry?.verificationBackend === verificationBackend) {
         return {
           status: memoryEntry.verified ? 'verified' : 'unverified',
           source: memoryEntry.source,
@@ -86,11 +128,12 @@ export class BlockExplorerFactory {
           blockExplorer: memoryEntry.blockExplorer
             ? { name: memoryEntry.blockExplorer.name }
             : undefined,
+          verificationBackend,
         };
       }
 
       const fileEntry = CacheManager.getVerificationEntryFromFile(chainId, normalizedAddress);
-      if (fileEntry) {
+      if (fileEntry?.verificationBackend === verificationBackend) {
         CacheManager.setVerificationEntryInMemory(chainId, normalizedAddress, fileEntry);
         return {
           status: fileEntry.verified ? 'verified' : 'unverified',
@@ -99,6 +142,7 @@ export class BlockExplorerFactory {
           blockExplorer: fileEntry.blockExplorer
             ? { name: fileEntry.blockExplorer.name }
             : undefined,
+          verificationBackend,
         };
       }
 
@@ -107,22 +151,57 @@ export class BlockExplorerFactory {
         sourcifyMatch = await getSourcifyMatch(normalizedAddress, chainId);
       } catch (error) {
         console.warn(
-          `Sourcify check failed for ${normalizedAddress} on chain ${chainId}; falling back to block explorer:`,
+          `Sourcify check failed for ${normalizedAddress} on chain ${chainId}; falling back to verification backend API (${formatVerificationBackend(verificationBackend)}):`,
           error,
         );
       }
+
       if (sourcifyMatch === 'exact_match' || sourcifyMatch === 'match') {
-        const cacheMeta = { source: 'sourcify' as const, sourcifyMatch };
-        CacheManager.setVerificationInMemory(chainId, normalizedAddress, true, cacheMeta);
-        CacheManager.setVerificationInFile(chainId, normalizedAddress, true, cacheMeta);
+        const cacheMeta = {
+          source: 'sourcify' as const,
+          sourcifyMatch,
+          verificationBackend,
+        };
+        BlockExplorerFactory.setVerificationCache(chainId, normalizedAddress, true, cacheMeta);
         return {
           status: 'verified',
           source: 'sourcify',
           sourcifyMatch,
+          verificationBackend,
         };
       }
 
       const explorer = BlockExplorerFactory.getExplorer(chainId);
+      if (!explorer) {
+        const degradedReason =
+          verificationConfig.degradedReason ||
+          `No verification backend API configured for chain ${chainId}; checked Sourcify only.`;
+
+        if (sourcifyMatch === 'error') {
+          return {
+            status: 'unknown',
+            source: 'unknown',
+            sourcifyMatch,
+            verificationBackend,
+            reason: `Sourcify check failed and ${degradedReason}`,
+          };
+        }
+
+        const cacheMeta = {
+          source: 'none' as const,
+          sourcifyMatch,
+          verificationBackend,
+        };
+        BlockExplorerFactory.setVerificationCache(chainId, normalizedAddress, false, cacheMeta);
+
+        return {
+          status: 'unverified',
+          source: 'none',
+          sourcifyMatch,
+          verificationBackend,
+          reason: degradedReason,
+        };
+      }
 
       try {
         const isVerified = await explorer.isContractVerified(normalizedAddress, chainId, {
@@ -132,16 +211,22 @@ export class BlockExplorerFactory {
         const cacheMeta = {
           source,
           sourcifyMatch,
+          verificationBackend,
           blockExplorer: { name: explorer.getName(), verified: isVerified },
         };
-        CacheManager.setVerificationInMemory(chainId, normalizedAddress, isVerified, cacheMeta);
-        CacheManager.setVerificationInFile(chainId, normalizedAddress, isVerified, cacheMeta);
+        BlockExplorerFactory.setVerificationCache(
+          chainId,
+          normalizedAddress,
+          isVerified,
+          cacheMeta,
+        );
 
         return {
           status: isVerified ? 'verified' : 'unverified',
           source,
           sourcifyMatch,
           blockExplorer: { name: explorer.getName() },
+          verificationBackend,
         };
       } catch (error) {
         // Do not cache failures as "unverified" — surface an explicit unknown state.
@@ -150,6 +235,7 @@ export class BlockExplorerFactory {
           source: 'unknown',
           sourcifyMatch,
           blockExplorer: { name: explorer.getName() },
+          verificationBackend,
           reason: error instanceof Error ? error.message : String(error),
         };
       }

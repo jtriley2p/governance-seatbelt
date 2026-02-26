@@ -1,9 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { getAddress } from 'viem';
-import { checkTargetsVerifiedOnBlockExplorer } from '../checks/check-targets-verified-etherscan';
 import type { ProposalData, ProposalEvent, TenderlySimulation } from '../types';
-import { BlockExplorerFactory } from '../utils/clients/block-explorers/factory';
-import { DEFAULT_SIMULATION_ADDRESS } from '../utils/clients/tenderly';
+
+function seedEnv(): void {
+  process.env.MAINNET_RPC_URL ??= 'http://localhost:8545';
+  process.env.ARBITRUM_RPC_URL ??= 'http://localhost:8545';
+  process.env.ETHERSCAN_API_KEY ??= 'test-key';
+  process.env.TENDERLY_ACCESS_TOKEN ??= 'test-token';
+  process.env.TENDERLY_USER ??= 'test-user';
+  process.env.TENDERLY_PROJECT_SLUG ??= 'test-project';
+}
 
 function makeDeps(overrides?: Partial<ProposalData>): ProposalData {
   return {
@@ -40,6 +46,14 @@ function makeProposal(targets: string[]): ProposalEvent {
 
 describe('Verification checks - placeholder labeling', () => {
   test('labels placeholder and shows verified/unverified as expected', async () => {
+    seedEnv();
+
+    const { checkTargetsVerifiedOnBlockExplorer } = await import(
+      '../checks/check-targets-verified-etherscan'
+    );
+    const { BlockExplorerFactory } = await import('../utils/clients/block-explorers/factory');
+    const { DEFAULT_SIMULATION_ADDRESS } = await import('../utils/clients/tenderly');
+
     const placeholder = DEFAULT_SIMULATION_ADDRESS;
     const realContract = getAddress('0x1234567890abcdef1234567890abcdef12345678');
 
@@ -64,8 +78,8 @@ describe('Verification checks - placeholder labeling', () => {
 
       const output = res.info.join('\n');
       expect(output).toContain('(simulation placeholder)');
-      expect(output).toMatch(/Contract \(verified\)/); // placeholder
-      expect(output).toMatch(/Contract \(unverified\)/); // realContract
+      expect(output).toMatch(/Contract \(verified via/); // placeholder
+      expect(output).toMatch(/Contract \(unverified; checked Sourcify \+/); // realContract
     } finally {
       BlockExplorerFactory.getContractVerification = original;
     }

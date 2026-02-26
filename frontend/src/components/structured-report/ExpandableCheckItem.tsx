@@ -145,7 +145,9 @@ export function ExpandableCheckItem({
   const title = check.title.toLowerCase();
   const isStateChangesCheck = title.includes('state changes');
   const isVerificationCheck =
-    title.includes('verified on sourcify') || title.includes('verified on block explorer');
+    title.includes('verified on sourcify') ||
+    title.includes('verified on block explorer') ||
+    title.includes('verification backend api');
   const isProxyResolutionCheck = title.includes('proxy implementation');
   const isTreasuryMovementCheck = title.includes('treasury movement');
   const isPermissionChangesCheck = title.includes('permission changes');

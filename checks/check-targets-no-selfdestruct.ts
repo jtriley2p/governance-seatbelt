@@ -1,7 +1,7 @@
 import { type PublicClient, getAddress } from 'viem';
-import { toAddressLink } from '../presentation/report';
 import type { CallTrace, ProposalCheck, TenderlySimulation } from '../types';
 import { DEFAULT_SIMULATION_ADDRESS } from '../utils/clients/tenderly';
+import { toExplorerAddressMarkdownLink } from '../utils/explorer-links';
 
 /**
  * Check all targets with code if they contain selfdestruct.
@@ -78,7 +78,7 @@ async function checkNoSelfdestructs(
 
   for (const addr of addresses) {
     const status = await checkNoSelfdestruct(trustedAddrs, addr, publicClient);
-    const address = toAddressLink(addr, blockExplorerUrl);
+    const address = toExplorerAddressMarkdownLink(addr, blockExplorerUrl);
     const isOurPlaceholder = getAddress(addr) === getAddress(DEFAULT_SIMULATION_ADDRESS);
     const suffix = isOurPlaceholder ? ' (simulation placeholder)' : '';
 

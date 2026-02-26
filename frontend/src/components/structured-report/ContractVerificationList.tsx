@@ -32,10 +32,10 @@ function parseVerificationLine(line: string): ParsedContractBase | null {
   let status: VerificationStatus = 'unknown';
   let statusLabel = 'Unknown';
 
-  if (line.includes('Contract (verified)')) {
+  if (line.includes('Contract (verified')) {
     status = 'verified';
     statusLabel = 'Verified';
-  } else if (line.includes('Contract (unverified)')) {
+  } else if (line.includes('Contract (unverified')) {
     status = 'unverified';
     statusLabel = 'Unverified';
   } else if (line.includes('EOA') || line.includes('verification not applicable')) {

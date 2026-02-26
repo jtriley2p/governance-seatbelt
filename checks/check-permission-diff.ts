@@ -10,6 +10,7 @@ import {
   zeroHash,
 } from 'viem';
 import type { PermissionsDiffItem, ProposalCheck, TenderlyContract } from '../types';
+import { toExplorerAddressMarkdownLink } from '../utils/explorer-links';
 
 function eventTopic(signature: string): `0x${string}` {
   return keccak256(toBytes(signature));
@@ -79,7 +80,7 @@ const NEW_PENDING_ADMIN_EVENT_ABI = [
 ] as const;
 
 function toAddressLink(address: string, blockExplorerBaseUrl: string): string {
-  return `[${address}](${blockExplorerBaseUrl}/address/${address})`;
+  return toExplorerAddressMarkdownLink(address, blockExplorerBaseUrl);
 }
 
 const OWNERSHIP_FUNCTION_ABI = parseAbi([
