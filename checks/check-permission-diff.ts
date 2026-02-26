@@ -21,6 +21,63 @@ const ROLE_REVOKED_TOPIC = eventTopic('RoleRevoked(bytes32,address,address)');
 const NEW_ADMIN_TOPIC = eventTopic('NewAdmin(address)');
 const NEW_PENDING_ADMIN_TOPIC = eventTopic('NewPendingAdmin(address)');
 
+const OWNERSHIP_TRANSFERRED_TOPIC_LOWER = OWNERSHIP_TRANSFERRED_TOPIC.toLowerCase();
+const ROLE_GRANTED_TOPIC_LOWER = ROLE_GRANTED_TOPIC.toLowerCase();
+const ROLE_REVOKED_TOPIC_LOWER = ROLE_REVOKED_TOPIC.toLowerCase();
+const NEW_ADMIN_TOPIC_LOWER = NEW_ADMIN_TOPIC.toLowerCase();
+const NEW_PENDING_ADMIN_TOPIC_LOWER = NEW_PENDING_ADMIN_TOPIC.toLowerCase();
+
+const OWNERSHIP_TRANSFERRED_EVENT_ABI = [
+  {
+    type: 'event',
+    name: 'OwnershipTransferred',
+    inputs: [
+      { indexed: true, name: 'previousOwner', type: 'address' },
+      { indexed: true, name: 'newOwner', type: 'address' },
+    ],
+  },
+] as const;
+
+const ROLE_GRANTED_EVENT_ABI = [
+  {
+    type: 'event',
+    name: 'RoleGranted',
+    inputs: [
+      { indexed: true, name: 'role', type: 'bytes32' },
+      { indexed: true, name: 'account', type: 'address' },
+      { indexed: true, name: 'sender', type: 'address' },
+    ],
+  },
+] as const;
+
+const ROLE_REVOKED_EVENT_ABI = [
+  {
+    type: 'event',
+    name: 'RoleRevoked',
+    inputs: [
+      { indexed: true, name: 'role', type: 'bytes32' },
+      { indexed: true, name: 'account', type: 'address' },
+      { indexed: true, name: 'sender', type: 'address' },
+    ],
+  },
+] as const;
+
+const NEW_ADMIN_EVENT_ABI = [
+  {
+    type: 'event',
+    name: 'NewAdmin',
+    inputs: [{ indexed: true, name: 'newAdmin', type: 'address' }],
+  },
+] as const;
+
+const NEW_PENDING_ADMIN_EVENT_ABI = [
+  {
+    type: 'event',
+    name: 'NewPendingAdmin',
+    inputs: [{ indexed: true, name: 'newPendingAdmin', type: 'address' }],
+  },
+] as const;
+
 function toAddressLink(address: string, blockExplorerBaseUrl: string): string {
   return `[${address}](${blockExplorerBaseUrl}/address/${address})`;
 }
@@ -30,7 +87,10 @@ const OWNERSHIP_FUNCTION_ABI = parseAbi([
   'function transferOwnership(address newOwner)',
 ]);
 
-const OWNERSHIP_SELECTORS = new Set(['0x13af4035', '0xf2fde38b']);
+const SET_OWNER_SELECTOR = '0x13af4035';
+const TRANSFER_OWNERSHIP_SELECTOR = '0xf2fde38b';
+
+const OWNERSHIP_SELECTORS = new Set([SET_OWNER_SELECTOR, TRANSFER_OWNERSHIP_SELECTOR]);
 
 const OWNER_ARG_NAMES = new Set(['owner', '_owner', 'newowner', 'new_owner']);
 
@@ -48,7 +108,7 @@ function decodeRoleName(roleId: string): string | null {
 }
 
 function toRole(role: unknown): { id: `0x${string}`; name: string | null } {
-  const roleId = typeof role === 'string' && isHex(role) ? (role as `0x${string}`) : zeroHash;
+  const roleId = typeof role === 'string' && isHex(role) ? role : zeroHash;
   return { id: roleId, name: decodeRoleName(roleId) };
 }
 
@@ -56,13 +116,32 @@ function maybeAddress(value: unknown): `0x${string}` | null {
   if (typeof value !== 'string') return null;
   if (!isHex(value)) return null;
   try {
-    return getAddress(value) as `0x${string}`;
+    return getAddress(value);
   } catch {
     return null;
   }
 }
 
+function asHex(value: unknown): `0x${string}` | null {
+  return typeof value === 'string' && isHex(value) ? value : null;
+}
+
+function asHexTopicList(topics: unknown): [`0x${string}`, ...`0x${string}`[]] | null {
+  if (!Array.isArray(topics) || topics.length === 0) return null;
+
+  const parsed: `0x${string}`[] = [];
+  for (const topic of topics) {
+    const hexTopic = asHex(topic);
+    if (!hexTopic) return null;
+    parsed.push(hexTopic);
+  }
+
+  const [first, ...rest] = parsed;
+  return first ? [first, ...rest] : null;
+}
+
 type TraceCallLike = {
+  from?: string;
   to?: string;
   input?: string;
   function_name?: string;
@@ -70,9 +149,13 @@ type TraceCallLike = {
   calls?: TraceCallLike[];
 };
 
+type OwnershipIntentMethod = 'setOwner' | 'transferOwnership';
+
 type OwnershipIntentEvidence = {
   contractAddress: `0x${string}`;
+  caller: `0x${string}` | null;
   newOwner: `0x${string}`;
+  method: OwnershipIntentMethod;
 };
 
 type RawAddressTransition = {
@@ -85,71 +168,73 @@ function isTraceCallLike(value: unknown): value is TraceCallLike {
   return typeof value === 'object' && value !== null;
 }
 
-function normalizeOwnershipFunctionName(value: string | undefined): boolean {
-  if (!value) return false;
+function parseOwnershipMethodFromFunctionName(
+  value: string | undefined,
+): OwnershipIntentMethod | null {
+  if (!value) return null;
   const normalized = value.replace(/\s+/g, '').toLowerCase();
-  if (normalized === 'setowner' || normalized.startsWith('setowner(')) return true;
+
+  if (normalized === 'setowner' || normalized.startsWith('setowner(')) {
+    return 'setOwner';
+  }
+
   if (normalized === 'transferownership' || normalized.startsWith('transferownership(')) {
-    return true;
-  }
-  return false;
-}
-
-function extractOwnerArgFromDecodedInput(decodedInput: unknown): `0x${string}` | null {
-  if (!Array.isArray(decodedInput)) return null;
-
-  const ownerNamedArg = decodedInput.find((input) => {
-    if (typeof input !== 'object' || input === null) return false;
-    const soltype = 'soltype' in input ? input.soltype : undefined;
-    if (typeof soltype !== 'object' || soltype === null) return false;
-    if (typeof soltype.type !== 'string' || soltype.type.toLowerCase() !== 'address') return false;
-    if (typeof soltype.name !== 'string') return false;
-    return OWNER_ARG_NAMES.has(soltype.name.toLowerCase());
-  });
-
-  if (ownerNamedArg && typeof ownerNamedArg === 'object' && 'value' in ownerNamedArg) {
-    const parsed = maybeAddress(ownerNamedArg.value);
-    if (parsed) return parsed;
-  }
-
-  const anyAddressTypedArg = decodedInput.find((input) => {
-    if (typeof input !== 'object' || input === null) return false;
-    const soltype = 'soltype' in input ? input.soltype : undefined;
-    if (typeof soltype !== 'object' || soltype === null) return false;
-    return typeof soltype.type === 'string' && soltype.type.toLowerCase() === 'address';
-  });
-
-  if (
-    anyAddressTypedArg &&
-    typeof anyAddressTypedArg === 'object' &&
-    'value' in anyAddressTypedArg
-  ) {
-    const parsed = maybeAddress(anyAddressTypedArg.value);
-    if (parsed) return parsed;
-  }
-
-  for (const input of decodedInput) {
-    if (typeof input !== 'object' || input === null || !('value' in input)) continue;
-    const parsed = maybeAddress(input.value);
-    if (parsed) return parsed;
+    return 'transferOwnership';
   }
 
   return null;
 }
 
+function parseOwnershipMethodFromSelector(selector: string): OwnershipIntentMethod | null {
+  if (selector === SET_OWNER_SELECTOR) return 'setOwner';
+  if (selector === TRANSFER_OWNERSHIP_SELECTOR) return 'transferOwnership';
+  return null;
+}
+
+function extractOwnerArgFromDecodedInput(decodedInput: unknown): `0x${string}` | null {
+  if (!Array.isArray(decodedInput)) return null;
+
+  let firstAddressArg: `0x${string}` | null = null;
+
+  for (const input of decodedInput) {
+    if (typeof input !== 'object' || input === null || !('soltype' in input)) continue;
+
+    const soltype = input.soltype;
+    if (typeof soltype !== 'object' || soltype === null) continue;
+    if (typeof soltype.type !== 'string' || soltype.type.toLowerCase() !== 'address') continue;
+
+    const parsed = 'value' in input ? maybeAddress(input.value) : null;
+    if (!parsed) continue;
+
+    if (typeof soltype.name === 'string' && OWNER_ARG_NAMES.has(soltype.name.toLowerCase())) {
+      return parsed;
+    }
+
+    if (!firstAddressArg) {
+      firstAddressArg = parsed;
+    }
+  }
+
+  return firstAddressArg;
+}
+
 function parseOwnershipIntentFromInput(input: string | undefined): {
   newOwner: `0x${string}`;
+  method: OwnershipIntentMethod;
 } | null {
   if (!input || !isHex(input) || input.length < 10) return null;
 
   const selector = input.slice(0, 10).toLowerCase();
   if (!OWNERSHIP_SELECTORS.has(selector)) return null;
 
+  const method = parseOwnershipMethodFromSelector(selector);
+  if (!method) return null;
+
   try {
     const decoded = decodeFunctionData({ abi: OWNERSHIP_FUNCTION_ABI, data: input });
     const newOwner = maybeAddress(decoded.args[0]);
     if (!newOwner) return null;
-    return { newOwner };
+    return { newOwner, method };
   } catch {
     return null;
   }
@@ -175,12 +260,17 @@ function extractOwnershipIntentEvidence(callTrace: unknown): OwnershipIntentEvid
     const contractAddress = maybeAddress(node.to);
     if (!contractAddress) continue;
 
-    if (normalizeOwnershipFunctionName(node.function_name)) {
+    const caller = maybeAddress(node.from);
+
+    const methodFromName = parseOwnershipMethodFromFunctionName(node.function_name);
+    if (methodFromName) {
       const newOwner = extractOwnerArgFromDecodedInput(node.decoded_input);
       if (newOwner) {
         intents.push({
           contractAddress,
+          caller,
           newOwner,
+          method: methodFromName,
         });
         continue;
       }
@@ -191,7 +281,9 @@ function extractOwnershipIntentEvidence(callTrace: unknown): OwnershipIntentEvid
 
     intents.push({
       contractAddress,
+      caller,
       newOwner: parsedFromInput.newOwner,
+      method: parsedFromInput.method,
     });
   }
 
@@ -346,10 +438,6 @@ export const checkPermissionDiff: ProposalCheck = {
     const info: string[] = [];
     const permissionsDiff: PermissionsDiffItem[] = [];
 
-    // For L2 reports, only evaluate permission diffs within the destination simulation for this chain.
-    // Cross-chain destination simulations are rendered under their own chain sections.
-    const simulations = deps.chainConfig?.chainId !== 1 ? [sim] : [sim];
-
     const contractNameByAddress = new Map<string, string>();
     const getContractLabel = (address: string) => {
       const key = address.toLowerCase();
@@ -362,163 +450,127 @@ export const checkPermissionDiff: ProposalCheck = {
     };
 
     // --- Event-based detection (works for both OZ and Bravo style contracts) ---
-    for (const currentSim of simulations) {
-      const logs = currentSim.transaction.transaction_info.logs ?? [];
-      for (const log of logs) {
-        const rawAddress = log.raw?.address;
-        if (!rawAddress) continue;
+    for (const log of sim.transaction.transaction_info.logs ?? []) {
+      const contractAddress = maybeAddress(log.raw?.address);
+      if (!contractAddress) continue;
 
-        let contractAddress: `0x${string}`;
-        try {
-          contractAddress = getAddress(rawAddress) as `0x${string}`;
-        } catch {
+      const topics = asHexTopicList(log.raw?.topics);
+      const data = asHex(log.raw?.data);
+      if (!topics || !data) continue;
+
+      const topic0 = topics[0].toLowerCase();
+
+      try {
+        if (topic0 === OWNERSHIP_TRANSFERRED_TOPIC_LOWER) {
+          const decoded = decodeEventLog({
+            abi: OWNERSHIP_TRANSFERRED_EVENT_ABI,
+            data,
+            topics,
+          });
+
+          const previousOwner = maybeAddress(decoded.args.previousOwner);
+          const newOwner = maybeAddress(decoded.args.newOwner);
+          if (!previousOwner || !newOwner) continue;
+
+          permissionsDiff.push({
+            kind: 'ownership_transferred',
+            contractAddress,
+            contractName: getContractLabel(contractAddress),
+            previous: previousOwner,
+            next: newOwner,
+            via: 'event',
+          });
           continue;
         }
 
-        const topic0 = (log.raw.topics?.[0] ?? '').toLowerCase();
-        if (!topic0) continue;
+        if (topic0 === ROLE_GRANTED_TOPIC_LOWER) {
+          const decoded = decodeEventLog({
+            abi: ROLE_GRANTED_EVENT_ABI,
+            data,
+            topics,
+          });
 
-        try {
-          if (topic0 === OWNERSHIP_TRANSFERRED_TOPIC.toLowerCase()) {
-            const decoded = decodeEventLog({
-              abi: [
-                {
-                  type: 'event',
-                  name: 'OwnershipTransferred',
-                  inputs: [
-                    { indexed: true, name: 'previousOwner', type: 'address' },
-                    { indexed: true, name: 'newOwner', type: 'address' },
-                  ],
-                },
-              ],
-              data: log.raw.data as `0x${string}`,
-              topics: log.raw.topics as unknown as [] | [`0x${string}`, ...`0x${string}`[]],
-            });
+          const role = toRole(decoded.args.role);
+          const account = maybeAddress(decoded.args.account);
+          const sender = maybeAddress(decoded.args.sender);
+          if (!account || !sender) continue;
 
-            const previousOwner = maybeAddress(decoded.args.previousOwner);
-            const newOwner = maybeAddress(decoded.args.newOwner);
-            if (!previousOwner || !newOwner) continue;
-
-            permissionsDiff.push({
-              kind: 'ownership_transferred',
-              contractAddress,
-              contractName: getContractLabel(contractAddress),
-              previous: previousOwner,
-              next: newOwner,
-              via: 'event',
-            });
-          } else if (topic0 === ROLE_GRANTED_TOPIC.toLowerCase()) {
-            const decoded = decodeEventLog({
-              abi: [
-                {
-                  type: 'event',
-                  name: 'RoleGranted',
-                  inputs: [
-                    { indexed: true, name: 'role', type: 'bytes32' },
-                    { indexed: true, name: 'account', type: 'address' },
-                    { indexed: true, name: 'sender', type: 'address' },
-                  ],
-                },
-              ],
-              data: log.raw.data as `0x${string}`,
-              topics: log.raw.topics as unknown as [] | [`0x${string}`, ...`0x${string}`[]],
-            });
-
-            const role = toRole(decoded.args.role);
-            const account = maybeAddress(decoded.args.account);
-            const sender = maybeAddress(decoded.args.sender);
-            if (!account || !sender) continue;
-
-            permissionsDiff.push({
-              kind: 'role_granted',
-              contractAddress,
-              contractName: getContractLabel(contractAddress),
-              role,
-              account,
-              sender,
-            });
-          } else if (topic0 === ROLE_REVOKED_TOPIC.toLowerCase()) {
-            const decoded = decodeEventLog({
-              abi: [
-                {
-                  type: 'event',
-                  name: 'RoleRevoked',
-                  inputs: [
-                    { indexed: true, name: 'role', type: 'bytes32' },
-                    { indexed: true, name: 'account', type: 'address' },
-                    { indexed: true, name: 'sender', type: 'address' },
-                  ],
-                },
-              ],
-              data: log.raw.data as `0x${string}`,
-              topics: log.raw.topics as unknown as [] | [`0x${string}`, ...`0x${string}`[]],
-            });
-
-            const role = toRole(decoded.args.role);
-            const account = maybeAddress(decoded.args.account);
-            const sender = maybeAddress(decoded.args.sender);
-            if (!account || !sender) continue;
-
-            permissionsDiff.push({
-              kind: 'role_revoked',
-              contractAddress,
-              contractName: getContractLabel(contractAddress),
-              role,
-              account,
-              sender,
-            });
-          } else if (topic0 === NEW_ADMIN_TOPIC.toLowerCase()) {
-            const decoded = decodeEventLog({
-              abi: [
-                {
-                  type: 'event',
-                  name: 'NewAdmin',
-                  inputs: [{ indexed: true, name: 'newAdmin', type: 'address' }],
-                },
-              ],
-              data: log.raw.data as `0x${string}`,
-              topics: log.raw.topics as unknown as [] | [`0x${string}`, ...`0x${string}`[]],
-            });
-
-            const next = maybeAddress(decoded.args.newAdmin);
-            if (!next) continue;
-
-            permissionsDiff.push({
-              kind: 'timelock_admin_changed',
-              contractAddress,
-              contractName: getContractLabel(contractAddress),
-              previous: undefined,
-              next,
-              via: 'event',
-            });
-          } else if (topic0 === NEW_PENDING_ADMIN_TOPIC.toLowerCase()) {
-            const decoded = decodeEventLog({
-              abi: [
-                {
-                  type: 'event',
-                  name: 'NewPendingAdmin',
-                  inputs: [{ indexed: true, name: 'newPendingAdmin', type: 'address' }],
-                },
-              ],
-              data: log.raw.data as `0x${string}`,
-              topics: log.raw.topics as unknown as [] | [`0x${string}`, ...`0x${string}`[]],
-            });
-
-            const next = maybeAddress(decoded.args.newPendingAdmin);
-            if (!next) continue;
-
-            permissionsDiff.push({
-              kind: 'timelock_pending_admin_changed',
-              contractAddress,
-              contractName: getContractLabel(contractAddress),
-              previous: undefined,
-              next,
-              via: 'event',
-            });
-          }
-        } catch {
-          // Ignore decode failures; we'll rely on other signals where possible.
+          permissionsDiff.push({
+            kind: 'role_granted',
+            contractAddress,
+            contractName: getContractLabel(contractAddress),
+            role,
+            account,
+            sender,
+          });
+          continue;
         }
+
+        if (topic0 === ROLE_REVOKED_TOPIC_LOWER) {
+          const decoded = decodeEventLog({
+            abi: ROLE_REVOKED_EVENT_ABI,
+            data,
+            topics,
+          });
+
+          const role = toRole(decoded.args.role);
+          const account = maybeAddress(decoded.args.account);
+          const sender = maybeAddress(decoded.args.sender);
+          if (!account || !sender) continue;
+
+          permissionsDiff.push({
+            kind: 'role_revoked',
+            contractAddress,
+            contractName: getContractLabel(contractAddress),
+            role,
+            account,
+            sender,
+          });
+          continue;
+        }
+
+        if (topic0 === NEW_ADMIN_TOPIC_LOWER) {
+          const decoded = decodeEventLog({
+            abi: NEW_ADMIN_EVENT_ABI,
+            data,
+            topics,
+          });
+
+          const next = maybeAddress(decoded.args.newAdmin);
+          if (!next) continue;
+
+          permissionsDiff.push({
+            kind: 'timelock_admin_changed',
+            contractAddress,
+            contractName: getContractLabel(contractAddress),
+            previous: undefined,
+            next,
+            via: 'event',
+          });
+          continue;
+        }
+
+        if (topic0 === NEW_PENDING_ADMIN_TOPIC_LOWER) {
+          const decoded = decodeEventLog({
+            abi: NEW_PENDING_ADMIN_EVENT_ABI,
+            data,
+            topics,
+          });
+
+          const next = maybeAddress(decoded.args.newPendingAdmin);
+          if (!next) continue;
+
+          permissionsDiff.push({
+            kind: 'timelock_pending_admin_changed',
+            contractAddress,
+            contractName: getContractLabel(contractAddress),
+            previous: undefined,
+            next,
+            via: 'event',
+          });
+        }
+      } catch {
+        // Ignore decode failures; we'll rely on other signals where possible.
       }
     }
 
@@ -526,15 +578,8 @@ export const checkPermissionDiff: ProposalCheck = {
     for (const diff of sim.transaction.transaction_info.state_diff ?? []) {
       if (!diff.soltype?.simple_type) continue;
 
-      const rawAddress = diff.raw?.[0]?.address;
-      if (!rawAddress) continue;
-
-      let contractAddress: `0x${string}`;
-      try {
-        contractAddress = getAddress(rawAddress) as `0x${string}`;
-      } catch {
-        continue;
-      }
+      const contractAddress = maybeAddress(diff.raw?.[0]?.address);
+      if (!contractAddress) continue;
 
       const name = diff.soltype.name;
       const original = typeof diff.original === 'string' ? diff.original : null;
@@ -595,6 +640,13 @@ export const checkPermissionDiff: ProposalCheck = {
       );
 
       if (!matchedTransition) continue;
+
+      if (intent.method === 'transferOwnership') {
+        if (!intent.caller || !matchedTransition.previous) continue;
+        if (matchedTransition.previous.toLowerCase() === zeroAddress) continue;
+        if (matchedTransition.previous.toLowerCase() !== intent.caller.toLowerCase()) continue;
+      }
+
       if (hasOwnershipDiff(permissionsDiff, intent.contractAddress, intent.newOwner)) continue;
 
       permissionsDiff.push({
