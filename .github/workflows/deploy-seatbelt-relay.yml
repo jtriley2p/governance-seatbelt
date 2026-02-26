@@ -3,14 +3,6 @@ name: Deploy Seatbelt relay
 on:
   push:
     branches: [main]
-    paths:
-      - "relay/**"
-      - "api/**"
-      - "utils/publish/**"
-      - "package.json"
-      - "bun.lockb"
-      - "tsconfig.json"
-      - ".github/workflows/deploy-seatbelt-relay.yml"
   workflow_dispatch:
 
 concurrency:
@@ -21,13 +13,55 @@ permissions:
   contents: read
 
 jobs:
+  detect-changes:
+    name: Detect relay-relevant changes
+    runs-on: ubuntu-24.04
+    outputs:
+      relay: ${{ steps.detect.outputs.relay }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed files
+        id: detect
+        run: |
+          # Keep workflow visible on every push to main, but only deploy when
+          # relay-relevant files changed.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "relay=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BASE_SHA="${{ github.event.before }}"
+          HEAD_SHA="${{ github.sha }}"
+
+          if [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            BASE_SHA="$(git rev-list --max-parents=0 "$HEAD_SHA" | tail -n 1)"
+          fi
+
+          CHANGED_FILES="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          printf 'Changed files between %s and %s:\n%s\n' "$BASE_SHA" "$HEAD_SHA" "$CHANGED_FILES"
+
+          if echo "$CHANGED_FILES" | grep -Eq '^(relay/|api/|presentation/|utils/|index\.ts$|package\.json$|bun\.lockb$|tsconfig\.json$|\.github/workflows/deploy-seatbelt-relay\.yml$)'; then
+            echo "relay=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relay=false" >> "$GITHUB_OUTPUT"
+          fi
+
   deploy:
     name: Deploy relay to Vercel production
     runs-on: ubuntu-24.04
+    needs: detect-changes
+    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.relay == 'true'
+    env:
+      VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE || 'marcos-projects-5a62a7ed' }}
 
     # Required repository secret:
     # - VERCEL_TOKEN: Vercel token with access to project "seatbelt-relay"
-    #   in scope "marcos-projects-5a62a7ed"
+    # Required repository variable (optional):
+    # - VERCEL_SCOPE: Vercel team/user scope (defaults to marcos-projects-5a62a7ed)
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -56,7 +90,7 @@ jobs:
           vercel link \
             --yes \
             --project seatbelt-relay \
-            --scope marcos-projects-5a62a7ed \
+            --scope "$VERCEL_SCOPE" \
             --token "$VERCEL_TOKEN"
 
       - name: Deploy to production
@@ -66,5 +100,5 @@ jobs:
           vercel deploy \
             --prod \
             --yes \
-            --scope marcos-projects-5a62a7ed \
+            --scope "$VERCEL_SCOPE" \
             --token "$VERCEL_TOKEN"
