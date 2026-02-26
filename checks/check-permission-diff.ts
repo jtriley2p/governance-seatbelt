@@ -633,20 +633,30 @@ export const checkPermissionDiff: ProposalCheck = {
     );
 
     for (const intent of ownershipIntentEvidence) {
-      const matchedTransition = rawAddressTransitions.find(
+      const matchingTransitions = rawAddressTransitions.filter(
         (transition) =>
           transition.contractAddress.toLowerCase() === intent.contractAddress.toLowerCase() &&
           transition.next.toLowerCase() === intent.newOwner.toLowerCase(),
       );
 
-      if (!matchedTransition) continue;
+      if (matchingTransitions.length === 0) continue;
+
+      let matchedTransition: RawAddressTransition | undefined;
 
       if (intent.method === 'transferOwnership') {
-        if (!intent.caller || !matchedTransition.previous) continue;
-        if (matchedTransition.previous.toLowerCase() === zeroAddress) continue;
-        if (matchedTransition.previous.toLowerCase() !== intent.caller.toLowerCase()) continue;
+        if (!intent.caller) continue;
+        const callerLower = intent.caller.toLowerCase();
+
+        matchedTransition = matchingTransitions.find((transition) => {
+          if (!transition.previous) return false;
+          if (transition.previous.toLowerCase() === zeroAddress) return false;
+          return transition.previous.toLowerCase() === callerLower;
+        });
+      } else {
+        [matchedTransition] = matchingTransitions;
       }
 
+      if (!matchedTransition) continue;
       if (hasOwnershipDiff(permissionsDiff, intent.contractAddress, intent.newOwner)) continue;
 
       permissionsDiff.push({
