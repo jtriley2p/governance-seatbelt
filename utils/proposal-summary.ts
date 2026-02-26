@@ -159,7 +159,9 @@ function detectCrossChainOperations(
                 )}${formatEthForGasSuffix(totalEthForGas)}`
               : (() => {
                   const opStackChainId = opStackChainIds[0];
-                  const chainName = opStackChainId ? getChainName(opStackChainId) : getChainName(10);
+                  const chainName = opStackChainId
+                    ? getChainName(opStackChainId)
+                    : getChainName(10);
                   return buildCrossChainDescription(
                     chainName,
                     opStackChainId,
