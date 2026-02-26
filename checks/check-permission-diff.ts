@@ -85,9 +85,7 @@ function isTraceCallLike(value: unknown): value is TraceCallLike {
   return typeof value === 'object' && value !== null;
 }
 
-function normalizeOwnershipFunctionName(
-  value: string | undefined,
-): boolean {
+function normalizeOwnershipFunctionName(value: string | undefined): boolean {
   if (!value) return false;
   const normalized = value.replace(/\s+/g, '').toLowerCase();
   if (normalized === 'setowner' || normalized.startsWith('setowner(')) return true;
