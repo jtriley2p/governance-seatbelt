@@ -396,6 +396,48 @@ describe('checkPermissionDiff', () => {
     expect(result.info).toContain('Permission changes: none');
   });
 
+  test('does not infer ownership transfer from hashed-storage slot transitions', async () => {
+    const contract = '0x4b2ab38dbf28d31d467aa8993f6c2585981d6804';
+    const currentOwner = '0x2bad8182c09f50c8318d769245bea52c32be46cd';
+    const newOwner = '0x2222222222222222222222222222222222222222';
+
+    const transferOwnershipCalldata = encodeFunctionData({
+      abi: parseAbi(['function transferOwnership(address newOwner)']),
+      functionName: 'transferOwnership',
+      args: [newOwner],
+    });
+
+    const sim = createSimulation({
+      logs: [],
+      callTrace: {
+        from: currentOwner,
+        to: contract,
+        input: transferOwnershipCalldata,
+      },
+      stateDiff: [
+        {
+          soltype: null,
+          original: {},
+          dirty: {},
+          raw: [
+            {
+              address: contract,
+              key: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+              original: topicAddress(currentOwner),
+              dirty: topicAddress(newOwner),
+            },
+          ],
+        },
+      ],
+    });
+
+    const deps = createDeps(196, 'https://www.oklink.com/xlayer');
+    const result = await checkPermissionDiff.checkProposal(createProposalEvent(), sim, deps);
+
+    expect(result.permissionsDiff).toEqual([]);
+    expect(result.info).toContain('Permission changes: none');
+  });
+
   test('infers ownership transfer from transferOwnership when previous owner matches caller', async () => {
     const contract = '0x4b2ab38dbf28d31d467aa8993f6c2585981d6804';
     const currentOwner = '0x2bad8182c09f50c8318d769245bea52c32be46cd';

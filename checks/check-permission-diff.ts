@@ -305,6 +305,13 @@ function parseAddressFromStorageWord(value: unknown): `0x${string}` | null {
   return maybeAddress(`0x${raw.slice(24)}`);
 }
 
+function isLinearStorageSlotKey(value: unknown): boolean {
+  if (typeof value !== 'string' || !isHex(value)) return false;
+  if (value.length !== 66) return false;
+
+  return /^0x0{56}[0-9a-f]{8}$/.test(value.toLowerCase());
+}
+
 function extractRawAddressTransitions(stateDiffs: unknown): RawAddressTransition[] {
   if (!Array.isArray(stateDiffs)) return [];
 
@@ -317,7 +324,8 @@ function extractRawAddressTransitions(stateDiffs: unknown): RawAddressTransition
 
     for (const raw of rawEntries) {
       if (typeof raw !== 'object' || raw === null) continue;
-      if (!('address' in raw) || !('dirty' in raw)) continue;
+      if (!('address' in raw) || !('dirty' in raw) || !('key' in raw)) continue;
+      if (!isLinearStorageSlotKey(raw.key)) continue;
 
       const contractAddress = maybeAddress(raw.address);
       if (!contractAddress) continue;
