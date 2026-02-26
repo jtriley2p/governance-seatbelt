@@ -12,9 +12,9 @@ import {
   xLayer,
   zora,
 } from 'viem/chains';
+import { getCanonicalChainName } from './chain-name';
 
 type ChainCapability = {
-  chainName: string;
   supportsL2Checks: boolean;
   supportsTenderlyDestinationSimulation: boolean;
   isOpStackDestination: boolean;
@@ -22,73 +22,61 @@ type ChainCapability = {
 
 const CHAIN_CAPABILITIES: Record<number, ChainCapability> = {
   [mainnet.id]: {
-    chainName: mainnet.name,
     supportsL2Checks: false,
     supportsTenderlyDestinationSimulation: false,
     isOpStackDestination: false,
   },
   [optimism.id]: {
-    chainName: optimism.name,
     supportsL2Checks: true,
     supportsTenderlyDestinationSimulation: true,
     isOpStackDestination: true,
   },
   [base.id]: {
-    chainName: base.name,
     supportsL2Checks: true,
     supportsTenderlyDestinationSimulation: true,
     isOpStackDestination: true,
   },
   [arbitrum.id]: {
-    chainName: arbitrum.name,
     supportsL2Checks: true,
     supportsTenderlyDestinationSimulation: true,
     isOpStackDestination: false,
   },
   [unichain.id]: {
-    chainName: unichain.name,
     supportsL2Checks: true,
     supportsTenderlyDestinationSimulation: true,
     isOpStackDestination: true,
   },
   [ink.id]: {
-    chainName: ink.name,
     supportsL2Checks: true,
     supportsTenderlyDestinationSimulation: true,
     isOpStackDestination: true,
   },
   [soneium.id]: {
-    chainName: soneium.name,
     supportsL2Checks: true,
     supportsTenderlyDestinationSimulation: true,
     isOpStackDestination: true,
   },
   [bob.id]: {
-    chainName: bob.name,
     supportsL2Checks: true,
     supportsTenderlyDestinationSimulation: true,
     isOpStackDestination: true,
   },
   [celo.id]: {
-    chainName: celo.name,
     supportsL2Checks: true,
     supportsTenderlyDestinationSimulation: true,
     isOpStackDestination: true,
   },
   [worldchain.id]: {
-    chainName: worldchain.name,
     supportsL2Checks: true,
     supportsTenderlyDestinationSimulation: true,
     isOpStackDestination: true,
   },
   [xLayer.id]: {
-    chainName: xLayer.name,
     supportsL2Checks: true,
     supportsTenderlyDestinationSimulation: true,
     isOpStackDestination: true,
   },
   [zora.id]: {
-    chainName: zora.name,
     supportsL2Checks: true,
     supportsTenderlyDestinationSimulation: false,
     isOpStackDestination: true,
@@ -109,7 +97,7 @@ const OP_STACK_DESTINATION_CHAIN_ORDER = [
 ];
 
 export function getChainName(chainId: number): string {
-  return CHAIN_CAPABILITIES[chainId]?.chainName ?? `Chain ${chainId}`;
+  return getCanonicalChainName(chainId);
 }
 
 export function supportsL2Checks(chainId: number): boolean {
