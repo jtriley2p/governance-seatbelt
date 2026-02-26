@@ -6,11 +6,17 @@ describe('frontend resolveChainName', () => {
     expect(resolveChainName(42161, 'Arbitrum One')).toBe('Arbitrum One');
   });
 
-  test('falls back to generic chain label when provided name is generic', () => {
-    expect(resolveChainName(42161, 'Chain 42161')).toBe('Chain 42161');
+  test('uses known chain names when provided name is generic', () => {
+    expect(resolveChainName(42220, 'Chain 42220')).toBe('Celo');
+    expect(resolveChainName(7777777, 'Chain 7777777')).toBe('Zora');
   });
 
-  test('falls back to generic chain label when name is missing', () => {
-    expect(resolveChainName(8453)).toBe('Chain 8453');
+  test('uses known chain names when name is missing', () => {
+    expect(resolveChainName(8453)).toBe('Base');
+  });
+
+  test('falls back to generic chain label for unknown chain ids', () => {
+    expect(resolveChainName(999999999, 'Chain 999999999')).toBe('Chain 999999999');
+    expect(resolveChainName(999999999)).toBe('Chain 999999999');
   });
 });

@@ -1,3 +1,33 @@
+import {
+  arbitrum,
+  base,
+  bob,
+  celo,
+  ink,
+  mainnet,
+  optimism,
+  soneium,
+  unichain,
+  worldchain,
+  xLayer,
+  zora,
+} from 'viem/chains';
+
+const KNOWN_CHAIN_NAMES: Record<number, string> = {
+  [mainnet.id]: mainnet.name,
+  [optimism.id]: optimism.name,
+  [base.id]: base.name,
+  [arbitrum.id]: arbitrum.name,
+  [unichain.id]: unichain.name,
+  [ink.id]: ink.name,
+  [soneium.id]: soneium.name,
+  [bob.id]: bob.name,
+  [celo.id]: celo.name,
+  [worldchain.id]: worldchain.name,
+  [xLayer.id]: xLayer.name,
+  [zora.id]: zora.name,
+};
+
 const GENERIC_CHAIN_NAME = /^Chain\s+\d+$/i;
 
 export function resolveChainName(chainId: number, providedName?: string): string {
@@ -6,5 +36,5 @@ export function resolveChainName(chainId: number, providedName?: string): string
     return cleanedProvidedName;
   }
 
-  return `Chain ${chainId}`;
+  return KNOWN_CHAIN_NAMES[chainId] ?? `Chain ${chainId}`;
 }
