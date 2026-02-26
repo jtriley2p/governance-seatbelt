@@ -91,6 +91,9 @@ jobs:
         with:
           bun-version: ${{ steps.bun-version.outputs.version }}
 
+      - name: Install root dependencies (for shared utils imports)
+        run: bun install --frozen-lockfile
+
       - name: Install frontend dependencies
         run: cd frontend && bun install --frozen-lockfile
 
