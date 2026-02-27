@@ -228,7 +228,7 @@ export interface AllCheckResults {
 }
 
 // --- Extracted Cross-Chain Message Type ---
-export type BridgeType = 'ArbitrumL1L2' | 'OptimismL1L2';
+export type BridgeType = 'ArbitrumL1L2' | 'OptimismL1L2' | 'WormholeL1L2';
 
 /**
  * @notice Holds the parameters extracted from a source chain simulation

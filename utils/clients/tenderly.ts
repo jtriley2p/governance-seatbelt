@@ -36,6 +36,7 @@ import {
   parseOptimismL1L2Messages,
   parseOptimismL1L2MessagesFromProposal,
 } from '../bridges/optimism';
+import { parseWormholeMessagesFromProposal } from '../bridges/wormhole';
 import { supportsTenderlyDestinationSimulation } from '../chains/capabilities';
 import {
   BLOCK_GAS_LIMIT,
@@ -909,9 +910,13 @@ export async function handleCrossChainSimulations(
       result.proposal.calldatas,
       l1Sender,
     );
+    const wormholeFromProposal = parseWormholeMessagesFromProposal(
+      result.proposal.targets,
+      result.proposal.calldatas,
+    );
 
     let backfilledCount = 0;
-    for (const message of [...arbFromProposal, ...opFromProposal]) {
+    for (const message of [...arbFromProposal, ...opFromProposal, ...wormholeFromProposal]) {
       const key = getMessageKey(message);
       if (!messageMap.has(key)) {
         messageMap.set(key, message);
