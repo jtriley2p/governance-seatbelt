@@ -17,6 +17,7 @@ import { type Abi, getAddress, toFunctionSelector } from 'viem';
 import type {
   AllCheckResults,
   CoverageData,
+  DerivedSimulationProvenance,
   GenerateReportsParams,
   GovernorType,
   PermissionsDiffItem,
@@ -758,6 +759,7 @@ function generateStructuredReport(
   simulation?: TenderlySimulation,
   destinationChecks?: Record<number, AllCheckResults>,
   proposalState?: string,
+  provenance?: DerivedSimulationProvenance,
 ): StructuredSimulationReport {
   // Validate required fields
   if (!proposal.proposer) {
@@ -890,6 +892,8 @@ function generateStructuredReport(
       tenderlyUrl,
       // On-chain proposal state (Issue #165)
       proposalState,
+      // Dependency provenance for derived-state simulations
+      dependency: provenance,
     },
   };
 }
@@ -916,6 +920,7 @@ export function writeSimulationResultsJson(params: WriteSimulationResultsJsonPar
     simulation,
     coverage,
     proposalState,
+    provenance,
   } = params;
 
   try {
@@ -950,6 +955,7 @@ export function writeSimulationResultsJson(params: WriteSimulationResultsJsonPar
         simulation,
         destinationChecks,
         proposalState,
+        provenance,
       );
 
     if (coverage) {
@@ -1018,6 +1024,7 @@ export async function generateAndSaveReports(params: GenerateReportsParams) {
     daoName,
     contracts,
     proposalState,
+    provenance,
   } = params;
   console.log(`[Report] Generating report for proposal ${proposal.id} (${proposal.proposalId})`);
   console.log(`[Report] Output directory: ${outputDir}`);
@@ -1071,6 +1078,7 @@ export async function generateAndSaveReports(params: GenerateReportsParams) {
     simulation,
     destinationChecks,
     proposalState,
+    provenance,
   );
 
   // Add coverage data to the structured report if available
@@ -1171,6 +1179,7 @@ export async function generateAndSaveReports(params: GenerateReportsParams) {
     simulationType,
     simulation,
     coverage,
+    provenance,
     structuredReport, // Pass the report with labels already resolved
   });
 }

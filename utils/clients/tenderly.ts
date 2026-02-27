@@ -55,6 +55,7 @@ import {
   hashOperationBatchOz,
   hashOperationOz,
 } from '../contracts/governor';
+import { type DerivedStateByChain, mergeStateObjects } from '../derived-state';
 import { parseWithSchema, z } from '../validation/zod';
 import { CacheManager } from './block-explorers/cache';
 import { BlockExplorerFactory } from './block-explorers/factory';
@@ -215,23 +216,30 @@ interface SimulationPayloadParams {
   saveIfFails?: boolean;
 }
 
+export interface SimulationExecutionOptions {
+  derivedStateByChain?: DerivedStateByChain;
+}
+
 // --- Simulation methods ---
 
 /**
  * @notice Simulates a proposal based on the provided configuration
  * @param config Configuration object
  */
-export async function simulate(config: SimulationConfig) {
-  if (config.type === 'executed') return await simulateExecuted(config);
-  if (config.type === 'proposed') return await simulateProposed(config);
-  return await simulateNew(config);
+export async function simulate(config: SimulationConfig, options?: SimulationExecutionOptions) {
+  if (config.type === 'executed') return await simulateExecuted(config, options);
+  if (config.type === 'proposed') return await simulateProposed(config, options);
+  return await simulateNew(config, options);
 }
 
 /**
  * @notice Simulates execution of an on-chain proposal that has not yet been executed
  * @param config Configuration object
  */
-export async function simulateNew(config: SimulationConfigNew): Promise<SimulationResult> {
+export async function simulateNew(
+  config: SimulationConfigNew,
+  options?: SimulationExecutionOptions,
+): Promise<SimulationResult> {
   // --- Validate config ---
   const { governorAddress, governorType, targets, values, signatures, calldatas, description } =
     config;
@@ -372,6 +380,13 @@ export async function simulateNew(config: SimulationConfigNew): Promise<Simulati
     saveIfFails: true,
   });
 
+  // Derived state should be additive only. Apply it first so proposal-specific
+  // base overrides keep precedence for conflicting slots.
+  simulationPayload.state_objects = mergeStateObjects(
+    options?.derivedStateByChain?.[1],
+    simulationPayload.state_objects,
+  );
+
   // Handle ETH transfers if needed
   handleETHValueRequirements(simulationPayload, config.values, from, timelock.address);
 
@@ -397,7 +412,10 @@ export async function simulateNew(config: SimulationConfigNew): Promise<Simulati
  * @notice Simulates execution of an on-chain proposal that has not yet been executed
  * @param config Configuration object
  */
-async function simulateProposed(config: SimulationConfigProposed): Promise<SimulationResult> {
+async function simulateProposed(
+  config: SimulationConfigProposed,
+  options?: SimulationExecutionOptions,
+): Promise<SimulationResult> {
   const { governorAddress, governorType, proposalId } = config;
   const proposalIdBigInt = typeof proposalId === 'bigint' ? proposalId : BigInt(proposalId);
 
@@ -544,6 +562,11 @@ async function simulateProposed(config: SimulationConfigProposed): Promise<Simul
     saveIfFails: true, // Different for proposed
   });
 
+  simulationPayload.state_objects = mergeStateObjects(
+    options?.derivedStateByChain?.[1],
+    simulationPayload.state_objects,
+  );
+
   const formattedProposal: ProposalEvent = {
     id: proposalId,
     proposalId,
@@ -584,7 +607,10 @@ async function simulateProposed(config: SimulationConfigProposed): Promise<Simul
  * @notice Simulates execution of an already-executed governance proposal
  * @param config Configuration object
  */
-async function simulateExecuted(config: SimulationConfigExecuted): Promise<SimulationResult> {
+async function simulateExecuted(
+  config: SimulationConfigExecuted,
+  options?: SimulationExecutionOptions,
+): Promise<SimulationResult> {
   const { governorAddress, governorType, proposalId } = config;
   const proposalIdBigInt = typeof proposalId === 'bigint' ? proposalId : BigInt(proposalId);
 
@@ -672,6 +698,10 @@ async function simulateExecuted(config: SimulationConfigExecuted): Promise<Simul
       save: false,
       generate_access_list: true,
     };
+    simulationPayload.state_objects = mergeStateObjects(
+      options?.derivedStateByChain?.[1],
+      simulationPayload.state_objects,
+    );
     const sim = await sendSimulation(simulationPayload);
 
     // Validate required fields
@@ -775,6 +805,10 @@ async function simulateExecuted(config: SimulationConfigExecuted): Promise<Simul
     save: saveSimulation, // Save successful sims when enabled.
     generate_access_list: true,
   };
+  simulationPayload.state_objects = mergeStateObjects(
+    options?.derivedStateByChain?.[1],
+    simulationPayload.state_objects,
+  );
   const sim = await sendSimulation(simulationPayload);
 
   // Validate required fields
@@ -835,6 +869,7 @@ async function simulateExecuted(config: SimulationConfigExecuted): Promise<Simul
 
 export async function handleCrossChainSimulations(
   sourceResult: SimulationResult,
+  options?: SimulationExecutionOptions,
 ): Promise<SimulationResult> {
   const result = {
     ...sourceResult,
@@ -949,6 +984,11 @@ export async function handleCrossChainSimulations(
           save_if_fails: saveSimulationIfFails,
           save: saveSimulation,
         };
+
+        destinationPayload.state_objects = mergeStateObjects(
+          options?.derivedStateByChain?.[destinationChainId],
+          destinationPayload.state_objects,
+        );
 
         // Log the payload before sending
         console.log(

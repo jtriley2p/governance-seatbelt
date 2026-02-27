@@ -18,6 +18,7 @@ import type {
   SimulationResult,
   TenderlySimulation,
 } from './types.d';
+import { supportsL2Checks } from './utils/chains/capabilities';
 import { getChainConfig, getClientForChain, publicClient } from './utils/clients/client';
 import { handleCrossChainSimulations, simulate } from './utils/clients/tenderly';
 import { DAO_NAME, GOVERNOR_ADDRESS, REPORTS_OUTPUT_DIRECTORY } from './utils/constants';
@@ -400,7 +401,16 @@ async function main() {
   const destinationChecks: Record<number, AllCheckResults> = {};
   if (finalResult.destinationSimulations) {
     for (const destSim of finalResult.destinationSimulations) {
-      if (destSim.sim) {
+      if (destSim.status !== 'success' || !destSim.sim) continue;
+
+      if (!supportsL2Checks(destSim.chainId)) {
+        console.log(
+          `[run-checks][L2_CHECK_SKIP] Skipping destination checks for unsupported chain ${destSim.chainId}.`,
+        );
+        continue;
+      }
+
+      try {
         const l2Deps: ProposalData = {
           ...proposalData,
           publicClient: getClientForChain(destSim.chainId),
@@ -412,6 +422,11 @@ async function main() {
           l2Deps,
           destSim.chainId,
           finalResult.destinationSimulations,
+        );
+      } catch (error) {
+        console.error(
+          `[run-checks][L2_CHECK_FAILURE] Failed to run L2 checks for chain ${destSim.chainId}; continuing without destination checks for this chain.`,
+          error,
         );
       }
     }
@@ -452,6 +467,62 @@ async function main() {
     coverage.summary.skipped += l2Coverage.summary.skipped;
     coverage.summary.failed += l2Coverage.summary.failed;
     coverage.summary.inferredSkips += l2Coverage.summary.inferredSkips;
+  }
+
+  // Ensure every destination chain appears in coverage, even when checks did not run.
+  const coveredChainIds = new Set(Object.keys(destinationChecks).map((id) => Number(id)));
+  const simsByChain = new Map<
+    number,
+    Array<NonNullable<SimulationResult['destinationSimulations']>[number]>
+  >();
+
+  for (const destinationSim of finalResult.destinationSimulations ?? []) {
+    const list = simsByChain.get(destinationSim.chainId) ?? [];
+    list.push(destinationSim);
+    simsByChain.set(destinationSim.chainId, list);
+  }
+
+  for (const [chainId, chainSims] of simsByChain.entries()) {
+    if (coveredChainIds.has(chainId)) continue;
+
+    let status: 'skipped' | 'failed' = 'skipped';
+    let skipReason: string | undefined;
+
+    const failures = chainSims.filter((sim) => sim.status === 'failure');
+    const skips = chainSims.filter((sim) => sim.status === 'skipped');
+    const successes = chainSims.filter((sim) => sim.status === 'success');
+
+    if (failures.length > 0) {
+      status = 'failed';
+      const reasons = failures.map((sim) => sim.error).filter(Boolean);
+      skipReason = reasons.length > 0 ? reasons.join(' | ') : 'Destination simulation failed.';
+    } else if (!supportsL2Checks(chainId)) {
+      status = 'skipped';
+      skipReason = `L2 checks are not supported for chain ${chainId}.`;
+    } else if (skips.length > 0) {
+      status = 'skipped';
+      const reasons = skips.map((sim) => sim.error).filter(Boolean);
+      skipReason = reasons.length > 0 ? reasons.join(' | ') : 'Destination simulation skipped.';
+    } else if (successes.length > 0) {
+      status = 'failed';
+      skipReason =
+        'Destination simulation succeeded but no L2 checks were recorded for this chain.';
+    } else {
+      status = 'skipped';
+      skipReason = 'No destination simulation result was available for this chain.';
+    }
+
+    coverage.checks.push({
+      checkId: 'crossChainDestination',
+      checkName: 'Cross-chain destination simulation status',
+      status,
+      skipReason,
+      chainId,
+    });
+
+    coverage.summary.total += 1;
+    if (status === 'skipped') coverage.summary.skipped += 1;
+    else coverage.summary.failed += 1;
   }
 
   // Log coverage summary

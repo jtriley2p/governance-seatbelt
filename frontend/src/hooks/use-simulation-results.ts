@@ -172,6 +172,19 @@ export interface ChainSimulationReport {
   permissionsDiff?: PermissionsDiffItem[];
 }
 
+export interface DerivedSimulationProvenance {
+  mode: 'derived';
+  status: 'passed' | 'failed' | 'inconclusive' | 'skipped';
+  reason?: string;
+  derivedFromProposalId?: string;
+  derivedFromSimulationId?: string;
+  baselineChains: Array<{
+    chainId: number;
+    simulationId?: string;
+    blockNumber?: string;
+  }>;
+}
+
 export interface StructuredSimulationReport {
   title: string;
   proposalText: string;
@@ -217,6 +230,8 @@ export interface StructuredSimulationReport {
     addressLabels?: Record<string, AddressLabel>;
     // On-chain proposal state (Issue #165)
     proposalState?: string;
+    // Dependency provenance for derived-state simulation chains
+    dependency?: DerivedSimulationProvenance;
   };
 }
 

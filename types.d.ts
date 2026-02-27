@@ -101,6 +101,23 @@ export interface SimulationData extends SimulationResult {
   config: SimulationConfig;
 }
 
+export type DependencyStatus = 'passed' | 'failed' | 'inconclusive' | 'skipped';
+
+export interface DerivedBaselineChain {
+  chainId: number;
+  simulationId?: string;
+  blockNumber?: string;
+}
+
+export interface DerivedSimulationProvenance {
+  mode: 'derived';
+  status: DependencyStatus;
+  reason?: string;
+  derivedFromProposalId?: string;
+  derivedFromSimulationId?: string;
+  baselineChains: DerivedBaselineChain[];
+}
+
 // TODO If adding support for a third governor, instead of hardcoding optional governor-specific
 // fields, make this a union type of each governor's individual proposal type.
 export interface ProposalStruct {
@@ -758,6 +775,8 @@ export interface StructuredSimulationReport {
     addressLabels?: Record<string, AddressLabel>;
     // On-chain proposal state (Issue #165)
     proposalState?: string;
+    // Dependency provenance for derived-state simulations
+    dependency?: DerivedSimulationProvenance;
   };
 }
 
@@ -793,6 +812,8 @@ export interface GenerateReportsParams {
   contracts?: TenderlyContract[];
   // On-chain proposal state (Issue #165)
   proposalState?: string;
+  // Provenance metadata for derived-state simulation chains
+  provenance?: DerivedSimulationProvenance;
 }
 
 export interface WriteSimulationResultsJsonParams {
@@ -816,6 +837,8 @@ export interface WriteSimulationResultsJsonParams {
   structuredReport?: StructuredSimulationReport;
   // On-chain proposal state (Issue #165)
   proposalState?: string;
+  // Provenance metadata for derived-state simulation chains
+  provenance?: DerivedSimulationProvenance;
 }
 
 export interface FrontendData {
