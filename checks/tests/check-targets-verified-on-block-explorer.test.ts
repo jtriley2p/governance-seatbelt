@@ -90,7 +90,7 @@ describe('checkTouchedContractsVerifiedOnBlockExplorer L2 behavior', () => {
       );
 
       expect(result.skipped).toBeUndefined();
-      expect(result.info.join('\n')).toContain('Contract (verified via verification backend API)');
+      expect(result.info.join('\n')).toContain('Contract (verified)');
     } finally {
       BlockExplorerFactory.getContractVerification = original;
     }

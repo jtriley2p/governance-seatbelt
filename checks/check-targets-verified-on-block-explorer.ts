@@ -108,9 +108,7 @@ async function checkVerificationStatuses(
     const addressLink = toVerificationAddressMarkdownLink(addr, chainConfig, verification);
 
     if (verification.status === 'verified') {
-      info.push(
-        `${addressLink}${suffix}: Contract (${describeVerifiedSource(verification.source)})`,
-      );
+      info.push(`${addressLink}${suffix}: Contract (verified)`);
       continue;
     }
 
@@ -132,14 +130,6 @@ async function checkVerificationStatuses(
   }
 
   return { info, warnings };
-}
-
-function describeVerifiedSource(
-  source: 'sourcify' | 'block-explorer' | 'none' | 'unknown',
-): string {
-  if (source === 'sourcify') return 'verified via Sourcify';
-  if (source === 'block-explorer') return 'verified via verification backend API';
-  return 'verified';
 }
 
 function describeVerificationBackend(backend: VerificationBackend | undefined): string {
