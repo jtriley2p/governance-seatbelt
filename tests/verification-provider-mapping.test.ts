@@ -50,14 +50,14 @@ function setMockFetch(mockFetch: typeof fetch): () => void {
 }
 
 describe('verification backend provider mapping', () => {
-  test('maps Zora to Blockscout and XLayer/Worldchain to Sourcify-only', async () => {
+  test('maps Zora to Blockscout, Worldchain to Etherscan v2, and XLayer to Sourcify-only', async () => {
     seedRpcEnv();
 
     const { VerificationBackend, getChainConfig } = await import('../utils/clients/client');
 
     expect(getChainConfig(zora.id).verification?.backend).toBe(VerificationBackend.Blockscout);
     expect(getChainConfig(worldchain.id).verification?.backend).toBe(
-      VerificationBackend.SourcifyOnly,
+      VerificationBackend.EtherscanV2,
     );
     expect(getChainConfig(xLayer.id).verification?.backend).toBe(VerificationBackend.SourcifyOnly);
   });
@@ -93,8 +93,8 @@ describe('verification backend provider mapping', () => {
       BlockExplorerFactory.clear();
       const result = await BlockExplorerFactory.getContractVerification(address, chainId);
 
-      expect(result.status).toBe('unverified');
-      expect(result.source).toBe('none');
+      expect(result.status).toBe('unknown');
+      expect(result.source).toBe('unknown');
       expect(result.reason).toContain('Sourcify only');
       expect(sourcifyCalls).toBeGreaterThan(0);
       expect(nonSourcifyCalls).toBe(0);
@@ -103,8 +103,8 @@ describe('verification backend provider mapping', () => {
       BlockExplorerFactory.clear();
 
       const cachedResult = await BlockExplorerFactory.getContractVerification(address, chainId);
-      expect(cachedResult.status).toBe('unverified');
-      expect(cachedResult.source).toBe('none');
+      expect(cachedResult.status).toBe('unknown');
+      expect(cachedResult.source).toBe('unknown');
       expect(sourcifyCalls).toBe(sourcifyCallsAfterFirstCheck);
     } finally {
       restoreFetch();

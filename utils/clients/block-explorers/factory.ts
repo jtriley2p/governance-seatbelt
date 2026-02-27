@@ -177,29 +177,15 @@ export class BlockExplorerFactory {
           verificationConfig.degradedReason ||
           `No verification backend API configured for chain ${chainId}; checked Sourcify only.`;
 
-        if (sourcifyMatch === 'error') {
-          return {
-            status: 'unknown',
-            source: 'unknown',
-            sourcifyMatch,
-            verificationBackend,
-            reason: `Sourcify check failed and ${degradedReason}`,
-          };
-        }
-
-        const cacheMeta = {
-          source: 'none' as const,
-          sourcifyMatch,
-          verificationBackend,
-        };
-        BlockExplorerFactory.setVerificationCache(chainId, normalizedAddress, false, cacheMeta);
-
         return {
-          status: 'unverified',
-          source: 'none',
+          status: 'unknown',
+          source: 'unknown',
           sourcifyMatch,
           verificationBackend,
-          reason: degradedReason,
+          reason:
+            sourcifyMatch === 'error'
+              ? `Sourcify check failed and ${degradedReason}`
+              : `Checked Sourcify only; ${degradedReason}`,
         };
       }
 

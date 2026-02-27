@@ -229,9 +229,9 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
       baseUrl: worldchain.blockExplorers?.default.url || 'https://worldscan.org',
     },
     verification: {
-      backend: VerificationBackend.SourcifyOnly,
-      degradedReason:
-        'Worldchain verification backend API is not supported yet; using Sourcify only.',
+      backend: VerificationBackend.EtherscanV2,
+      apiUrl: ETHERSCAN_V2_API_URL,
+      apiKey: process.env.ETHERSCAN_API_KEY,
     },
     rpcUrl: WORLDCHAIN_RPC_URL,
   },
