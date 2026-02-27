@@ -28,6 +28,7 @@ if (!existsSync(CONTRACT_NAME_CACHE_DIR)) {
 const abiCache: Record<string, Abi> = {};
 
 export type VerificationSource = 'sourcify' | 'block-explorer' | 'none';
+export type VerificationBackendCacheKey = 'etherscan-v2' | 'blockscout' | 'sourcify-only';
 
 export interface VerificationCacheEntry {
   schemaVersion: 2;
@@ -35,6 +36,7 @@ export interface VerificationCacheEntry {
   source: VerificationSource;
   timestamp: number;
   sourcifyMatch?: string;
+  verificationBackend?: VerificationBackendCacheKey;
   blockExplorer?: {
     name: string;
     verified: boolean;
@@ -142,6 +144,7 @@ export class CacheManager {
       verified,
       source: options?.source ?? 'block-explorer',
       sourcifyMatch: options?.sourcifyMatch,
+      verificationBackend: options?.verificationBackend,
       blockExplorer: options?.blockExplorer,
       timestamp: Date.now(),
     });
@@ -189,6 +192,13 @@ export class CacheManager {
           const sourcifyMatch =
             typeof cachedObj.sourcifyMatch === 'string' ? cachedObj.sourcifyMatch : undefined;
 
+          const verificationBackend =
+            cachedObj.verificationBackend === 'etherscan-v2' ||
+            cachedObj.verificationBackend === 'blockscout' ||
+            cachedObj.verificationBackend === 'sourcify-only'
+              ? cachedObj.verificationBackend
+              : undefined;
+
           let blockExplorer: VerificationCacheEntry['blockExplorer'];
           const be = cachedObj.blockExplorer;
           if (be && typeof be === 'object') {
@@ -204,6 +214,7 @@ export class CacheManager {
             source,
             timestamp,
             sourcifyMatch,
+            verificationBackend,
             blockExplorer,
           };
 
@@ -261,6 +272,7 @@ export class CacheManager {
       verified,
       source: options?.source ?? 'block-explorer',
       sourcifyMatch: options?.sourcifyMatch,
+      verificationBackend: options?.verificationBackend,
       blockExplorer: options?.blockExplorer,
       timestamp: Date.now(),
     };

@@ -1,15 +1,22 @@
 import { type PublicClient, getAddress } from 'viem';
-import { toAddressLink } from '../presentation/report';
 import type { CallTrace, ProposalCheck, TenderlySimulation } from '../types';
 import { BlockExplorerFactory } from '../utils/clients/block-explorers/factory';
-import type { ChainConfig } from '../utils/clients/client';
+import {
+  type ChainConfig,
+  type VerificationBackend,
+  formatVerificationBackend,
+} from '../utils/clients/client';
 import { DEFAULT_SIMULATION_ADDRESS } from '../utils/clients/tenderly';
+import {
+  toExplorerAddressMarkdownLink,
+  toSourcifyAddressMarkdownLink,
+} from '../utils/explorer-links';
 
 /**
  * Check all targets with code are verified on Sourcify or block explorer
  */
 export const checkTargetsVerifiedOnBlockExplorer: ProposalCheck = {
-  name: 'Check all targets are verified on Sourcify or block explorer',
+  name: 'Check all targets are verified',
   async checkProposal(proposal, sim, deps) {
     const isL2Chain = deps.chainConfig?.chainId !== 1;
 
@@ -39,20 +46,21 @@ export const checkTargetsVerifiedOnBlockExplorer: ProposalCheck = {
  * Check all touched contracts with code are verified on Sourcify or block explorer
  */
 export const checkTouchedContractsVerifiedOnBlockExplorer: ProposalCheck = {
-  name: 'Check all touched contracts are verified on Sourcify or block explorer',
+  name: 'Check all touched contracts are verified',
   async checkProposal(_, sim, deps) {
-    // Only check touched contracts on the main chain (chain 1), not on L2 simulations
-    if (deps.chainConfig.chainId !== 1) {
+    const touchedContracts = sim.transaction.addresses.map(getAddress);
+
+    if (deps.chainConfig.chainId !== 1 && touchedContracts.length === 0) {
       return {
         info: [],
         warnings: [],
         errors: [],
-        skipped: { reason: 'Touched contracts verification skipped for L2 simulations' },
+        skipped: { reason: 'No touched contracts found in destination simulation' },
       };
     }
 
     const { info, warnings } = await checkVerificationStatuses(
-      sim.transaction.addresses.map(getAddress),
+      touchedContracts,
       deps.publicClient,
       deps.chainConfig,
     );
@@ -73,18 +81,23 @@ async function checkVerificationStatuses(
 
   for (const addr of addresses) {
     const status = await getAddressKind(addr, publicClient);
-    const address = toAddressLink(addr, chainConfig.blockExplorer.baseUrl);
+    const fallbackAddressLink = toExplorerAddressMarkdownLink(
+      addr,
+      chainConfig.blockExplorer.baseUrl,
+    );
 
     const isPlaceholder = getAddress(addr) === getAddress(DEFAULT_SIMULATION_ADDRESS);
     const suffix = isPlaceholder ? ' (simulation placeholder)' : '';
 
     if (status === 'eoa') {
-      info.push(`${address}${suffix}: EOA (verification not applicable)`);
+      info.push(`${fallbackAddressLink}${suffix}: EOA (verification not applicable)`);
       continue;
     }
 
     if (status === 'empty') {
-      info.push(`${address}${suffix}: EOA (may have code later, verification not applicable)`);
+      info.push(
+        `${fallbackAddressLink}${suffix}: EOA (may have code later, verification not applicable)`,
+      );
       continue;
     }
 
@@ -92,26 +105,51 @@ async function checkVerificationStatuses(
       addr,
       chainConfig.chainId,
     );
+    const addressLink = toVerificationAddressMarkdownLink(addr, chainConfig, verification);
 
     if (verification.status === 'verified') {
-      info.push(`${address}${suffix}: Contract (verified)`);
+      info.push(`${addressLink}${suffix}: Contract (verified)`);
       continue;
     }
 
     if (verification.status === 'unverified') {
-      info.push(`${address}${suffix}: Contract (unverified)`);
+      const detail = `${addressLink}${suffix}: Contract (unverified; checked Sourcify + ${describeVerificationBackend(
+        verification.verificationBackend,
+      )})`;
+      info.push(detail);
+      warnings.push(`Unverified contract: ${detail}`);
       continue;
     }
 
-    info.push(`${address}${suffix}: Contract (verification check failed)`);
+    info.push(`${addressLink}${suffix}: Contract (verification check failed)`);
     warnings.push(
-      `Could not determine verification status for ${addr} on chain ${chainConfig.chainId}${
-        verification.blockExplorer?.name ? ` (${verification.blockExplorer.name})` : ''
-      }: ${verification.reason || 'Unknown error'}`,
+      `Could not determine verification status for ${addr} on chain ${chainConfig.chainId} (verification backend API: ${describeVerificationBackend(
+        verification.verificationBackend,
+      )}${verification.blockExplorer?.name ? `, explorer adapter: ${verification.blockExplorer.name}` : ''}): ${verification.reason || 'Unknown error'}`,
     );
   }
 
   return { info, warnings };
+}
+
+function describeVerificationBackend(backend: VerificationBackend | undefined): string {
+  if (!backend) return 'unknown backend';
+  return formatVerificationBackend(backend);
+}
+
+function toVerificationAddressMarkdownLink(
+  address: string,
+  chainConfig: ChainConfig,
+  verification: {
+    source: 'sourcify' | 'block-explorer' | 'none' | 'unknown';
+    sourcifyMatch?: string;
+  },
+): string {
+  if (verification.source === 'sourcify') {
+    return toSourcifyAddressMarkdownLink(address, chainConfig.chainId, verification.sourcifyMatch);
+  }
+
+  return toExplorerAddressMarkdownLink(address, chainConfig.blockExplorer.baseUrl);
 }
 
 /**

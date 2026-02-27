@@ -15,6 +15,7 @@ type VerificationStatus = 'verified' | 'unverified' | 'eoa' | 'unknown';
 interface ParsedContract {
   key: string;
   address: string;
+  href?: string;
   status: VerificationStatus;
   statusLabel: string;
   isPlaceholder: boolean;
@@ -22,20 +23,29 @@ interface ParsedContract {
 
 type ParsedContractBase = Omit<ParsedContract, 'key'>;
 
-function parseVerificationLine(line: string): ParsedContractBase | null {
-  const addressMatch = line.match(/\[(0x[a-fA-F0-9]{40})\]/) || line.match(/(0x[a-fA-F0-9]{40})/);
-  if (!addressMatch) return null;
+function normalizeBaseUrl(baseUrl?: string): string {
+  const normalized = (baseUrl ?? '').trim();
+  if (!normalized) return 'https://etherscan.io';
+  return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
+}
 
-  const address = addressMatch[1];
+function parseVerificationLine(line: string): ParsedContractBase | null {
+  const markdownLinkMatch = line.match(/\[`?(0x[a-fA-F0-9]{40})`?\]\((https?:\/\/[^)]+)\)/);
+  const plainAddressMatch = line.match(/(0x[a-fA-F0-9]{40})/);
+  const address = markdownLinkMatch?.[1] || plainAddressMatch?.[1];
+
+  if (!address) return null;
+
+  const href = markdownLinkMatch?.[2];
   const isPlaceholder = line.includes('simulation placeholder');
 
   let status: VerificationStatus = 'unknown';
   let statusLabel = 'Unknown';
 
-  if (line.includes('Contract (verified)')) {
+  if (line.includes('Contract (verified')) {
     status = 'verified';
     statusLabel = 'Verified';
-  } else if (line.includes('Contract (unverified)')) {
+  } else if (line.includes('Contract (unverified')) {
     status = 'unverified';
     statusLabel = 'Unverified';
   } else if (line.includes('EOA') || line.includes('verification not applicable')) {
@@ -49,20 +59,22 @@ function parseVerificationLine(line: string): ParsedContractBase | null {
     statusLabel = 'Trusted';
   }
 
-  return { address, status, statusLabel, isPlaceholder };
+  return { address, href, status, statusLabel, isPlaceholder };
 }
 
 interface ContractVerificationListProps {
   details: string;
   info?: string[];
+  blockExplorerBaseUrl?: string;
 }
 
 interface ContractCardProps {
   contract: ParsedContract;
   variant: 'success' | 'danger' | 'neutral';
+  blockExplorerBaseUrl?: string;
 }
 
-function ContractCard({ contract, variant }: ContractCardProps) {
+function ContractCard({ contract, variant, blockExplorerBaseUrl }: ContractCardProps) {
   const variantStyles = {
     success: {
       card: 'bg-green-50 border-green-200 hover:border-green-300',
@@ -82,6 +94,8 @@ function ContractCard({ contract, variant }: ContractCardProps) {
   };
 
   const styles = variantStyles[variant];
+  const explorerHref =
+    contract.href || `${normalizeBaseUrl(blockExplorerBaseUrl)}/address/${contract.address}`;
 
   return (
     <div
@@ -90,7 +104,7 @@ function ContractCard({ contract, variant }: ContractCardProps) {
       <div className="flex items-center gap-3 min-w-0 flex-1">
         {styles.icon}
         <a
-          href={`https://etherscan.io/address/${contract.address}`}
+          href={explorerHref}
           target="_blank"
           rel="noopener noreferrer"
           className="font-mono text-sm truncate hover:underline inline-flex items-center gap-1 group"
@@ -107,7 +121,11 @@ function ContractCard({ contract, variant }: ContractCardProps) {
   );
 }
 
-export function ContractVerificationList({ details, info }: ContractVerificationListProps) {
+export function ContractVerificationList({
+  details,
+  info,
+  blockExplorerBaseUrl,
+}: ContractVerificationListProps) {
   const contracts = useMemo(() => {
     const lines = info || details.split('\n').filter((l) => l.trim());
     return lines
@@ -173,7 +191,12 @@ export function ContractVerificationList({ details, info }: ContractVerification
           </h4>
           <div className="space-y-2">
             {grouped.unverified.map((contract) => (
-              <ContractCard key={contract.key} contract={contract} variant="danger" />
+              <ContractCard
+                key={contract.key}
+                contract={contract}
+                variant="danger"
+                blockExplorerBaseUrl={blockExplorerBaseUrl}
+              />
             ))}
           </div>
         </div>
@@ -187,7 +210,12 @@ export function ContractVerificationList({ details, info }: ContractVerification
           </h4>
           <div className="space-y-2">
             {grouped.verified.map((contract) => (
-              <ContractCard key={contract.key} contract={contract} variant="success" />
+              <ContractCard
+                key={contract.key}
+                contract={contract}
+                variant="success"
+                blockExplorerBaseUrl={blockExplorerBaseUrl}
+              />
             ))}
           </div>
         </div>
@@ -201,7 +229,12 @@ export function ContractVerificationList({ details, info }: ContractVerification
           </h4>
           <div className="space-y-2">
             {grouped.eoa.map((contract) => (
-              <ContractCard key={contract.key} contract={contract} variant="neutral" />
+              <ContractCard
+                key={contract.key}
+                contract={contract}
+                variant="neutral"
+                blockExplorerBaseUrl={blockExplorerBaseUrl}
+              />
             ))}
           </div>
         </div>
@@ -215,7 +248,12 @@ export function ContractVerificationList({ details, info }: ContractVerification
           </h4>
           <div className="space-y-2">
             {grouped.unknown.map((contract) => (
-              <ContractCard key={contract.key} contract={contract} variant="neutral" />
+              <ContractCard
+                key={contract.key}
+                contract={contract}
+                variant="neutral"
+                blockExplorerBaseUrl={blockExplorerBaseUrl}
+              />
             ))}
           </div>
         </div>

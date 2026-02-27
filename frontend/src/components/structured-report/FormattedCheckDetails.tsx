@@ -136,10 +136,10 @@ export function FormattedCheckDetails({
           const delegatecallAdvisoryContext = delegatecallAdvisoryContextMatch?.[1]?.trim();
 
           const isTargetLine =
-            processedLine.includes('Contract (verified)') ||
+            processedLine.includes('Contract (verified') ||
             processedLine.includes('EOA (verification not applicable)') ||
             processedLine.includes('Contract (looks safe)') ||
-            processedLine.includes('Contract (unverified)') ||
+            processedLine.includes('Contract (unverified') ||
             processedLine.includes('Trusted contract') ||
             processedLine.includes('Contract (with DELEGATECALL') ||
             processedLine.includes('Contract (with SELFDESTRUCT)') ||
@@ -160,8 +160,8 @@ export function FormattedCheckDetails({
             if (targetMatch) {
               const address = targetMatch[1];
               let status = 'Unknown';
-              if (processedLine.includes('Contract (verified)')) status = 'Verified';
-              else if (processedLine.includes('Contract (unverified)')) status = 'Unverified';
+              if (processedLine.includes('Contract (verified')) status = 'Verified';
+              else if (processedLine.includes('Contract (unverified')) status = 'Unverified';
               else if (processedLine.includes('EOA (verification not applicable)')) status = 'EOA';
               else if (processedLine.includes('Contract (looks safe)')) status = 'Looks Safe';
               else if (processedLine.includes('Trusted contract (not checked)')) status = 'Trusted';

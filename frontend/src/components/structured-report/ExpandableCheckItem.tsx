@@ -143,9 +143,16 @@ export function ExpandableCheckItem({
   };
 
   const title = check.title.toLowerCase();
+  const checkId = check.checkId?.toLowerCase() ?? '';
   const isStateChangesCheck = title.includes('state changes');
   const isVerificationCheck =
-    title.includes('verified on sourcify') || title.includes('verified on block explorer');
+    checkId === 'checktargetsverifiedonblockexplorer' ||
+    checkId === 'checktouchedcontractsverifiedonblockexplorer' ||
+    title.includes('targets are verified') ||
+    title.includes('touched contracts are verified') ||
+    title.includes('verified on sourcify') ||
+    title.includes('verified on block explorer') ||
+    title.includes('verification backend api');
   const isProxyResolutionCheck = title.includes('proxy implementation');
   const isTreasuryMovementCheck = title.includes('treasury movement');
   const isPermissionChangesCheck = title.includes('permission changes');
@@ -313,7 +320,10 @@ export function ExpandableCheckItem({
               </div>
             ) : isVerificationCheck && check.details ? (
               <div className="mt-4">
-                <ContractVerificationList details={check.details} />
+                <ContractVerificationList
+                  details={check.details}
+                  blockExplorerBaseUrl={metadata?.blockExplorerBaseUrl}
+                />
               </div>
             ) : isProxyResolutionCheck && check.details ? (
               <div className="mt-4">

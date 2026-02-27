@@ -34,10 +34,11 @@ import type {
 } from '../types';
 import { getChainName } from '../utils/chains/capabilities';
 import { BlockExplorerFactory } from '../utils/clients/block-explorers/factory';
-import { getChainConfig, publicClient } from '../utils/clients/client';
+import { getBlockExplorerBaseUrlForChain, publicClient } from '../utils/clients/client';
 import { lookupFunctionSignatureBySelector } from '../utils/clients/function-signature-registry';
 import { DEFAULT_SIMULATION_ADDRESS, getContractName } from '../utils/clients/tenderly';
 import { formatProposalId } from '../utils/contracts/governor';
+import { toBlockExplorerBlockUrl, toExplorerAddressMarkdownLink } from '../utils/explorer-links';
 import { extractAddressesFromReport, resolveLabelsForAddresses } from '../utils/labels';
 import { generateProposalSummary } from '../utils/proposal-summary';
 
@@ -179,12 +180,7 @@ async function buildCrossChainPreview(
     destinationSimulations.map(async (dest) => {
       const chainId = dest.chainId;
 
-      let blockExplorerBaseUrl = 'https://etherscan.io';
-      try {
-        blockExplorerBaseUrl = getChainConfig(chainId).blockExplorer.baseUrl;
-      } catch {
-        // Ignore unknown chain configs.
-      }
+      const blockExplorerBaseUrl = getBlockExplorerBaseUrlForChain(chainId);
 
       const l2TargetAddress = dest.l2Params?.l2TargetAddress;
       const l2InputData = dest.l2Params?.l2InputData;
@@ -219,12 +215,7 @@ async function buildCrossChainPreview(
           .map(([chainIdStr, checks]) => {
             const chainId = Number(chainIdStr);
 
-            let blockExplorerBaseUrl = 'https://etherscan.io';
-            try {
-              blockExplorerBaseUrl = getChainConfig(chainId).blockExplorer.baseUrl;
-            } catch {
-              // Ignore unknown chain configs.
-            }
+            const blockExplorerBaseUrl = getBlockExplorerBaseUrlForChain(chainId);
 
             return {
               chainId,
@@ -319,12 +310,12 @@ export function blockQuote(str: string) {
 }
 
 /**
- * Turns a plaintext address into a link to etherscan page of that address
+ * Turns a plaintext address into a canonical block explorer markdown link.
  * @param address to be linked
- * @param baseUrl the base URL for the etherscan link
+ * @param baseUrl the base URL for the explorer link
  */
-export function toAddressLink(address: string, baseUrl = 'https://etherscan.io'): string {
-  return `[${address}](${baseUrl}/address/${address})`;
+export function toAddressLink(address: string, baseUrl?: string): string {
+  return toExplorerAddressMarkdownLink(address, baseUrl);
 }
 
 // -- Report formatters ---
@@ -796,13 +787,7 @@ function generateStructuredReport(
 
   // Get chain configuration for explorer URL
   const targetChainId = chainId ?? 1; // Default to mainnet
-  let blockExplorerBaseUrl = 'https://etherscan.io';
-  try {
-    const chainConfig = getChainConfig(targetChainId);
-    blockExplorerBaseUrl = chainConfig.blockExplorer.baseUrl;
-  } catch {
-    // Fallback to etherscan if chain config not found
-  }
+  const blockExplorerBaseUrl = getBlockExplorerBaseUrlForChain(targetChainId);
 
   // Always include the standard placeholder address so Tally/seatbelt can badge any occurrence
   const placeholderAddresses: string[] = [DEFAULT_SIMULATION_ADDRESS];
@@ -853,12 +838,7 @@ function generateStructuredReport(
     ...Object.entries(destinationChecks ?? {}).map(([chainIdStr, destChecks]) => {
       const destChainId = Number(chainIdStr);
 
-      let destBlockExplorerBaseUrl = 'https://etherscan.io';
-      try {
-        destBlockExplorerBaseUrl = getChainConfig(destChainId).blockExplorer.baseUrl;
-      } catch {
-        // Ignore unknown chain configs.
-      }
+      const destBlockExplorerBaseUrl = getBlockExplorerBaseUrlForChain(destChainId);
 
       return {
         chainId: destChainId,
@@ -1056,6 +1036,7 @@ export async function generateAndSaveReports(params: GenerateReportsParams) {
     destinationSimulations,
     destinationChecks,
     coverage,
+    chainId,
   );
 
   // The table of contents' links in the baseReport work when converted to HTML, but do not work as Markdown
@@ -1218,11 +1199,14 @@ async function toMarkdownProposalReport(
   destinationSimulations?: SimulationResult['destinationSimulations'],
   destinationChecks?: Record<number, AllCheckResults>,
   coverage?: CoverageData,
+  chainId?: number,
 ): Promise<string> {
   const { id, proposer, targets, endBlock, startBlock, description } = proposal;
 
   if (!blocks.current.number) throw new Error('Current block number is null');
 
+  const sourceChainId = chainId ?? 1;
+  const sourceBlockExplorerBaseUrl = getBlockExplorerBaseUrlForChain(sourceChainId);
   const sourceChainKey = String(coverage?.checks.find((c) => c.chainId != null)?.chainId ?? 1);
 
   // Generate the report. We insert an empty table of contents header which is populated later using remark-toc.
@@ -1238,12 +1222,13 @@ async function toMarkdownProposalReport(
   const report = `
 # ${getProposalTitle(description.trim())}
 
-_Updated as of block [${blocks.current.number}](https://etherscan.io/block/${blocks.current.number}) at ${formatTime(
-    blocks.current.timestamp,
-  )}_
+_Updated as of block [${blocks.current.number}](${toBlockExplorerBlockUrl(
+    blocks.current.number,
+    sourceBlockExplorerBaseUrl,
+  )}) at ${formatTime(blocks.current.timestamp)}_
 
 - ID: ${formatProposalId(governorType, id!)}
-- Proposer: ${toAddressLink(proposer)}${isPlaceholderProposer ? ' (placeholder simulation address)' : ''}
+- Proposer: ${toAddressLink(proposer, sourceBlockExplorerBaseUrl)}${isPlaceholderProposer ? ' (placeholder simulation address)' : ''}
 - Start Block: ${startBlock} (${
     blocks.start
       ? formatTime(blocks.start.timestamp)
@@ -1254,7 +1239,7 @@ _Updated as of block [${blocks.current.number}](https://etherscan.io/block/${blo
       ? formatTime(blocks.end.timestamp)
       : formatTime(estimateTime(blocks.current, endBlock))
   })
-- Targets: ${targets.map((target) => toAddressLink(target)).join('; ')}
+- Targets: ${targets.map((target) => toAddressLink(target, sourceBlockExplorerBaseUrl)).join('; ')}
 
 ## Executive Summary
 
@@ -1425,8 +1410,7 @@ async function formatCrossChainResults(
       const bridgeType = sims[0].bridgeType;
 
       // Get the correct block explorer URL for this chain
-      const chainConfig = getChainConfig(Number(chainId));
-      const blockExplorerUrl = chainConfig.blockExplorer.baseUrl;
+      const blockExplorerUrl = getBlockExplorerBaseUrlForChain(Number(chainId));
 
       // Format L1 message details with correct block explorer links
       const l1Messages = (

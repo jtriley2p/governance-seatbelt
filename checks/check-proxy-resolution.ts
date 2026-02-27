@@ -1,10 +1,10 @@
 import type { PublicClient } from 'viem';
 import { getAddress } from 'viem';
-import { toAddressLink } from '../presentation/report';
 import type { ProposalCheck } from '../types';
 import { BlockExplorerFactory } from '../utils/clients/block-explorers/factory';
 import { getSourcifyVerification } from '../utils/clients/sourcify';
 import { detectProxy } from '../utils/contracts/proxy';
+import { toExplorerAddressMarkdownLink } from '../utils/explorer-links';
 
 type VerificationSource = 'sourcify' | 'blockExplorer' | 'unverified';
 
@@ -58,7 +58,7 @@ export const checkProxyResolution: ProposalCheck = {
       const detection = await detectProxy(target, publicClient, blockNumber);
       if (detection.kind === 'none') continue;
 
-      const proxyLink = toAddressLink(detection.proxy, baseUrl);
+      const proxyLink = toExplorerAddressMarkdownLink(detection.proxy, baseUrl);
 
       if (detection.kind === 'eip1967') {
         const impl = detection.implementation;
@@ -69,7 +69,7 @@ export const checkProxyResolution: ProposalCheck = {
           continue;
         }
 
-        const implLink = toAddressLink(impl, baseUrl);
+        const implLink = toExplorerAddressMarkdownLink(impl, baseUrl);
         const verification = await getVerificationSource(impl, chainId);
         info.push(
           `EIP-1967 proxy ${proxyLink} → implementation ${implLink} (${formatVerification(verification)})`,
@@ -77,13 +77,13 @@ export const checkProxyResolution: ProposalCheck = {
 
         if (verification.source === 'unverified') {
           warnings.push(
-            `Unverified implementation for EIP-1967 proxy ${proxyLink}: ${implLink} is not verified on Sourcify or the configured block explorer.`,
+            `Unverified implementation for EIP-1967 proxy ${proxyLink}: ${implLink} is not verified on Sourcify or the configured verification backend API.`,
           );
         }
         continue;
       }
 
-      const beaconLink = toAddressLink(detection.beacon, baseUrl);
+      const beaconLink = toExplorerAddressMarkdownLink(detection.beacon, baseUrl);
       const impl = detection.implementation;
       if (!impl) {
         warnings.push(
@@ -92,7 +92,7 @@ export const checkProxyResolution: ProposalCheck = {
         continue;
       }
 
-      const implLink = toAddressLink(impl, baseUrl);
+      const implLink = toExplorerAddressMarkdownLink(impl, baseUrl);
       const verification = await getVerificationSource(impl, chainId);
       info.push(
         `Beacon proxy ${proxyLink} → beacon ${beaconLink} → implementation ${implLink} (${formatVerification(
@@ -102,7 +102,7 @@ export const checkProxyResolution: ProposalCheck = {
 
       if (verification.source === 'unverified') {
         warnings.push(
-          `Unverified implementation for Beacon proxy ${proxyLink}: ${implLink} is not verified on Sourcify or the configured block explorer.`,
+          `Unverified implementation for Beacon proxy ${proxyLink}: ${implLink} is not verified on Sourcify or the configured verification backend API.`,
         );
       }
     }
@@ -122,6 +122,6 @@ export const checkProxyResolution: ProposalCheck = {
 
 function formatVerification(v: { source: VerificationSource; detail?: string }) {
   if (v.source === 'sourcify') return `verified via Sourcify${v.detail ? ` (${v.detail})` : ''}`;
-  if (v.source === 'blockExplorer') return 'verified via block explorer';
+  if (v.source === 'blockExplorer') return 'verified via verification backend API';
   return 'unverified';
 }
