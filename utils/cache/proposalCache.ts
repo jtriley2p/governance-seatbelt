@@ -21,6 +21,12 @@ function bigIntReplacer(_key: string, value: any) {
   return value;
 }
 
+export function shouldWriteCanonicalProposalCache(executionOptions?: {
+  derivedStateByChain?: unknown;
+}): boolean {
+  return executionOptions?.derivedStateByChain === undefined;
+}
+
 function isValidCachedProposal(data: unknown): data is ProposalCacheEntry {
   if (!data || typeof data !== 'object') return false;
   const entry = data as ProposalCacheEntry;

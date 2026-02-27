@@ -19,6 +19,7 @@ import type {
   TenderlySimulation,
 } from './types.d';
 import { supportsL2Checks } from './utils/chains/capabilities';
+import { mergeAllCheckResults } from './utils/check-results';
 import { getChainConfig, getClientForChain, publicClient } from './utils/clients/client';
 import { handleCrossChainSimulations, simulate } from './utils/clients/tenderly';
 import { DAO_NAME, GOVERNOR_ADDRESS, REPORTS_OUTPUT_DIRECTORY } from './utils/constants';
@@ -416,13 +417,16 @@ async function main() {
           publicClient: getClientForChain(destSim.chainId),
           chainConfig: getChainConfig(destSim.chainId),
         };
-        destinationChecks[destSim.chainId] = await runChecksForChain(
+        const checkResults = await runChecksForChain(
           finalResult.proposal,
           destSim.sim,
           l2Deps,
           destSim.chainId,
           finalResult.destinationSimulations,
         );
+        destinationChecks[destSim.chainId] = destinationChecks[destSim.chainId]
+          ? mergeAllCheckResults(destinationChecks[destSim.chainId], checkResults)
+          : checkResults;
       } catch (error) {
         console.error(
           `[run-checks][L2_CHECK_FAILURE] Failed to run L2 checks for chain ${destSim.chainId}; continuing without destination checks for this chain.`,

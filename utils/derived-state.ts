@@ -7,6 +7,7 @@ import type {
   TenderlyPayload,
   TenderlySimulation,
 } from '../types.d';
+import { supportsL2Checks } from './chains/capabilities';
 
 export type SimulationStateObjects = NonNullable<TenderlyPayload['state_objects']>;
 export type DerivedStateByChain = Record<number, SimulationStateObjects>;
@@ -104,11 +105,11 @@ export function buildDerivedStateByChain(
 /**
  * Fail-closed dependency gate.
  * - failed if source/destination simulation failed or any check has errors
- * - inconclusive if checks did not execute (all skipped)
+ * - inconclusive if checks did not execute for source/destination chains
  * - otherwise passed
  */
 export function evaluateDependencyOutcome(
-  predecessorResult: Pick<SimulationResult, 'sim' | 'crossChainFailure'>,
+  predecessorResult: Pick<SimulationResult, 'sim' | 'crossChainFailure' | 'destinationSimulations'>,
   predecessorChecks: AllCheckResults,
   predecessorDestinationChecks: Record<number, AllCheckResults>,
 ): DependencyOutcome {
@@ -126,32 +127,97 @@ export function evaluateDependencyOutcome(
     };
   }
 
-  const allCheckGroups = [predecessorChecks, ...Object.values(predecessorDestinationChecks)];
-  let totalChecks = 0;
-  let skippedChecks = 0;
+  const summarizeChecks = (checks: AllCheckResults) => {
+    let total = 0;
+    let skipped = 0;
 
-  for (const group of allCheckGroups) {
-    for (const check of Object.values(group)) {
-      totalChecks += 1;
+    for (const check of Object.values(checks)) {
+      total += 1;
 
       if (check.result.errors.length > 0) {
         return {
-          status: 'failed',
-          reason: `Predecessor check failed: ${check.name}`,
+          total,
+          skipped,
+          failedCheckName: check.name,
         };
       }
 
       if (check.result.skipped) {
-        skippedChecks += 1;
+        skipped += 1;
       }
     }
+
+    return {
+      total,
+      skipped,
+      failedCheckName: undefined,
+    };
+  };
+
+  const sourceSummary = summarizeChecks(predecessorChecks);
+  if (sourceSummary.failedCheckName) {
+    return {
+      status: 'failed',
+      reason: `Predecessor check failed: ${sourceSummary.failedCheckName}`,
+    };
   }
 
-  if (totalChecks === 0 || skippedChecks === totalChecks) {
+  if (sourceSummary.total === 0 || sourceSummary.skipped === sourceSummary.total) {
     return {
       status: 'inconclusive',
-      reason: 'Predecessor checks were inconclusive (all checks skipped)',
+      reason: 'Predecessor source checks were inconclusive (all checks skipped)',
     };
+  }
+
+  const destinationByChain = new Map<
+    number,
+    Array<NonNullable<SimulationResult['destinationSimulations']>[number]>
+  >();
+
+  for (const destination of predecessorResult.destinationSimulations ?? []) {
+    const existing = destinationByChain.get(destination.chainId) ?? [];
+    existing.push(destination);
+    destinationByChain.set(destination.chainId, existing);
+  }
+
+  for (const [chainId, destinationSims] of destinationByChain.entries()) {
+    if (!supportsL2Checks(chainId)) {
+      return {
+        status: 'inconclusive',
+        reason: `Predecessor destination chain ${chainId} does not support L2 checks`,
+      };
+    }
+
+    const notFullyValidated = destinationSims.some((sim) => sim.status !== 'success' || !sim.sim);
+    if (notFullyValidated) {
+      return {
+        status: 'inconclusive',
+        reason: `Predecessor destination simulation for chain ${chainId} was not fully validated`,
+      };
+    }
+
+    const destinationChecks = predecessorDestinationChecks[chainId];
+    if (!destinationChecks) {
+      return {
+        status: 'inconclusive',
+        reason: `Predecessor destination checks missing for chain ${chainId}`,
+      };
+    }
+
+    const destinationSummary = summarizeChecks(destinationChecks);
+    if (destinationSummary.failedCheckName) {
+      return {
+        status: 'failed',
+        reason: `Predecessor check failed: ${destinationSummary.failedCheckName}`,
+      };
+    }
+
+    if (destinationSummary.total === 0 || destinationSummary.skipped === destinationSummary.total) {
+      return {
+        status: 'inconclusive',
+        reason: `Predecessor destination checks were inconclusive for chain ${chainId} (all checks skipped)`,
+      };
+    }
   }
 
   return { status: 'passed' };

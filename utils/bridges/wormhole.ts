@@ -10,6 +10,11 @@ const WORMHOLE_SEND_MESSAGE_SELECTOR = toFunctionSelector(
   'function sendMessage(address[] targets, uint256[] values, bytes[] datas, address wormhole, uint16 chainId)',
 );
 
+const KNOWN_WORMHOLE_SENDER_TARGETS = new Set([
+  // Governor action target used by Uniswap governance for Wormhole handoff messages.
+  getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a').toLowerCase(),
+]);
+
 const WORMHOLE_CHAIN_ID_TO_EVM_CHAIN_ID: Record<number, string> = {
   14: '42220', // Celo
 };
@@ -43,8 +48,18 @@ export function parseWormholeMessagesFromProposal(
   const messages: ExtractedCrossChainMessage[] = [];
 
   for (let i = 0; i < Math.min(targets.length, calldatas.length); i += 1) {
+    const target = targets[i];
     const data = calldatas[i];
-    if (!isHexString(data) || data === '0x' || data.length < 10) continue;
+    if (!target || !isHexString(data) || data === '0x' || data.length < 10) continue;
+
+    let normalizedTarget: string;
+    try {
+      normalizedTarget = getAddress(target).toLowerCase();
+    } catch {
+      continue;
+    }
+
+    if (!KNOWN_WORMHOLE_SENDER_TARGETS.has(normalizedTarget)) continue;
     if (slice(data, 0, 4) !== WORMHOLE_SEND_MESSAGE_SELECTOR) continue;
 
     try {

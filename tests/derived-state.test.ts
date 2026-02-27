@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { AllCheckResults, TenderlySimulation } from '../types.d';
+import type { AllCheckResults, SimulationResult, TenderlySimulation } from '../types.d';
 import {
   buildDerivedBaselineChains,
   buildDerivedProvenance,
@@ -163,7 +163,9 @@ describe('derived-state execution helpers', () => {
       crossChainFailure: false,
     };
 
-    const outcome = evaluateDependencyOutcome(predecessorResult, passingChecks, {});
+    const outcome = evaluateDependencyOutcome(predecessorResult, passingChecks, {
+      42161: passingChecks,
+    });
     expect(outcome.status).toBe('passed');
 
     const derivedState = buildDerivedStateByChain(predecessorResult);
@@ -230,6 +232,89 @@ describe('derived-state execution helpers', () => {
     const outcome = evaluateDependencyOutcome(predecessor, skippedChecks, {});
     expect(outcome.status).toBe('inconclusive');
     expect(outcome.reason).toContain('inconclusive');
+  });
+
+  test('marks dependency as inconclusive when destination chain is unsupported for checks', () => {
+    const predecessor: Pick<
+      SimulationResult,
+      'sim' | 'destinationSimulations' | 'crossChainFailure'
+    > = {
+      sim: makeSimulation({
+        id: 'sim-unsupported-destination',
+        blockNumber: 22_000_003,
+      }),
+      destinationSimulations: [
+        {
+          chainId: 999_999,
+          bridgeType: 'UnknownBridge',
+          status: 'success',
+          sim: makeSimulation({
+            id: 'sim-unsupported-destination-l2',
+            blockNumber: 123,
+          }),
+        },
+      ],
+      crossChainFailure: false,
+    };
+
+    const outcome = evaluateDependencyOutcome(predecessor, passingChecks, {});
+    expect(outcome.status).toBe('inconclusive');
+    expect(outcome.reason).toContain('does not support L2 checks');
+  });
+
+  test('marks dependency as inconclusive when destination simulation is skipped', () => {
+    const predecessor: Pick<
+      SimulationResult,
+      'sim' | 'destinationSimulations' | 'crossChainFailure'
+    > = {
+      sim: makeSimulation({
+        id: 'sim-skipped-destination',
+        blockNumber: 22_000_004,
+      }),
+      destinationSimulations: [
+        {
+          chainId: 42_161,
+          bridgeType: 'ArbitrumL1L2',
+          status: 'skipped',
+          error: 'Destination simulation skipped by executor',
+        },
+      ],
+      crossChainFailure: false,
+    };
+
+    const outcome = evaluateDependencyOutcome(predecessor, passingChecks, {
+      42161: passingChecks,
+    });
+    expect(outcome.status).toBe('inconclusive');
+    expect(outcome.reason).toContain('not fully validated');
+  });
+
+  test('marks dependency as inconclusive when destination checks are missing after successful sim', () => {
+    const predecessor: Pick<
+      SimulationResult,
+      'sim' | 'destinationSimulations' | 'crossChainFailure'
+    > = {
+      sim: makeSimulation({
+        id: 'sim-missing-destination-checks',
+        blockNumber: 22_000_005,
+      }),
+      destinationSimulations: [
+        {
+          chainId: 42_161,
+          bridgeType: 'ArbitrumL1L2',
+          status: 'success',
+          sim: makeSimulation({
+            id: 'sim-missing-destination-checks-l2',
+            blockNumber: 321,
+          }),
+        },
+      ],
+      crossChainFailure: false,
+    };
+
+    const outcome = evaluateDependencyOutcome(predecessor, passingChecks, {});
+    expect(outcome.status).toBe('inconclusive');
+    expect(outcome.reason).toContain('checks missing');
   });
 
   test('keeps base simulation overrides authoritative when merging derived state', () => {

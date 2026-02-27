@@ -56,4 +56,25 @@ describe('wormhole proposal parser', () => {
       getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071'),
     ]);
   });
+
+  test('does not parse wormhole messages when proposal target is not known wormhole sender', () => {
+    const calldata = encodeFunctionData({
+      abi: WORMHOLE_SENDER_ABI,
+      functionName: 'sendMessage',
+      args: [
+        [getAddress('0xAfE208a311B21f13EF87E33A90049fC17A7acDEc')],
+        [0n],
+        ['0x13af4035000000000000000000000000044aaf330d7fd6ae683eec5c1c1d1fff5196b6b7'],
+        getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
+        14,
+      ],
+    });
+
+    const messages = parseWormholeMessagesFromProposal(
+      [getAddress('0x1111111111111111111111111111111111111111')],
+      [calldata],
+    );
+
+    expect(messages).toHaveLength(0);
+  });
 });
