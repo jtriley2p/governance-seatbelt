@@ -43,6 +43,16 @@ function makeDeps(chainConfig: ChainConfig): ProposalData {
 }
 
 describe('checkTouchedContractsVerifiedOnBlockExplorer L2 behavior', () => {
+  test('uses product copy for verification check labels', async () => {
+    const { checkTargetsVerifiedOnBlockExplorer, checkTouchedContractsVerifiedOnBlockExplorer } =
+      await import('../check-targets-verified-on-block-explorer');
+
+    expect(checkTargetsVerifiedOnBlockExplorer.name).toBe('Check all targets are verified');
+    expect(checkTouchedContractsVerifiedOnBlockExplorer.name).toBe(
+      'Check all touched contracts are verified',
+    );
+  });
+
   test('runs on L2 when touched contracts exist', async () => {
     seedRpcEnv();
 
@@ -81,6 +91,140 @@ describe('checkTouchedContractsVerifiedOnBlockExplorer L2 behavior', () => {
 
       expect(result.skipped).toBeUndefined();
       expect(result.info.join('\n')).toContain('Contract (verified via verification backend API)');
+    } finally {
+      BlockExplorerFactory.getContractVerification = original;
+    }
+  });
+
+  test('marks unverified contracts as warnings (not pass-only info)', async () => {
+    seedRpcEnv();
+
+    const { checkTouchedContractsVerifiedOnBlockExplorer } = await import(
+      '../check-targets-verified-on-block-explorer'
+    );
+    const { BlockExplorerFactory } = await import('../../utils/clients/block-explorers/factory');
+    const { VerificationBackend } = await import('../../utils/clients/client');
+
+    const chainConfig: ChainConfig = {
+      chainId: 1868,
+      blockExplorer: { baseUrl: 'https://soneium.blockscout.com' },
+      verification: {
+        backend: VerificationBackend.Blockscout,
+      },
+      rpcUrl: 'https://soneium.example.invalid',
+    };
+
+    const touched = getAddress('0x34567890abcdef1234567890abcdef1234567890');
+    const sim = createMockSimulation([]);
+    sim.transaction.addresses = [touched];
+
+    const original = BlockExplorerFactory.getContractVerification;
+    BlockExplorerFactory.getContractVerification = async () => ({
+      status: 'unverified',
+      source: 'none',
+      verificationBackend: VerificationBackend.Blockscout,
+    });
+
+    try {
+      const result = await checkTouchedContractsVerifiedOnBlockExplorer.checkProposal(
+        makeProposal(),
+        sim,
+        makeDeps(chainConfig),
+      );
+
+      expect(result.info.join('\n')).toContain('Contract (unverified; checked Sourcify +');
+      expect(result.warnings.join('\n')).toContain('Unverified contract:');
+    } finally {
+      BlockExplorerFactory.getContractVerification = original;
+    }
+  });
+
+  test('routes World Chain Sourcify verification links to Sourcify artifacts', async () => {
+    seedRpcEnv();
+
+    const { checkTouchedContractsVerifiedOnBlockExplorer } = await import(
+      '../check-targets-verified-on-block-explorer'
+    );
+    const { BlockExplorerFactory } = await import('../../utils/clients/block-explorers/factory');
+    const { VerificationBackend } = await import('../../utils/clients/client');
+
+    const chainConfig: ChainConfig = {
+      chainId: 480,
+      blockExplorer: { baseUrl: 'https://worldscan.org' },
+      verification: {
+        backend: VerificationBackend.SourcifyOnly,
+      },
+      rpcUrl: 'https://worldchain.example.invalid',
+    };
+
+    const touched = getAddress('0x1234567890abcdef1234567890abcdef12345678');
+    const sim = createMockSimulation([]);
+    sim.transaction.addresses = [touched];
+
+    const original = BlockExplorerFactory.getContractVerification;
+    BlockExplorerFactory.getContractVerification = async () => ({
+      status: 'verified',
+      source: 'sourcify',
+      sourcifyMatch: 'exact_match',
+      verificationBackend: VerificationBackend.SourcifyOnly,
+    });
+
+    try {
+      const result = await checkTouchedContractsVerifiedOnBlockExplorer.checkProposal(
+        makeProposal(),
+        sim,
+        makeDeps(chainConfig),
+      );
+
+      const output = result.info.join('\n');
+      expect(output).toContain(
+        `[${touched}](https://repo.sourcify.dev/contracts/full_match/480/${touched}/)`,
+      );
+      expect(output).not.toContain(`[${touched}](https://worldscan.org/address/${touched})`);
+    } finally {
+      BlockExplorerFactory.getContractVerification = original;
+    }
+  });
+
+  test('routes Soneium explorer-verified links to Soneium explorer', async () => {
+    seedRpcEnv();
+
+    const { checkTouchedContractsVerifiedOnBlockExplorer } = await import(
+      '../check-targets-verified-on-block-explorer'
+    );
+    const { BlockExplorerFactory } = await import('../../utils/clients/block-explorers/factory');
+    const { VerificationBackend } = await import('../../utils/clients/client');
+
+    const chainConfig: ChainConfig = {
+      chainId: 1868,
+      blockExplorer: { baseUrl: 'https://soneium.blockscout.com' },
+      verification: {
+        backend: VerificationBackend.Blockscout,
+      },
+      rpcUrl: 'https://soneium.example.invalid',
+    };
+
+    const touched = getAddress('0x234567890abcdef1234567890abcdef123456789');
+    const sim = createMockSimulation([]);
+    sim.transaction.addresses = [touched];
+
+    const original = BlockExplorerFactory.getContractVerification;
+    BlockExplorerFactory.getContractVerification = async () => ({
+      status: 'verified',
+      source: 'block-explorer',
+      verificationBackend: VerificationBackend.Blockscout,
+    });
+
+    try {
+      const result = await checkTouchedContractsVerifiedOnBlockExplorer.checkProposal(
+        makeProposal(),
+        sim,
+        makeDeps(chainConfig),
+      );
+
+      const output = result.info.join('\n');
+      expect(output).toContain(`[${touched}](https://soneium.blockscout.com/address/${touched})`);
+      expect(output).not.toContain(`[${touched}](https://etherscan.io/address/${touched})`);
     } finally {
       BlockExplorerFactory.getContractVerification = original;
     }

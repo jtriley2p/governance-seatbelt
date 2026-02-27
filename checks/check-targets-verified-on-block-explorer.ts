@@ -7,13 +7,16 @@ import {
   formatVerificationBackend,
 } from '../utils/clients/client';
 import { DEFAULT_SIMULATION_ADDRESS } from '../utils/clients/tenderly';
-import { toExplorerAddressMarkdownLink } from '../utils/explorer-links';
+import {
+  toExplorerAddressMarkdownLink,
+  toSourcifyAddressMarkdownLink,
+} from '../utils/explorer-links';
 
 /**
  * Check all targets with code are verified on Sourcify or block explorer
  */
 export const checkTargetsVerifiedOnBlockExplorer: ProposalCheck = {
-  name: 'Check all targets are verified on Sourcify or verification backend API',
+  name: 'Check all targets are verified',
   async checkProposal(proposal, sim, deps) {
     const isL2Chain = deps.chainConfig?.chainId !== 1;
 
@@ -43,7 +46,7 @@ export const checkTargetsVerifiedOnBlockExplorer: ProposalCheck = {
  * Check all touched contracts with code are verified on Sourcify or block explorer
  */
 export const checkTouchedContractsVerifiedOnBlockExplorer: ProposalCheck = {
-  name: 'Check all touched contracts are verified on Sourcify or verification backend API',
+  name: 'Check all touched contracts are verified',
   async checkProposal(_, sim, deps) {
     const touchedContracts = sim.transaction.addresses.map(getAddress);
 
@@ -78,18 +81,23 @@ async function checkVerificationStatuses(
 
   for (const addr of addresses) {
     const status = await getAddressKind(addr, publicClient);
-    const address = toExplorerAddressMarkdownLink(addr, chainConfig.blockExplorer.baseUrl);
+    const fallbackAddressLink = toExplorerAddressMarkdownLink(
+      addr,
+      chainConfig.blockExplorer.baseUrl,
+    );
 
     const isPlaceholder = getAddress(addr) === getAddress(DEFAULT_SIMULATION_ADDRESS);
     const suffix = isPlaceholder ? ' (simulation placeholder)' : '';
 
     if (status === 'eoa') {
-      info.push(`${address}${suffix}: EOA (verification not applicable)`);
+      info.push(`${fallbackAddressLink}${suffix}: EOA (verification not applicable)`);
       continue;
     }
 
     if (status === 'empty') {
-      info.push(`${address}${suffix}: EOA (may have code later, verification not applicable)`);
+      info.push(
+        `${fallbackAddressLink}${suffix}: EOA (may have code later, verification not applicable)`,
+      );
       continue;
     }
 
@@ -97,22 +105,25 @@ async function checkVerificationStatuses(
       addr,
       chainConfig.chainId,
     );
+    const addressLink = toVerificationAddressMarkdownLink(addr, chainConfig, verification);
 
     if (verification.status === 'verified') {
-      info.push(`${address}${suffix}: Contract (${describeVerifiedSource(verification.source)})`);
-      continue;
-    }
-
-    if (verification.status === 'unverified') {
       info.push(
-        `${address}${suffix}: Contract (unverified; checked Sourcify + ${describeVerificationBackend(
-          verification.verificationBackend,
-        )})`,
+        `${addressLink}${suffix}: Contract (${describeVerifiedSource(verification.source)})`,
       );
       continue;
     }
 
-    info.push(`${address}${suffix}: Contract (verification check failed)`);
+    if (verification.status === 'unverified') {
+      const detail = `${addressLink}${suffix}: Contract (unverified; checked Sourcify + ${describeVerificationBackend(
+        verification.verificationBackend,
+      )})`;
+      info.push(detail);
+      warnings.push(`Unverified contract: ${detail}`);
+      continue;
+    }
+
+    info.push(`${addressLink}${suffix}: Contract (verification check failed)`);
     warnings.push(
       `Could not determine verification status for ${addr} on chain ${chainConfig.chainId} (verification backend API: ${describeVerificationBackend(
         verification.verificationBackend,
@@ -134,6 +145,21 @@ function describeVerifiedSource(
 function describeVerificationBackend(backend: VerificationBackend | undefined): string {
   if (!backend) return 'unknown backend';
   return formatVerificationBackend(backend);
+}
+
+function toVerificationAddressMarkdownLink(
+  address: string,
+  chainConfig: ChainConfig,
+  verification: {
+    source: 'sourcify' | 'block-explorer' | 'none' | 'unknown';
+    sourcifyMatch?: string;
+  },
+): string {
+  if (verification.source === 'sourcify') {
+    return toSourcifyAddressMarkdownLink(address, chainConfig.chainId, verification.sourcifyMatch);
+  }
+
+  return toExplorerAddressMarkdownLink(address, chainConfig.blockExplorer.baseUrl);
 }
 
 /**

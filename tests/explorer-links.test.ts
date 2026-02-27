@@ -39,4 +39,17 @@ describe('canonical explorer link helpers', () => {
       `[${address}](https://etherscan.io/address/${address})`,
     );
   });
+
+  test('builds Sourcify contract links based on match type', async () => {
+    const { toSourcifyAddressMarkdownLink } = await import('../utils/explorer-links');
+
+    const address = '0x1234567890abcdef1234567890abcdef12345678';
+
+    expect(toSourcifyAddressMarkdownLink(address, 480, 'exact_match')).toBe(
+      `[${address}](https://repo.sourcify.dev/contracts/full_match/480/${address}/)`,
+    );
+    expect(toSourcifyAddressMarkdownLink(address, 480, 'match')).toBe(
+      `[${address}](https://repo.sourcify.dev/contracts/partial_match/480/${address}/)`,
+    );
+  });
 });
