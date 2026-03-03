@@ -102,3 +102,29 @@ jobs:
 
       - name: Run frontend build
         run: cd frontend && bun run build
+
+  frontend-isolated:
+    name: Run Frontend Build (Isolated Deploy Context)
+    runs-on: ubuntu-24.04
+    environment: ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Read Bun version
+        id: bun-version
+        run: echo "version=$(cat .bun-version)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@f4d14e03ff726c06358e5557344e1da148b56cf7 # v1
+        with:
+          bun-version: ${{ steps.bun-version.outputs.version }}
+
+      - name: Run frontend build in isolated deployment context
+        run: |
+          temp_dir="$(mktemp -d)"
+          git archive --format=tar HEAD frontend | tar -xf - -C "$temp_dir"
+          cd "$temp_dir/frontend"
+          bun install --frozen-lockfile
+          bun run build
