@@ -9,7 +9,7 @@ import type { SimulationConfigNew } from '../types';
 // ─── ABI fragments ───
 const FORWARD_ABI = parseAbi(['function forward(address target, bytes data)']);
 const SET_OWNER_ABI = parseAbi(['function setOwner(address _owner)']);
-const EMPTY_SIG = '' as `0x${string}`;
+const EMPTY_SIG = '';
 
 // ─── Gas limits (match Solidity script) ───
 const XDM_GAS_LIMIT = 200_000;

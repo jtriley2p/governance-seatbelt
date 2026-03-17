@@ -2,6 +2,7 @@ import mftch from 'micro-ftch';
 import type { FETCH_OPT } from 'micro-ftch';
 import {
   type Address,
+  type Hex,
   encodeAbiParameters,
   encodeFunctionData,
   getAddress,
@@ -196,7 +197,7 @@ interface GovernorOverrideParams {
   // For new proposals only
   targets?: readonly `0x${string}`[];
   values?: readonly bigint[];
-  signatures?: readonly `0x${string}`[];
+  signatures?: readonly string[];
   calldatas?: readonly `0x${string}`[];
   description?: string;
   proposal?: ProposalEvent;
@@ -501,7 +502,7 @@ async function simulateProposed(
   const txHashes = computeTransactionHashes(
     targets as readonly `0x${string}`[],
     values,
-    sigs as readonly `0x${string}`[],
+    sigs,
     calldatas as readonly `0x${string}`[],
     eta,
   );
@@ -1479,7 +1480,7 @@ function computeTransactionHashes(
   signatures: readonly string[],
   calldatas: readonly `0x${string}`[],
   eta: bigint,
-): string[] {
+): Hex[] {
   return targets.map((target, i) => {
     const [val, sig, calldata] = [values[i], signatures[i], calldatas[i]];
     return keccak256(

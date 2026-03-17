@@ -65,12 +65,12 @@ const WORMHOLE_SENDER_ABI = parseAbi([
 ]);
 
 const opV3Forward = encodeFunctionData({
-  abi: L2CrossChainAccount as unknown as readonly unknown[],
+  abi: L2CrossChainAccount,
   functionName: 'forward',
   args: [
     OP_V3_FACTORY_TEST,
     encodeFunctionData({
-      abi: v3FactoryAbi as unknown as readonly unknown[],
+      abi: v3FactoryAbi,
       functionName: 'setOwner',
       args: [OP_FEE_ADAPTER_TEST],
     }),
@@ -78,12 +78,12 @@ const opV3Forward = encodeFunctionData({
 });
 
 const baseV3Forward = encodeFunctionData({
-  abi: L2CrossChainAccount as unknown as readonly unknown[],
+  abi: L2CrossChainAccount,
   functionName: 'forward',
   args: [
     BASE_V3_FACTORY_TEST,
     encodeFunctionData({
-      abi: v3FactoryAbi as unknown as readonly unknown[],
+      abi: v3FactoryAbi,
       functionName: 'setOwner',
       args: [BASE_FEE_ADAPTER_TEST],
     }),
@@ -91,7 +91,7 @@ const baseV3Forward = encodeFunctionData({
 });
 
 const opV2Forward = encodeFunctionData({
-  abi: L2CrossChainAccount as unknown as readonly unknown[],
+  abi: L2CrossChainAccount,
   functionName: 'forward',
   args: [
     OP_V2_FACTORY_TEST,
@@ -104,7 +104,7 @@ const opV2Forward = encodeFunctionData({
 });
 
 const baseV2Forward = encodeFunctionData({
-  abi: L2CrossChainAccount as unknown as readonly unknown[],
+  abi: L2CrossChainAccount,
   functionName: 'forward',
   args: [
     BASE_V2_FACTORY_TEST,
@@ -124,7 +124,7 @@ const celoTargets = [
 const celoValues = [0n, 0n, 0n] as const;
 const celoDatas = [
   encodeFunctionData({
-    abi: v3FactoryAbi as unknown as readonly unknown[],
+    abi: v3FactoryAbi,
     functionName: 'setOwner',
     args: [CELO_CROSS_CHAIN_ACCOUNT],
   }),
@@ -164,7 +164,7 @@ const calls = [
   {
     target: ARB_INBOX,
     calldata: encodeFunctionData({
-      abi: ArbitrumDelayedInboxAbi as unknown as readonly unknown[],
+      abi: ArbitrumDelayedInboxAbi,
       functionName: 'createRetryableTicket',
       args: [
         ARB_V3_FACTORY_TEST,
@@ -175,7 +175,7 @@ const calls = [
         ARB_GAS_LIMIT,
         ARB_MAX_FEE_PER_GAS,
         encodeFunctionData({
-          abi: v3FactoryAbi as unknown as readonly unknown[],
+          abi: v3FactoryAbi,
           functionName: 'setOwner',
           args: [ARB_FEE_ADAPTER_TEST],
         }),
@@ -217,7 +217,7 @@ const calls = [
   {
     target: ARB_INBOX,
     calldata: encodeFunctionData({
-      abi: ArbitrumDelayedInboxAbi as unknown as readonly unknown[],
+      abi: ArbitrumDelayedInboxAbi,
       functionName: 'createRetryableTicket',
       args: [
         ARB_V2_FACTORY_TEST,
@@ -262,7 +262,7 @@ export const config: SimulationConfigNew = {
   governorType: 'bravo',
   targets: calls.map((call) => call.target),
   values: calls.map((call) => call.value),
-  signatures: calls.map((call) => call.signature as `0x${string}`),
+  signatures: calls.map((call) => call.signature),
   calldatas: calls.map((call) => call.calldata),
   stateObjectsByChain: build94To95TestOnlyCeloState([
     CELO_V3_FACTORY_TEST,

@@ -60,7 +60,7 @@ export interface SimulationConfigNew extends SimulationConfigBase {
   type: 'new';
   targets: Address[];
   values: bigint[];
-  signatures: `0x${string}`[];
+  signatures: string[];
   calldatas: `0x${string}`[];
   description: string;
   stateObjectsByChain?: Record<

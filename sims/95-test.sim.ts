@@ -15,7 +15,7 @@ import { build94To95TestOnlyCeloState } from './test-only-94-95-flow';
 
 const FORWARD_ABI = parseAbi(['function forward(address target, bytes data)']);
 const SET_OWNER_ABI = parseAbi(['function setOwner(address _owner)']);
-const EMPTY_SIG = '' as `0x${string}`;
+const EMPTY_SIG = '';
 const XDM_GAS_LIMIT = 200_000;
 const DEPOSIT_GAS_LIMIT = 200_000n;
 
