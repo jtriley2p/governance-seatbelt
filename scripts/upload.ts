@@ -14,6 +14,7 @@ import {
   type PublishableSimulationResult,
   validatePublishArtifact,
 } from '../utils/publish/artifact-validator';
+import { buildManagedRelayArtifactRaw } from '../utils/publish/managed-relay-artifact';
 import { computeArtifactHash, createPublishMetadata } from '../utils/publish/publish-metadata';
 
 // ---------------------------------------------------------------------------
@@ -794,13 +795,14 @@ export async function runUpload(
     const rawArtifact = readFileSync(artifactPath, 'utf8');
     const parsedArtifact: unknown = JSON.parse(rawArtifact);
     const validated = validatePublishArtifact(parsedArtifact);
-    const artifactHash = computeArtifactHash(rawArtifact);
-
     const mode: PublishMode = !args.publish
       ? 'validate-only'
       : args.publishProvider === 'vercel'
         ? 'byo-vercel'
         : 'managed-relay';
+    const managedRelayArtifactRaw =
+      mode === 'managed-relay' ? buildManagedRelayArtifactRaw(validated) : undefined;
+    const artifactHash = computeArtifactHash(managedRelayArtifactRaw ?? rawArtifact);
 
     const logEntry = buildLogEntry(validated, artifactPath, mode, artifactHash);
     appendPublishLog(args.logPath, logEntry);
@@ -822,7 +824,13 @@ export async function runUpload(
     }
 
     console.log('[upload] Publish provider: managed relay (default).');
-    await runManagedRelayPublish(rawArtifact, logEntry, runtimeEnv, args, relayRunner);
+    await runManagedRelayPublish(
+      managedRelayArtifactRaw ?? rawArtifact,
+      logEntry,
+      runtimeEnv,
+      args,
+      relayRunner,
+    );
     return 0;
   } catch (error) {
     if (error instanceof PublishArtifactValidationError) {

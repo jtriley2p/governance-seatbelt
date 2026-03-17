@@ -44,6 +44,8 @@ import {
   buildDerivedProvenance,
   buildDerivedStateByChain,
   evaluateDependencyOutcome,
+  mergeStateObjects,
+  omitStateObjectAddresses,
 } from './utils/derived-state';
 
 interface CliOptions {
@@ -111,8 +113,33 @@ async function runSimulationPipeline(
   config: SimulationConfig,
   executionOptions?: SimulationExecutionOptions,
 ): Promise<SimulationResult> {
-  const sourceResult = await simulate(config, executionOptions);
-  return await handleCrossChainSimulations(sourceResult, executionOptions);
+  let resolvedExecutionOptions = executionOptions;
+
+  if (config.type === 'new' && config.stateObjectsByChain) {
+    const initialStateByChain = {
+      ...(executionOptions?.initialStateByChain ?? {}),
+    };
+
+    for (const [chainId, stateObjects] of Object.entries(config.stateObjectsByChain)) {
+      const normalizedChainId = Number(chainId);
+      const mergedState = mergeStateObjects(
+        stateObjects,
+        initialStateByChain[normalizedChainId],
+      );
+
+      if (mergedState) {
+        initialStateByChain[normalizedChainId] = mergedState;
+      }
+    }
+
+    resolvedExecutionOptions = {
+      ...executionOptions,
+      initialStateByChain,
+    };
+  }
+
+  const sourceResult = await simulate(config, resolvedExecutionOptions);
+  return await handleCrossChainSimulations(sourceResult, resolvedExecutionOptions);
 }
 
 /**
@@ -201,6 +228,7 @@ async function processSimulation(
   proposalState: string,
   shouldCache = true,
   provenance?: DerivedSimulationProvenance,
+  writeReports = true,
 ) {
   const {
     sim,
@@ -319,29 +347,30 @@ async function processSimulation(
     `  [Coverage] Total: ${coverage.summary.total}, Ran: ${coverage.summary.ran}, Skipped: ${coverage.summary.skipped}, Failed: ${coverage.summary.failed}`,
   );
 
-  // Generate reports
-  const dir = `./${REPORTS_OUTPUT_DIRECTORY}/${config.daoName}/${config.governorAddress}`;
-  await generateAndSaveReports({
-    governorType,
-    blocks,
-    proposal,
-    checks: mainnetResults,
-    outputDir: dir,
-    governorAddress: config.governorAddress,
-    destinationSimulations,
-    destinationChecks,
-    executor,
-    proposalCreatedBlock,
-    proposalExecutedBlock,
-    chainId: finalDeps.chainConfig.chainId,
-    simulationType: config.type,
-    simulation: sim,
-    coverage,
-    daoName: config.daoName,
-    contracts: sim.contracts,
-    proposalState,
-    provenance,
-  });
+  if (writeReports) {
+    const dir = `./${REPORTS_OUTPUT_DIRECTORY}/${config.daoName}/${config.governorAddress}`;
+    await generateAndSaveReports({
+      governorType,
+      blocks,
+      proposal,
+      checks: mainnetResults,
+      outputDir: dir,
+      governorAddress: config.governorAddress,
+      destinationSimulations,
+      destinationChecks,
+      executor,
+      proposalCreatedBlock,
+      proposalExecutedBlock,
+      chainId: finalDeps.chainConfig.chainId,
+      simulationType: config.type,
+      simulation: sim,
+      coverage,
+      daoName: config.daoName,
+      contracts: sim.contracts,
+      proposalState,
+      provenance,
+    });
+  }
 
   // Prepare simulation data
   const simulationData: SimulationData = {
@@ -430,6 +459,8 @@ async function buildDerivedContext(params: {
     predecessorResult.proposal.id.toString(),
     params.predecessorState,
     false,
+    undefined,
+    false,
   );
 
   const outcome = evaluateDependencyOutcome(
@@ -458,9 +489,20 @@ async function buildDerivedContext(params: {
     baselineChains: buildDerivedBaselineChains(predecessorResult),
   });
 
+  const derivedStateByChain = buildDerivedStateByChain(predecessorResult);
+  const predecessorTimelock = await getTimelock(
+    params.governorType,
+    params.predecessorConfig.governorAddress,
+  );
+
+  derivedStateByChain[1] = omitStateObjectAddresses(derivedStateByChain[1], [
+    params.predecessorConfig.governorAddress,
+    predecessorTimelock.address,
+  ]);
+
   return {
     executionOptions: {
-      derivedStateByChain: buildDerivedStateByChain(predecessorResult),
+      derivedStateByChain,
     },
     provenance,
   };

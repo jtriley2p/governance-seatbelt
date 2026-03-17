@@ -6,6 +6,7 @@ import {
   buildDerivedStateByChain,
   evaluateDependencyOutcome,
   mergeStateObjects,
+  omitStateObjectAddresses,
 } from '../utils/derived-state';
 
 function makeSimulation(params: {
@@ -13,6 +14,7 @@ function makeSimulation(params: {
   blockNumber: number;
   status?: boolean;
   stateDiff?: Array<{ address: string; key: string; dirty: string; original?: string }>;
+  contracts?: Array<{ address: string; balance: string }>;
 }): TenderlySimulation {
   const stateDiff =
     params.stateDiff?.map((entry) => ({
@@ -99,7 +101,39 @@ function makeSimulation(params: {
       method: 'execute',
       decoded_input: null,
     },
-    contracts: [],
+    contracts:
+      params.contracts?.map((contract, index) => ({
+        id: `contract-${index}`,
+        contract_id: `contract-${index}`,
+        balance: contract.balance,
+        network_id: '1',
+        public: true,
+        verified_by: 'test',
+        verification_date: null,
+        address: contract.address,
+        contract_name: `Contract${index}`,
+        ens_domain: null,
+        type: 'contract',
+        evm_version: 'paris',
+        compiler_version: '0.8.20',
+        optimizations_used: false,
+        optimization_runs: 0,
+        libraries: null,
+        data: {
+          main_contract: 0,
+          contract_info: [],
+          abi: [],
+          raw_abi: null,
+        },
+        creation_block: params.blockNumber,
+        creation_tx: '0x3333333333333333333333333333333333333333333333333333333333333333',
+        creator_address: '0x0000000000000000000000000000000000001234',
+        created_at: new Date('2026-01-01T00:00:00.000Z'),
+        number_of_watches: null,
+        language: 'Solidity',
+        in_project: false,
+        number_of_files: 1,
+      })) ?? [],
     generated_access_list: [],
   };
 }
@@ -117,6 +151,9 @@ const passingChecks: AllCheckResults = {
 
 describe('derived-state execution helpers', () => {
   test('builds cross-chain derived state and provenance for happy path', () => {
+    const mainnetAddress = '0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa';
+    const arbitrumAddress = '0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB';
+
     const source = makeSimulation({
       id: 'sim-94',
       blockNumber: 22_000_000,
@@ -169,12 +206,8 @@ describe('derived-state execution helpers', () => {
     expect(outcome.status).toBe('passed');
 
     const derivedState = buildDerivedStateByChain(predecessorResult);
-    expect(derivedState[1]?.['0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']?.storage?.['0x01']).toBe(
-      '0x05',
-    );
-    expect(
-      derivedState[42_161]?.['0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb']?.storage?.['0x02'],
-    ).toBe('0x09');
+    expect(derivedState[1]?.[mainnetAddress]?.storage?.['0x01']).toBe('0x05');
+    expect(derivedState[42_161]?.[arbitrumAddress]?.storage?.['0x02']).toBe('0x09');
 
     const provenance = buildDerivedProvenance({
       outcome,
@@ -318,6 +351,8 @@ describe('derived-state execution helpers', () => {
   });
 
   test('keeps base simulation overrides authoritative when merging derived state', () => {
+    const normalizedAddress = '0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa';
+
     const derived = {
       '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': {
         storage: {
@@ -338,14 +373,122 @@ describe('derived-state execution helpers', () => {
 
     const merged = mergeStateObjects(derived, base);
 
-    expect(merged?.['0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']?.storage?.['0x01']).toBe(
-      '0xbase',
+    expect(merged?.[normalizedAddress]?.storage?.['0x01']).toBe('0xbase');
+    expect(merged?.[normalizedAddress]?.storage?.['0x02']).toBe('0xfrom-derived');
+    expect(merged?.[normalizedAddress]?.storage?.['0x03']).toBe('0xfrom-base');
+  });
+
+  test('normalizes mixed-case address keys before merging state objects', () => {
+    const normalizedAddress = '0x408ED6354d4973f66138C91495F2f2FCbd8724C3';
+
+    const derived = {
+      '0x408ed6354d4973f66138c91495f2f2fcbd8724c3': {
+        storage: {
+          '0x01': '0xderived',
+        },
+      },
+    };
+
+    const base = {
+      '0x408ED6354d4973f66138C91495F2f2FCbd8724C3': {
+        storage: {
+          '0x02': '0xbase',
+        },
+      },
+    };
+
+    const merged = mergeStateObjects(derived, base);
+    const mergedKeys = Object.keys(merged ?? {});
+
+    expect(mergedKeys).toEqual([normalizedAddress]);
+    expect(merged?.[normalizedAddress]?.storage).toEqual({
+      '0x01': '0xderived',
+      '0x02': '0xbase',
+    });
+  });
+
+  test('extracts contract balances alongside storage overrides', () => {
+    const sim = makeSimulation({
+      id: 'sim-balance',
+      blockNumber: 22_000_100,
+      contracts: [
+        {
+          address: '0x408ED6354d4973f66138C91495F2f2FCbd8724C3',
+          balance: '123',
+        },
+      ],
+      stateDiff: [
+        {
+          address: '0x408ed6354d4973f66138c91495f2f2fcbd8724c3',
+          key: '0x01',
+          dirty: '0x99',
+        },
+      ],
+    });
+
+    const overrides = buildDerivedStateByChain({ sim });
+
+    expect(overrides[1]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.balance).toBe('123');
+    expect(overrides[1]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.storage?.['0x01']).toBe(
+      '0x99',
     );
-    expect(merged?.['0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']?.storage?.['0x02']).toBe(
-      '0xfrom-derived',
+  });
+
+  test('omits empty balances from derived state overrides', () => {
+    const sim = makeSimulation({
+      id: 'sim-empty-balance',
+      blockNumber: 22_000_101,
+      contracts: [
+        {
+          address: '0x408ED6354d4973f66138C91495F2f2FCbd8724C3',
+          balance: '',
+        },
+      ],
+      stateDiff: [
+        {
+          address: '0x408ed6354d4973f66138c91495f2f2fcbd8724c3',
+          key: '0x01',
+          dirty: '0x99',
+        },
+      ],
+    });
+
+    const overrides = buildDerivedStateByChain({ sim });
+
+    expect(overrides[1]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.balance).toBeUndefined();
+    expect(overrides[1]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.storage?.['0x01']).toBe(
+      '0x99',
     );
-    expect(merged?.['0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']?.storage?.['0x03']).toBe(
-      '0xfrom-base',
+  });
+
+  test('can omit specific governance scaffolding addresses from derived state', () => {
+    const stateObjects = {
+      '0x408ED6354d4973f66138C91495F2f2FCbd8724C3': {
+        storage: {
+          '0x01': '0xgovernor',
+        },
+      },
+      '0x1a9C8182C09F50C8318d769245beA52c32BE35BC': {
+        storage: {
+          '0x02': '0xtimelock',
+        },
+      },
+      '0x1000000000000000000000000000000000009450': {
+        storage: {
+          '0x03': '0xkept',
+        },
+      },
+    };
+
+    const filtered = omitStateObjectAddresses(stateObjects, [
+      '0x408ED6354d4973f66138C91495F2f2FCbd8724C3',
+      '0x1a9c8182c09f50c8318d769245bea52c32be35bc',
+    ]);
+
+    expect(filtered?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']).toBeUndefined();
+    expect(filtered?.['0x1a9C8182C09F50C8318d769245beA52c32BE35BC']).toBeUndefined();
+    expect(filtered?.['0x1000000000000000000000000000000000009450']?.storage?.['0x03']).toBe(
+      '0xkept',
     );
   });
 });

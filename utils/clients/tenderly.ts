@@ -56,7 +56,10 @@ import {
   hashOperationBatchOz,
   hashOperationOz,
 } from '../contracts/governor';
-import { type DerivedStateByChain, mergeStateObjects } from '../derived-state';
+import {
+  type DerivedStateByChain,
+  mergeStateObjects,
+} from '../derived-state';
 import { parseWithSchema, z } from '../validation/zod';
 import { CacheManager } from './block-explorers/cache';
 import { BlockExplorerFactory } from './block-explorers/factory';
@@ -219,6 +222,7 @@ interface SimulationPayloadParams {
 
 export interface SimulationExecutionOptions {
   derivedStateByChain?: DerivedStateByChain;
+  initialStateByChain?: DerivedStateByChain;
 }
 
 // --- Simulation methods ---
@@ -381,11 +385,13 @@ export async function simulateNew(
     saveIfFails: true,
   });
 
-  // Derived state should be additive only. Apply it first so proposal-specific
-  // base overrides keep precedence for conflicting slots.
   simulationPayload.state_objects = mergeStateObjects(
-    options?.derivedStateByChain?.[1],
+    options?.initialStateByChain?.[1],
     simulationPayload.state_objects,
+  );
+  simulationPayload.state_objects = mergeStateObjects(
+    simulationPayload.state_objects,
+    options?.derivedStateByChain?.[1],
   );
 
   // Handle ETH transfers if needed
@@ -991,8 +997,13 @@ export async function handleCrossChainSimulations(
         };
 
         destinationPayload.state_objects = mergeStateObjects(
-          options?.derivedStateByChain?.[destinationChainId],
+          options?.initialStateByChain?.[destinationChainId],
           destinationPayload.state_objects,
+        );
+
+        destinationPayload.state_objects = mergeStateObjects(
+          destinationPayload.state_objects,
+          options?.derivedStateByChain?.[destinationChainId],
         );
 
         // Log the payload before sending
@@ -1067,6 +1078,9 @@ function handleETHValueRequirements(
   const totalValue = values.reduce((sum, val) => sum + val, 0n);
 
   if (totalValue > 0n) {
+    const normalizedFrom = getAddress(from);
+    const normalizedTimelockAddress = getAddress(timelockAddress);
+
     // If we need to send ETH, update the value and from address balance
     simulationPayload.value = totalValue.toString();
 
@@ -1074,14 +1088,14 @@ function handleETHValueRequirements(
     if (!simulationPayload.state_objects) {
       simulationPayload.state_objects = {};
     }
-    simulationPayload.state_objects[from] = {
-      ...simulationPayload.state_objects[from],
+    simulationPayload.state_objects[normalizedFrom] = {
+      ...simulationPayload.state_objects[normalizedFrom],
       balance: totalValue.toString(),
     };
 
     // Also ensure the timelock has enough ETH to execute the proposal
-    simulationPayload.state_objects[timelockAddress] = {
-      ...simulationPayload.state_objects[timelockAddress],
+    simulationPayload.state_objects[normalizedTimelockAddress] = {
+      ...simulationPayload.state_objects[normalizedTimelockAddress],
       balance: totalValue.toString(),
     };
   }
@@ -1106,6 +1120,10 @@ function buildSimulationPayload(params: SimulationPayloadParams): TenderlyPayloa
 
   const { save: saveSimulation, saveIfFails: saveSimulationIfFails } =
     getTenderlySaveFlags(saveIfFails);
+  const normalizedFrom = getAddress(from);
+  const normalizedTimelockAddress = getAddress(timelock.address);
+  const normalizedGovernorAddress = getAddress(governor.address);
+
   return {
     network_id: '1',
     // this field represents the block state to simulate against, so we use the latest block number
@@ -1131,13 +1149,13 @@ function buildSimulationPayload(params: SimulationPayloadParams): TenderlyPayloa
     state_objects: {
       // Since gas price is zero, the sender needs no balance. If the sender does need a balance to
       // send ETH with the execution, this will be overridden later.
-      [from]: { balance: '0' },
+      [normalizedFrom]: { balance: '0' },
       // Ensure transactions are queued in the timelock
-      [timelock.address]: {
+      [normalizedTimelockAddress]: {
         storage: storageObj.stateOverrides[timelock.address.toLowerCase()].value,
       },
       // Ensure governor storage is properly configured so `state(proposalId)` returns `Queued`
-      [governor.address]: {
+      [normalizedGovernorAddress]: {
         storage: storageObj.stateOverrides[governor.address.toLowerCase()].value,
       },
     },

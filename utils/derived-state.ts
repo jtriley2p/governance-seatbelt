@@ -7,6 +7,7 @@ import type {
   TenderlyPayload,
   TenderlySimulation,
 } from '../types.d';
+import { getAddress } from 'viem';
 import { supportsL2Checks } from './chains/capabilities';
 
 export type SimulationStateObjects = NonNullable<TenderlyPayload['state_objects']>;
@@ -22,17 +23,51 @@ export interface DependencyOutcome {
   reason?: string;
 }
 
+function normalizeStateObjects(
+  stateObjects: TenderlyPayload['state_objects'] | undefined,
+): SimulationStateObjects | undefined {
+  if (!stateObjects) return undefined;
+
+  const normalized: SimulationStateObjects = {};
+
+  for (const [address, state] of Object.entries(stateObjects)) {
+    const normalizedAddress = getAddress(address);
+    const current = normalized[normalizedAddress] ?? {};
+    const balance =
+      typeof state.balance === 'string' && state.balance.length > 0 ? state.balance : undefined;
+
+    normalized[normalizedAddress] = {
+      ...current,
+      ...state,
+      ...(balance ? { balance } : {}),
+      storage: {
+        ...(current.storage ?? {}),
+        ...(state.storage ?? {}),
+      },
+    };
+
+    if (!balance) {
+      delete normalized[normalizedAddress].balance;
+    }
+  }
+
+  return normalized;
+}
+
 export function mergeStateObjects(
   base: TenderlyPayload['state_objects'] | undefined,
   overrides: TenderlyPayload['state_objects'] | undefined,
 ): SimulationStateObjects | undefined {
-  if (!base && !overrides) return undefined;
-  if (!base) return { ...(overrides ?? {}) };
-  if (!overrides) return { ...base };
+  const normalizedBase = normalizeStateObjects(base);
+  const normalizedOverrides = normalizeStateObjects(overrides);
 
-  const merged: SimulationStateObjects = { ...base };
+  if (!normalizedBase && !normalizedOverrides) return undefined;
+  if (!normalizedBase) return { ...(normalizedOverrides ?? {}) };
+  if (!normalizedOverrides) return { ...normalizedBase };
 
-  for (const [address, overrideState] of Object.entries(overrides)) {
+  const merged: SimulationStateObjects = { ...normalizedBase };
+
+  for (const [address, overrideState] of Object.entries(normalizedOverrides)) {
     const current = merged[address] ?? {};
     merged[address] = {
       ...current,
@@ -47,6 +82,22 @@ export function mergeStateObjects(
   return merged;
 }
 
+export function omitStateObjectAddresses(
+  stateObjects: TenderlyPayload['state_objects'] | undefined,
+  addresses: readonly string[],
+): SimulationStateObjects | undefined {
+  const normalizedStateObjects = normalizeStateObjects(stateObjects);
+  if (!normalizedStateObjects) return undefined;
+
+  const omitted = { ...normalizedStateObjects };
+
+  for (const address of addresses) {
+    delete omitted[getAddress(address)];
+  }
+
+  return Object.keys(omitted).length > 0 ? omitted : undefined;
+}
+
 /**
  * Extract final storage writes from a Tenderly simulation and convert them
  * into state_objects overrides that can seed a dependent simulation.
@@ -57,9 +108,19 @@ export function extractStateOverridesFromSimulation(
   const overrides: SimulationStateObjects = {};
   const stateDiff = sim.transaction.transaction_info.state_diff ?? [];
 
+  for (const contract of sim.contracts ?? []) {
+    const address = getAddress(contract.address);
+    const state = overrides[address] ?? {};
+
+    overrides[address] = {
+      ...state,
+      ...(contract.balance ? { balance: contract.balance } : {}),
+    };
+  }
+
   for (const entry of stateDiff) {
     for (const raw of entry.raw ?? []) {
-      const address = raw.address.toLowerCase();
+      const address = getAddress(raw.address);
       const state = overrides[address] ?? {};
       const storage = {
         ...(state.storage ?? {}),

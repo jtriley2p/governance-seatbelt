@@ -63,6 +63,17 @@ export interface SimulationConfigNew extends SimulationConfigBase {
   signatures: `0x${string}`[];
   calldatas: `0x${string}`[];
   description: string;
+  stateObjectsByChain?: Record<
+    number,
+    Record<
+      string,
+      {
+        balance?: string;
+        code?: string;
+        storage?: Record<string, string>;
+      }
+    >
+  >;
 }
 
 export type SimulationConfig =
