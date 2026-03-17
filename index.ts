@@ -45,7 +45,6 @@ import {
   buildDerivedStateByChain,
   evaluateDependencyOutcome,
   mergeStateObjects,
-  omitStateObjectAddresses,
 } from './utils/derived-state';
 
 interface CliOptions {
@@ -489,20 +488,9 @@ async function buildDerivedContext(params: {
     baselineChains: buildDerivedBaselineChains(predecessorResult),
   });
 
-  const derivedStateByChain = buildDerivedStateByChain(predecessorResult);
-  const predecessorTimelock = await getTimelock(
-    params.governorType,
-    params.predecessorConfig.governorAddress,
-  );
-
-  derivedStateByChain[1] = omitStateObjectAddresses(derivedStateByChain[1], [
-    params.predecessorConfig.governorAddress,
-    predecessorTimelock.address,
-  ]);
-
   return {
     executionOptions: {
-      derivedStateByChain,
+      derivedStateByChain: buildDerivedStateByChain(predecessorResult),
     },
     provenance,
   };

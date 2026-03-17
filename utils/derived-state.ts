@@ -82,22 +82,6 @@ export function mergeStateObjects(
   return merged;
 }
 
-export function omitStateObjectAddresses(
-  stateObjects: TenderlyPayload['state_objects'] | undefined,
-  addresses: readonly string[],
-): SimulationStateObjects | undefined {
-  const normalizedStateObjects = normalizeStateObjects(stateObjects);
-  if (!normalizedStateObjects) return undefined;
-
-  const omitted = { ...normalizedStateObjects };
-
-  for (const address of addresses) {
-    delete omitted[getAddress(address)];
-  }
-
-  return Object.keys(omitted).length > 0 ? omitted : undefined;
-}
-
 /**
  * Extract final storage writes from a Tenderly simulation and convert them
  * into state_objects overrides that can seed a dependent simulation.

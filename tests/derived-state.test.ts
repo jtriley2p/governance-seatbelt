@@ -6,7 +6,6 @@ import {
   buildDerivedStateByChain,
   evaluateDependencyOutcome,
   mergeStateObjects,
-  omitStateObjectAddresses,
 } from '../utils/derived-state';
 
 function makeSimulation(params: {
@@ -461,34 +460,44 @@ describe('derived-state execution helpers', () => {
     );
   });
 
-  test('can omit specific governance scaffolding addresses from derived state', () => {
-    const stateObjects = {
+  test('target proposal bookkeeping can override overlapping derived governance slots', () => {
+    const derivedState = {
       '0x408ED6354d4973f66138C91495F2f2FCbd8724C3': {
         storage: {
-          '0x01': '0xgovernor',
+          '0x01': '0xpredecessor-proposal-slot',
+          '0x04': '0xkeep-governor-state',
         },
       },
       '0x1a9C8182C09F50C8318d769245beA52c32BE35BC': {
         storage: {
-          '0x02': '0xtimelock',
-        },
-      },
-      '0x1000000000000000000000000000000000009450': {
-        storage: {
-          '0x03': '0xkept',
+          '0x02': '0xpredecessor-timelock-slot',
+          '0x05': '0xkeep-timelock-state',
         },
       },
     };
 
-    const filtered = omitStateObjectAddresses(stateObjects, [
-      '0x408ED6354d4973f66138C91495F2f2FCbd8724C3',
-      '0x1a9c8182c09f50c8318d769245bea52c32be35bc',
-    ]);
+    const targetPayloadState = {
+      '0x408ED6354d4973f66138C91495F2f2FCbd8724C3': {
+        storage: {
+          '0x01': '0xtarget-proposal-slot',
+        },
+      },
+      '0x1a9C8182C09F50C8318d769245beA52c32BE35BC': {
+        storage: {
+          '0x02': '0xtarget-queued-slot',
+        },
+      },
+    };
 
-    expect(filtered?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']).toBeUndefined();
-    expect(filtered?.['0x1a9C8182C09F50C8318d769245beA52c32BE35BC']).toBeUndefined();
-    expect(filtered?.['0x1000000000000000000000000000000000009450']?.storage?.['0x03']).toBe(
-      '0xkept',
-    );
+    const merged = mergeStateObjects(derivedState, targetPayloadState);
+
+    expect(merged?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.storage).toEqual({
+      '0x01': '0xtarget-proposal-slot',
+      '0x04': '0xkeep-governor-state',
+    });
+    expect(merged?.['0x1a9C8182C09F50C8318d769245beA52c32BE35BC']?.storage).toEqual({
+      '0x02': '0xtarget-queued-slot',
+      '0x05': '0xkeep-timelock-state',
+    });
   });
 });

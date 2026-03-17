@@ -385,13 +385,13 @@ export async function simulateNew(
     saveIfFails: true,
   });
 
-  simulationPayload.state_objects = mergeStateObjects(
+  const seededMainnetState = mergeStateObjects(
     options?.initialStateByChain?.[1],
-    simulationPayload.state_objects,
+    options?.derivedStateByChain?.[1],
   );
   simulationPayload.state_objects = mergeStateObjects(
+    seededMainnetState,
     simulationPayload.state_objects,
-    options?.derivedStateByChain?.[1],
   );
 
   // Handle ETH transfers if needed
