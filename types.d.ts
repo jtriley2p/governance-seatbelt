@@ -120,7 +120,7 @@ export interface DerivedBaselineChain {
   blockNumber?: string;
 }
 
-export interface DerivedSimulationProvenance {
+export interface DerivedSimulationDependency {
   mode: 'derived';
   status: DependencyStatus;
   reason?: string;
@@ -787,7 +787,7 @@ export interface StructuredSimulationReport {
     // On-chain proposal state (Issue #165)
     proposalState?: string;
     // Dependency provenance for derived-state simulations
-    dependency?: DerivedSimulationProvenance;
+    dependency?: DerivedSimulationDependency;
   };
 }
 
@@ -824,7 +824,7 @@ export interface GenerateReportsParams {
   // On-chain proposal state (Issue #165)
   proposalState?: string;
   // Provenance metadata for derived-state simulation chains
-  provenance?: DerivedSimulationProvenance;
+  provenance?: DerivedSimulationDependency;
 }
 
 export interface WriteSimulationResultsJsonParams {
@@ -849,7 +849,7 @@ export interface WriteSimulationResultsJsonParams {
   // On-chain proposal state (Issue #165)
   proposalState?: string;
   // Provenance metadata for derived-state simulation chains
-  provenance?: DerivedSimulationProvenance;
+  provenance?: DerivedSimulationDependency;
 }
 
 export interface FrontendData {

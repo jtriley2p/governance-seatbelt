@@ -8,7 +8,7 @@ import { generateAndSaveReports } from './presentation/report';
 import { buildCoverageFromResults, buildCoverageMetadata, runChecksForChain } from './run-checks';
 import type {
   AllCheckResults,
-  DerivedSimulationProvenance,
+  DerivedSimulationDependency,
   GovernorType,
   ProposalData,
   SimulationConfig,
@@ -55,7 +55,7 @@ interface CliOptions {
 
 interface DerivedContext {
   executionOptions: SimulationExecutionOptions;
-  provenance: DerivedSimulationProvenance;
+  provenance: DerivedSimulationDependency;
 }
 
 function parseCliOptions(argv: string[]): CliOptions {
@@ -223,7 +223,7 @@ async function processSimulation(
   proposalId: string,
   proposalState: string,
   shouldCache = true,
-  provenance?: DerivedSimulationProvenance,
+  provenance?: DerivedSimulationDependency,
   writeReports = true,
 ) {
   const {
@@ -518,7 +518,7 @@ async function main() {
     governorType = await inferGovernorType(config.governorAddress);
 
     let derivedExecutionOptions: SimulationExecutionOptions | undefined;
-    let provenance: DerivedSimulationProvenance | undefined;
+    let provenance: DerivedSimulationDependency | undefined;
 
     if (cliOptions.derivedFromSimId) {
       const predecessorPath = `./sims/${cliOptions.derivedFromSimId}.sim.ts`;
@@ -607,7 +607,7 @@ async function main() {
     governorType = await inferGovernorType(governorAddress);
 
     let derivedExecutionOptions: SimulationExecutionOptions | undefined;
-    let provenance: DerivedSimulationProvenance | undefined;
+    let provenance: DerivedSimulationDependency | undefined;
 
     if (cliOptions.derivedFromSimId) {
       const predecessorPath = `./sims/${cliOptions.derivedFromSimId}.sim.ts`;

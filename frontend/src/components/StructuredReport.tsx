@@ -8,6 +8,7 @@ import type {
   Proposal,
   StructuredSimulationReport,
 } from '@/hooks/use-simulation-results';
+import { resolveChainName } from '@/lib/chain-name';
 import { ExternalLinkIcon, InfoIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { CallGroupedView } from './CallGroupedView';
@@ -20,7 +21,6 @@ import { CrossChainPreview } from './structured-report/CrossChainPreview';
 import { SimulationPlaceholderBadge } from './structured-report/SimulationPlaceholderBadge';
 import { SimulationWarningBanner } from './structured-report/SimulationWarningBanner';
 import { StateChanges } from './structured-report/StateChanges';
-import { resolveChainName } from './structured-report/chain-name';
 import {
   buildAddressLink,
   buildBlockLink,

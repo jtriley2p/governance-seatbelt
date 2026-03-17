@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveChainName } from '../frontend/src/components/structured-report/chain-name';
+import { resolveChainName } from '../frontend/src/lib/chain-name';
 
 describe('frontend resolveChainName', () => {
   test('prefers provided non-generic names', () => {

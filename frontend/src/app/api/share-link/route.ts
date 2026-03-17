@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { buildManagedRelayArtifactRaw } from '@/lib/managed-relay-artifact';
+import { buildRelayPublishArtifactRaw } from '@/lib/relay-publish-artifact';
 import { normalizePublishId } from '@/lib/share-link';
 import { SimulationResultsParseError, parseSimulationResultsJson } from '@/lib/simulation-results';
 import { NextResponse } from 'next/server';
@@ -267,7 +267,7 @@ export async function POST(request: Request) {
 
     const parsedArtifact: unknown = JSON.parse(readResult.artifactRaw);
     const normalizedArtifact = parseSimulationResultsJson(parsedArtifact);
-    const artifactRawForPublish = buildManagedRelayArtifactRaw(normalizedArtifact);
+    const artifactRawForPublish = buildRelayPublishArtifactRaw(normalizedArtifact);
 
     const artifactHash = createHash('sha256').update(artifactRawForPublish).digest('hex');
     const publishResult = await publishViaManagedRelay(artifactRawForPublish, artifactHash);

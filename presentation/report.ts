@@ -17,7 +17,7 @@ import { type Abi, getAddress, toFunctionSelector } from 'viem';
 import type {
   AllCheckResults,
   CoverageData,
-  DerivedSimulationProvenance,
+  DerivedSimulationDependency,
   GenerateReportsParams,
   GovernorType,
   PermissionsDiffItem,
@@ -759,7 +759,7 @@ function generateStructuredReport(
   simulation?: TenderlySimulation,
   destinationChecks?: Record<number, AllCheckResults>,
   proposalState?: string,
-  provenance?: DerivedSimulationProvenance,
+  provenance?: DerivedSimulationDependency,
 ): StructuredSimulationReport {
   // Validate required fields
   if (!proposal.proposer) {

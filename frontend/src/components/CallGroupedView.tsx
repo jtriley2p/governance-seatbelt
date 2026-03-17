@@ -8,6 +8,7 @@ import type {
   SimulationCheck,
   StructuredSimulationReport,
 } from '@/hooks/use-simulation-results';
+import { resolveChainName } from '@/lib/chain-name';
 import { CheckIcon, ChevronDownIcon, CopyIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
@@ -19,7 +20,6 @@ import {
   toFunctionSelector,
 } from 'viem';
 import { ChainLogo } from './structured-report/ChainLogo';
-import { resolveChainName } from './structured-report/chain-name';
 
 type RiskTag = 'Upgrade' | 'Admin/Role' | 'Token Approval' | 'Token Transfer' | 'ETH Value';
 

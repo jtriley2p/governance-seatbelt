@@ -2,10 +2,10 @@
 
 import { Badge } from '@/components/ui/badge';
 import type { CrossChainMessagePreview } from '@/hooks/use-simulation-results';
+import { resolveChainName } from '@/lib/chain-name';
 import { ExternalLinkIcon } from 'lucide-react';
 import { useMemo } from 'react';
 import { ChainLogo } from './ChainLogo';
-import { resolveChainName } from './chain-name';
 import { formatCrossChainCall } from './cross-chain';
 import { buildAddressLinkForExplorer } from './explorer';
 

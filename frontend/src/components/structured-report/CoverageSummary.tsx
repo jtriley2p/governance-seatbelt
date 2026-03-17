@@ -5,8 +5,8 @@ import type {
   SimulationCheck,
   StructuredSimulationReport,
 } from '@/hooks/use-simulation-results';
+import { resolveChainName } from '@/lib/chain-name';
 import { ChainLogo } from './ChainLogo';
-import { resolveChainName } from './chain-name';
 
 type CheckOutcome = 'passed' | 'warning' | 'failed' | 'not_applicable' | 'not_run';
 

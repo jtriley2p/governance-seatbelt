@@ -14,8 +14,8 @@ import {
   type PublishableSimulationResult,
   validatePublishArtifact,
 } from '../utils/publish/artifact-validator';
-import { buildManagedRelayArtifactRaw } from '../utils/publish/managed-relay-artifact';
 import { computeArtifactHash, createPublishMetadata } from '../utils/publish/publish-metadata';
+import { buildRelayPublishArtifactRaw } from '../utils/publish/relay-publish-artifact';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -801,7 +801,7 @@ export async function runUpload(
         ? 'byo-vercel'
         : 'managed-relay';
     const managedRelayArtifactRaw =
-      mode === 'managed-relay' ? buildManagedRelayArtifactRaw(validated) : undefined;
+      mode === 'managed-relay' ? buildRelayPublishArtifactRaw(validated) : undefined;
     const artifactHash = computeArtifactHash(managedRelayArtifactRaw ?? rawArtifact);
 
     const logEntry = buildLogEntry(validated, artifactPath, mode, artifactHash);

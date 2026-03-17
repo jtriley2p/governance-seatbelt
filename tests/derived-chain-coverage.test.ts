@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeSimulationResultsJson } from '../presentation/report';
-import type { AllCheckResults, CoverageData, DerivedSimulationProvenance } from '../types';
+import type { AllCheckResults, CoverageData, DerivedSimulationDependency } from '../types';
 
 const mainChecks: AllCheckResults = {
   'check-main': {
@@ -30,7 +30,7 @@ const destinationChecks: Record<number, AllCheckResults> = {
 function writeFixture(
   path: string,
   coverage: CoverageData,
-  provenance?: DerivedSimulationProvenance,
+  provenance?: DerivedSimulationDependency,
 ) {
   writeSimulationResultsJson({
     governorType: 'bravo',

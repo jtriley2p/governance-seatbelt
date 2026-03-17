@@ -3,7 +3,7 @@ import type {
   AllCheckResults,
   DependencyStatus,
   DerivedBaselineChain,
-  DerivedSimulationProvenance,
+  DerivedSimulationDependency,
   SimulationResult,
   TenderlyPayload,
   TenderlySimulation,
@@ -298,7 +298,7 @@ export function buildDerivedProvenance(params: {
   outcome: DependencyOutcome | { status: 'skipped'; reason: string };
   reference: DependencyReference;
   baselineChains?: DerivedBaselineChain[];
-}): DerivedSimulationProvenance {
+}): DerivedSimulationDependency {
   return {
     mode: 'derived',
     status: params.outcome.status,

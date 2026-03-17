@@ -172,7 +172,7 @@ export interface ChainSimulationReport {
   permissionsDiff?: PermissionsDiffItem[];
 }
 
-export interface DerivedSimulationProvenance {
+export interface DerivedSimulationDependency {
   mode: 'derived';
   status: 'passed' | 'failed' | 'inconclusive' | 'skipped';
   reason?: string;
@@ -231,7 +231,7 @@ export interface StructuredSimulationReport {
     // On-chain proposal state (Issue #165)
     proposalState?: string;
     // Dependency provenance for derived-state simulation chains
-    dependency?: DerivedSimulationProvenance;
+    dependency?: DerivedSimulationDependency;
   };
 }
 

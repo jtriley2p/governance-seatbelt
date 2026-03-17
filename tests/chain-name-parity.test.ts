@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveChainName as resolveFrontendChainName } from '../frontend/src/components/structured-report/chain-name';
+import { resolveChainName as resolveFrontendChainName } from '../frontend/src/lib/chain-name';
 import { getChainName } from '../utils/chains/capabilities';
 import { CANONICAL_CHAIN_NAMES } from '../utils/chains/chain-name';
 
