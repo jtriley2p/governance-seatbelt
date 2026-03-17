@@ -1,3 +1,4 @@
+import { getAddress } from 'viem';
 import type {
   AllCheckResults,
   DependencyStatus,
@@ -7,7 +8,6 @@ import type {
   TenderlyPayload,
   TenderlySimulation,
 } from '../types.d';
-import { getAddress } from 'viem';
 import { supportsL2Checks } from './chains/capabilities';
 
 export type SimulationStateObjects = NonNullable<TenderlyPayload['state_objects']>;
@@ -36,7 +36,7 @@ function normalizeStateObjects(
     const balance =
       typeof state.balance === 'string' && state.balance.length > 0 ? state.balance : undefined;
 
-    normalized[normalizedAddress] = {
+    const normalizedState = {
       ...current,
       ...state,
       ...(balance ? { balance } : {}),
@@ -46,9 +46,12 @@ function normalizeStateObjects(
       },
     };
 
-    if (!balance) {
-      delete normalized[normalizedAddress].balance;
-    }
+    normalized[normalizedAddress] = balance
+      ? normalizedState
+      : {
+          ...normalizedState,
+          balance: undefined,
+        };
   }
 
   return normalized;

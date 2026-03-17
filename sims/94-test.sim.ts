@@ -11,12 +11,12 @@
 import { encodeFunctionData, getAddress, parseAbi, parseEther, parseGwei } from 'viem';
 
 import type { SimulationConfigNew } from '../types';
-import { build94To95TestOnlyCeloState } from './test-only-94-95-flow';
 import ArbitrumDelayedInboxAbi from '../utils/abis/ArbitrumDelayedInboxAbi.json' assert {
   type: 'json',
 };
 import L2CrossChainAccount from '../utils/abis/L2CrossChainAccount.json' assert { type: 'json' };
 import v3FactoryAbi from '../utils/abis/v3FactoryAbi.json' assert { type: 'json' };
+import { build94To95TestOnlyCeloState } from './test-only-94-95-flow';
 
 const XDM_GAS_LIMIT = 200_000;
 const ARB_GAS_LIMIT = 200_000n;
@@ -116,7 +116,11 @@ const baseV2Forward = encodeFunctionData({
   ],
 });
 
-const celoTargets = [CELO_V3_FACTORY_TEST, CELO_V2_FACTORY_TEST, CELO_V4_POOL_MANAGER_TEST] as const;
+const celoTargets = [
+  CELO_V3_FACTORY_TEST,
+  CELO_V2_FACTORY_TEST,
+  CELO_V4_POOL_MANAGER_TEST,
+] as const;
 const celoValues = [0n, 0n, 0n] as const;
 const celoDatas = [
   encodeFunctionData({
@@ -238,7 +242,13 @@ const calls = [
     calldata: encodeFunctionData({
       abi: WORMHOLE_SENDER_ABI,
       functionName: 'sendMessage',
-      args: [[...celoTargets], [...celoValues], [...celoDatas], WORMHOLE_BRIDGE, WORMHOLE_CELO_CHAIN_ID],
+      args: [
+        [...celoTargets],
+        [...celoValues],
+        [...celoDatas],
+        WORMHOLE_BRIDGE,
+        WORMHOLE_CELO_CHAIN_ID,
+      ],
     }),
     value: 0n,
     signature: '',

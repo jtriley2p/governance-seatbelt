@@ -56,10 +56,7 @@ import {
   hashOperationBatchOz,
   hashOperationOz,
 } from '../contracts/governor';
-import {
-  type DerivedStateByChain,
-  mergeStateObjects,
-} from '../derived-state';
+import { type DerivedStateByChain, mergeStateObjects } from '../derived-state';
 import { parseWithSchema, z } from '../validation/zod';
 import { CacheManager } from './block-explorers/cache';
 import { BlockExplorerFactory } from './block-explorers/factory';

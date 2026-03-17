@@ -121,10 +121,7 @@ async function runSimulationPipeline(
 
     for (const [chainId, stateObjects] of Object.entries(config.stateObjectsByChain)) {
       const normalizedChainId = Number(chainId);
-      const mergedState = mergeStateObjects(
-        stateObjects,
-        initialStateByChain[normalizedChainId],
-      );
+      const mergedState = mergeStateObjects(stateObjects, initialStateByChain[normalizedChainId]);
 
       if (mergedState) {
         initialStateByChain[normalizedChainId] = mergedState;
