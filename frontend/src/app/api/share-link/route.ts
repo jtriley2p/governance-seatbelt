@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { buildManagedRelayArtifactRaw } from '@/lib/managed-relay-artifact';
 import { normalizePublishId } from '@/lib/share-link';
 import { SimulationResultsParseError, parseSimulationResultsJson } from '@/lib/simulation-results';
 import { NextResponse } from 'next/server';
-import { buildManagedRelayArtifactRaw } from '../../../../../utils/publish/managed-relay-artifact';
 
 const DEFAULT_MAX_SIMULATION_RESULTS_BYTES = 25 * 1024 * 1024; // 25MB
 const DEFAULT_RELAY_TIMEOUT_MS = 120_000;
