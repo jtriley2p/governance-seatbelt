@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { arbitrum, base, mainnet, optimism } from 'viem/chains';
 import { writeSimulationResultsJson } from '../presentation/report';
 import type { AllCheckResults, CoverageData, DerivedSimulationDependency } from '../types';
 
@@ -13,13 +14,13 @@ const mainChecks: AllCheckResults = {
 };
 
 const destinationChecks: Record<number, AllCheckResults> = {
-  10: {
+  [optimism.id]: {
     'check-op': {
       name: 'Optimism Check',
       result: { info: ['op info'], warnings: [], errors: [] },
     },
   },
-  42161: {
+  [arbitrum.id]: {
     'check-arb': {
       name: 'Arbitrum Check',
       result: { info: ['arb info'], warnings: [], errors: [] },
@@ -55,7 +56,7 @@ function writeFixture(
     markdownReport: '# Report',
     governorAddress: '0x408ED6354d4973f66138C91495F2f2FCbd8724C3',
     outputPath: path,
-    chainId: 1,
+    chainId: mainnet.id,
     simulationType: 'proposed',
     destinationChecks,
     coverage,
@@ -77,9 +78,19 @@ describe('derived report chain coverage invariants', () => {
         timestamp: '2026-02-26T00:00:00.000Z',
       },
       checks: [
-        { checkId: 'check-main', checkName: 'Main Check', status: 'ran', chainId: 1 },
-        { checkId: 'check-op', checkName: 'Optimism Check', status: 'ran', chainId: 10 },
-        { checkId: 'check-arb', checkName: 'Arbitrum Check', status: 'ran', chainId: 42161 },
+        { checkId: 'check-main', checkName: 'Main Check', status: 'ran', chainId: mainnet.id },
+        {
+          checkId: 'check-op',
+          checkName: 'Optimism Check',
+          status: 'ran',
+          chainId: optimism.id,
+        },
+        {
+          checkId: 'check-arb',
+          checkName: 'Arbitrum Check',
+          status: 'ran',
+          chainId: arbitrum.id,
+        },
       ],
       summary: { total: 3, ran: 3, skipped: 0, failed: 0, inferredSkips: 0 },
     };
@@ -96,7 +107,7 @@ describe('derived report chain coverage invariants', () => {
           checkId: 'check-base',
           checkName: 'Base Check',
           status: 'ran',
-          chainId: 8453,
+          chainId: base.id,
         },
       ],
       summary: { total: 4, ran: 4, skipped: 0, failed: 0, inferredSkips: 0 },
@@ -109,9 +120,9 @@ describe('derived report chain coverage invariants', () => {
       derivedFromProposalId: '94',
       derivedFromSimulationId: 'sim-94',
       baselineChains: [
-        { chainId: 1, simulationId: 'sim-94', blockNumber: '22000000' },
-        { chainId: 10, simulationId: 'sim-94-op', blockNumber: '130000000' },
-        { chainId: 42161, simulationId: 'sim-94-arb', blockNumber: '310000000' },
+        { chainId: mainnet.id, simulationId: 'sim-94', blockNumber: '22000000' },
+        { chainId: optimism.id, simulationId: 'sim-94-op', blockNumber: '130000000' },
+        { chainId: arbitrum.id, simulationId: 'sim-94-arb', blockNumber: '310000000' },
       ],
     });
 
@@ -135,7 +146,9 @@ describe('derived report chain coverage invariants', () => {
       expect(derivedChainIds).toContain(chainId);
     }
 
-    for (const baselineChain of baselineChainReports.filter((chain) => chain.chainId !== 1)) {
+    for (const baselineChain of baselineChainReports.filter(
+      (chain) => chain.chainId !== mainnet.id,
+    )) {
       const derivedChain = derivedChainReports.find(
         (chain) => chain.chainId === baselineChain.chainId,
       );

@@ -24,6 +24,8 @@ function bigIntReplacer(_key: string, value: any) {
 export function shouldWriteCanonicalProposalCache(executionOptions?: {
   derivedStateByChain?: unknown;
 }): boolean {
+  // Only non-derived runs should update the main proposal cache entry. Derived
+  // runs are scenario-specific and should not overwrite the canonical baseline.
   return executionOptions?.derivedStateByChain === undefined;
 }
 

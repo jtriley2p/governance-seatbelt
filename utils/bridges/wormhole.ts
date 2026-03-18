@@ -103,7 +103,7 @@ export function parseWormholeMessagesFromProposal(
         });
       }
     } catch {
-      // Skip invalid calldata.
+      // Best-effort decode only; ignore malformed calldata and keep scanning.
     }
   }
 

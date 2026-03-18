@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { arbitrum, mainnet } from 'viem/chains';
 import { writeSimulationResultsJson } from '../presentation/report';
 
 describe('derived provenance metadata in simulation-results.json', () => {
@@ -44,8 +45,8 @@ describe('derived provenance metadata in simulation-results.json', () => {
         derivedFromProposalId: '94',
         derivedFromSimulationId: 'sim-94',
         baselineChains: [
-          { chainId: 1, simulationId: 'sim-94', blockNumber: '22000000' },
-          { chainId: 42161, simulationId: 'sim-94-arb', blockNumber: '310000000' },
+          { chainId: mainnet.id, simulationId: 'sim-94', blockNumber: '22000000' },
+          { chainId: arbitrum.id, simulationId: 'sim-94-arb', blockNumber: '310000000' },
         ],
       },
     });
