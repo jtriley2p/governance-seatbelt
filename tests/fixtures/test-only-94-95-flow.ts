@@ -1,6 +1,6 @@
 import { getAddress, pad, toHex } from 'viem';
 import type { Address } from 'viem';
-import type { SimulationConfigNew } from '../types';
+import type { SimulationConfigNew } from '../../types';
 
 export const TEST_ONLY_CELO_PRE_94_OWNER = getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071');
 

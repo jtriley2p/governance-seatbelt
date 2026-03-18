@@ -11,7 +11,7 @@
 import { encodeFunctionData, getAddress, parseAbi } from 'viem';
 
 import type { SimulationConfigNew } from '../types';
-import { build94To95TestOnlyCeloState } from './test-only-94-95-flow';
+import { build94To95TestOnlyCeloState } from '../tests/fixtures/test-only-94-95-flow';
 
 const FORWARD_ABI = parseAbi(['function forward(address target, bytes data)']);
 const SET_OWNER_ABI = parseAbi(['function setOwner(address _owner)']);
