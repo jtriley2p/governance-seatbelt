@@ -1,6 +1,7 @@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { StructuredSimulationReport } from '@/hooks/use-simulation-results';
 import { AlertTriangleIcon } from 'lucide-react';
+import { getDerivedStateWarning } from './simulation-warning-copy';
 
 interface SimulationWarningBannerProps {
   metadata: StructuredSimulationReport['metadata'];
@@ -9,6 +10,7 @@ interface SimulationWarningBannerProps {
 export function SimulationWarningBanner({ metadata }: SimulationWarningBannerProps) {
   const hasPlaceholders = metadata.proposerIsPlaceholder || metadata.executorIsPlaceholder;
   const simulationType = metadata.simulationType;
+  const derivedStateWarning = getDerivedStateWarning(metadata);
 
   const getMessage = () => {
     if (simulationType === 'new') {
@@ -17,6 +19,7 @@ export function SimulationWarningBanner({ metadata }: SimulationWarningBannerPro
           This is a simulation of a <strong>new proposal</strong> that has not been submitted
           on-chain yet.
           {hasPlaceholders && ' Placeholder addresses are being used for the proposer/executor.'}
+          {derivedStateWarning && <span className="block mt-1">{derivedStateWarning}</span>}
         </span>
       );
     }
@@ -26,6 +29,7 @@ export function SimulationWarningBanner({ metadata }: SimulationWarningBannerPro
           This is a simulation of a <strong>proposed</strong> governance action that has not yet
           been executed on-chain.
           {hasPlaceholders && ' Some addresses shown are simulation placeholders.'}
+          {derivedStateWarning && <span className="block mt-1">{derivedStateWarning}</span>}
         </span>
       );
     }
@@ -34,6 +38,7 @@ export function SimulationWarningBanner({ metadata }: SimulationWarningBannerPro
         <span className="leading-relaxed block">
           This is a <strong>re-simulation</strong> of an already executed proposal. Results shown
           reflect what the simulation produced, which may differ from actual on-chain execution.
+          {derivedStateWarning && <span className="block mt-1">{derivedStateWarning}</span>}
         </span>
       );
     }
@@ -41,6 +46,7 @@ export function SimulationWarningBanner({ metadata }: SimulationWarningBannerPro
       <span className="leading-relaxed block">
         This report shows simulated execution results.
         {hasPlaceholders && ' Some addresses shown are simulation placeholders.'}
+        {derivedStateWarning && <span className="block mt-1">{derivedStateWarning}</span>}
       </span>
     );
   };

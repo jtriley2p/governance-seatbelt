@@ -1,5 +1,5 @@
 import type { CrossChainMessagePreview } from '@/hooks/use-simulation-results';
-import { resolveChainName } from './chain-name';
+import { resolveChainName } from '@/lib/chain-name';
 
 export function formatCrossChainCall(message: CrossChainMessagePreview): string {
   if (message.call?.signature) return message.call.signature;

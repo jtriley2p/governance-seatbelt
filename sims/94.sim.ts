@@ -72,12 +72,12 @@ const WORMHOLE_SENDER_ABI = parseAbi([
 
 // Action 0: OP Mainnet V3 factory → V3OpenFeeAdapter (XDM → CrossChainAccount.forward)
 const opV3Forward = encodeFunctionData({
-  abi: L2CrossChainAccount as unknown as readonly unknown[],
+  abi: L2CrossChainAccount,
   functionName: 'forward',
   args: [
     OP_V3_FACTORY,
     encodeFunctionData({
-      abi: v3FactoryAbi as unknown as readonly unknown[],
+      abi: v3FactoryAbi,
       functionName: 'setOwner',
       args: [OP_FEE_ADAPTER],
     }),
@@ -96,12 +96,12 @@ const call0 = {
 
 // Action 1: Base V3 factory → V3OpenFeeAdapter
 const baseV3Forward = encodeFunctionData({
-  abi: L2CrossChainAccount as unknown as readonly unknown[],
+  abi: L2CrossChainAccount,
   functionName: 'forward',
   args: [
     BASE_V3_FACTORY,
     encodeFunctionData({
-      abi: v3FactoryAbi as unknown as readonly unknown[],
+      abi: v3FactoryAbi,
       functionName: 'setOwner',
       args: [BASE_FEE_ADAPTER],
     }),
@@ -122,7 +122,7 @@ const call1 = {
 const call2 = {
   target: ARB_INBOX,
   calldata: encodeFunctionData({
-    abi: ArbitrumDelayedInboxAbi as unknown as readonly unknown[],
+    abi: ArbitrumDelayedInboxAbi,
     functionName: 'createRetryableTicket',
     args: [
       ARB_V3_FACTORY,
@@ -133,7 +133,7 @@ const call2 = {
       ARB_GAS_LIMIT,
       ARB_MAX_FEE_PER_GAS,
       encodeFunctionData({
-        abi: v3FactoryAbi as unknown as readonly unknown[],
+        abi: v3FactoryAbi,
         functionName: 'setOwner',
 
         args: [ARB_FEE_ADAPTER],
@@ -158,7 +158,7 @@ const call3 = {
 
 // Action 4: OP Mainnet V2 factory feeTo → TokenJar
 const opV2Forward = encodeFunctionData({
-  abi: L2CrossChainAccount as unknown as readonly unknown[],
+  abi: L2CrossChainAccount,
   functionName: 'forward',
   args: [
     OP_V2_FACTORY,
@@ -182,7 +182,7 @@ const call4 = {
 
 // Action 5: Base V2 factory feeTo → TokenJar
 const baseV2Forward = encodeFunctionData({
-  abi: L2CrossChainAccount as unknown as readonly unknown[],
+  abi: L2CrossChainAccount,
   functionName: 'forward',
   args: [
     BASE_V2_FACTORY,
@@ -208,7 +208,7 @@ const call5 = {
 const call6 = {
   target: ARB_INBOX,
   calldata: encodeFunctionData({
-    abi: ArbitrumDelayedInboxAbi as unknown as readonly unknown[],
+    abi: ArbitrumDelayedInboxAbi,
     functionName: 'createRetryableTicket',
     args: [
       ARB_V2_FACTORY,
@@ -234,7 +234,7 @@ const celoTargets = [CELO_V3_FACTORY, CELO_V2_FACTORY, CELO_V4_POOL_MANAGER] as 
 const celoValues = [0n, 0n, 0n] as const;
 const celoDatas = [
   encodeFunctionData({
-    abi: v3FactoryAbi as unknown as readonly unknown[],
+    abi: v3FactoryAbi,
     functionName: 'setOwner',
     args: [CELO_CROSS_CHAIN_ACCOUNT],
   }),
@@ -275,7 +275,7 @@ export const config: SimulationConfigNew = {
   governorType: 'bravo',
   targets: calls.map((c) => c.target),
   values: calls.map((c) => c.value),
-  signatures: calls.map((c) => c.signature as `0x${string}`),
+  signatures: calls.map((c) => c.signature),
   calldatas: calls.map((c) => c.calldata),
   description: `# Protocol Fee Expansion: Vote 1
 

@@ -8,7 +8,7 @@ import { generateAndSaveReports } from './presentation/report';
 import { buildCoverageFromResults, buildCoverageMetadata, runChecksForChain } from './run-checks';
 import type {
   AllCheckResults,
-  CheckResult,
+  DerivedSimulationDependency,
   GovernorType,
   ProposalData,
   SimulationConfig,
@@ -18,8 +18,13 @@ import type {
 } from './types';
 import { cacheProposal, getCachedProposal, needsSimulation } from './utils/cache/proposalCache';
 import { supportsL2Checks } from './utils/chains/capabilities';
+import { mergeAllCheckResults } from './utils/check-results';
 import { getChainConfig, getClientForChain, publicClient } from './utils/clients/client';
-import { handleCrossChainSimulations, simulate } from './utils/clients/tenderly';
+import {
+  type SimulationExecutionOptions,
+  handleCrossChainSimulations,
+  simulate,
+} from './utils/clients/tenderly';
 import { DAO_NAME, GOVERNOR_ADDRESS, REPORTS_OUTPUT_DIRECTORY, SIM_NAME } from './utils/constants';
 import {
   formatProposalId,
@@ -29,101 +34,103 @@ import {
   inferGovernorType,
 } from './utils/contracts/governor';
 import { PROPOSAL_STATES } from './utils/contracts/governor-bravo';
+import {
+  buildDerivedBaselineChains,
+  buildDerivedProvenance,
+  buildDerivedStateByChain,
+  evaluateDependencyOutcome,
+  mergeStateObjects,
+} from './utils/derived-state';
+
+interface CliOptions {
+  proposalId?: bigint;
+  derivedFromProposalId?: bigint;
+  derivedFromSimId?: string;
+}
+
+interface DerivedContext {
+  executionOptions: SimulationExecutionOptions;
+  provenance: DerivedSimulationDependency;
+}
+
+function parseCliOptions(argv: string[]): CliOptions {
+  const options: CliOptions = {};
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    const next = argv[i + 1];
+
+    if (arg === '--proposal-id') {
+      if (!next) throw new Error('Missing value for --proposal-id');
+      options.proposalId = BigInt(next);
+      i += 1;
+      continue;
+    }
+
+    if (arg === '--derived-from-proposal-id') {
+      if (!next) throw new Error('Missing value for --derived-from-proposal-id');
+      options.derivedFromProposalId = BigInt(next);
+      i += 1;
+      continue;
+    }
+
+    if (arg === '--derived-from-sim-id') {
+      if (!next) throw new Error('Missing value for --derived-from-sim-id');
+      options.derivedFromSimId = next;
+      i += 1;
+      continue;
+    }
+
+    if (arg === '--help') {
+      console.log(
+        '\nSeatbelt simulation CLI options:\n  --proposal-id <id>                Run only this on-chain proposal\n  --derived-from-proposal-id <id>   Derive state from predecessor proposal before running target\n  --derived-from-sim-id <sim-name>  Derive state from predecessor local sim config (sims/<sim-name>.sim.ts)\n',
+      );
+      process.exit(0);
+    }
+  }
+
+  if (process.env.DERIVED_FROM_PROPOSAL_ID && !options.derivedFromProposalId) {
+    options.derivedFromProposalId = BigInt(process.env.DERIVED_FROM_PROPOSAL_ID);
+  }
+
+  if (process.env.DERIVED_FROM_SIM_ID && !options.derivedFromSimId) {
+    options.derivedFromSimId = process.env.DERIVED_FROM_SIM_ID;
+  }
+
+  return options;
+}
 
 /**
  * @notice Run the complete simulation pipeline (source + cross-chain)
  */
-async function runSimulationPipeline(config: SimulationConfig): Promise<SimulationResult> {
-  const sourceResult = await simulate(config);
-  return await handleCrossChainSimulations(sourceResult);
-}
+async function runSimulationPipeline(
+  config: SimulationConfig,
+  executionOptions?: SimulationExecutionOptions,
+): Promise<SimulationResult> {
+  let resolvedExecutionOptions = executionOptions;
 
-function dedupeStrings(messages: string[]): string[] {
-  const seen = new Set<string>();
-  const deduped: string[] = [];
-  for (const message of messages) {
-    if (seen.has(message)) continue;
-    seen.add(message);
-    deduped.push(message);
-  }
-  return deduped;
-}
+  if (config.type === 'new' && config.stateObjectsByChain) {
+    const initialStateByChain = {
+      ...(executionOptions?.initialStateByChain ?? {}),
+    };
 
-function dedupeJsonValues<T>(items: T[]): T[] {
-  const seen = new Set<string>();
-  const deduped: T[] = [];
-  for (const item of items) {
-    const key = JSON.stringify(item, (_, value) =>
-      typeof value === 'bigint' ? value.toString() : value,
-    );
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(item);
-  }
-  return deduped;
-}
+    for (const [chainId, stateObjects] of Object.entries(config.stateObjectsByChain)) {
+      const normalizedChainId = Number(chainId);
+      const mergedState = mergeStateObjects(stateObjects, initialStateByChain[normalizedChainId]);
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function mergeCheckResult(current: CheckResult, next: CheckResult): CheckResult {
-  const info = dedupeStrings([...current.info, ...next.info]);
-  const warnings = dedupeStrings([...current.warnings, ...next.warnings]);
-  const errors = dedupeStrings([...current.errors, ...next.errors]);
-
-  // Treat merged checks as skipped only when all merged runs were skipped.
-  const skippedReasons = [current.skipped?.reason, next.skipped?.reason].filter(
-    (reason): reason is string => Boolean(reason),
-  );
-  const skipped =
-    current.skipped && next.skipped && skippedReasons.length > 0
-      ? { reason: dedupeStrings(skippedReasons).join(' | ') }
-      : undefined;
-
-  const permissionsDiffMerged = dedupeJsonValues([
-    ...(current.permissionsDiff ?? []),
-    ...(next.permissionsDiff ?? []),
-  ]);
-  const permissionsDiff = permissionsDiffMerged.length > 0 ? permissionsDiffMerged : undefined;
-
-  let data = current.data ?? next.data;
-  if (current.data !== undefined && next.data !== undefined) {
-    if (Array.isArray(current.data) && Array.isArray(next.data)) {
-      data = dedupeJsonValues([...current.data, ...next.data]);
-    } else if (isPlainObject(current.data) && isPlainObject(next.data)) {
-      data = { ...current.data, ...next.data };
-    }
-  }
-
-  return {
-    info,
-    warnings,
-    errors,
-    ...(data !== undefined ? { data } : {}),
-    ...(skipped ? { skipped } : {}),
-    ...(permissionsDiff ? { permissionsDiff } : {}),
-  };
-}
-
-function mergeAllCheckResults(current: AllCheckResults, next: AllCheckResults): AllCheckResults {
-  const merged: AllCheckResults = { ...current };
-
-  for (const [checkId, nextCheck] of Object.entries(next)) {
-    const currentCheck = merged[checkId];
-
-    if (!currentCheck) {
-      merged[checkId] = nextCheck;
-      continue;
+      if (mergedState) {
+        initialStateByChain[normalizedChainId] = mergedState;
+      }
     }
 
-    merged[checkId] = {
-      name: currentCheck.name || nextCheck.name,
-      result: mergeCheckResult(currentCheck.result, nextCheck.result),
+    resolvedExecutionOptions = {
+      ...executionOptions,
+      initialStateByChain,
     };
   }
 
-  return merged;
+  const sourceResult = await simulate(config, resolvedExecutionOptions);
+  return await handleCrossChainSimulations(sourceResult, resolvedExecutionOptions);
 }
 
 /**
@@ -211,6 +218,8 @@ async function processSimulation(
   proposalId: string,
   proposalState: string,
   shouldCache = true,
+  provenance?: DerivedSimulationDependency,
+  writeReports = true,
 ) {
   const {
     sim,
@@ -329,28 +338,30 @@ async function processSimulation(
     `  [Coverage] Total: ${coverage.summary.total}, Ran: ${coverage.summary.ran}, Skipped: ${coverage.summary.skipped}, Failed: ${coverage.summary.failed}`,
   );
 
-  // Generate reports
-  const dir = `./${REPORTS_OUTPUT_DIRECTORY}/${config.daoName}/${config.governorAddress}`;
-  await generateAndSaveReports({
-    governorType,
-    blocks,
-    proposal,
-    checks: mainnetResults,
-    outputDir: dir,
-    governorAddress: config.governorAddress,
-    destinationSimulations,
-    destinationChecks,
-    executor,
-    proposalCreatedBlock,
-    proposalExecutedBlock,
-    chainId: finalDeps.chainConfig.chainId,
-    simulationType: config.type,
-    simulation: sim,
-    coverage,
-    daoName: config.daoName,
-    contracts: sim.contracts,
-    proposalState,
-  });
+  if (writeReports) {
+    const dir = `./${REPORTS_OUTPUT_DIRECTORY}/${config.daoName}/${config.governorAddress}`;
+    await generateAndSaveReports({
+      governorType,
+      blocks,
+      proposal,
+      checks: mainnetResults,
+      outputDir: dir,
+      governorAddress: config.governorAddress,
+      destinationSimulations,
+      destinationChecks,
+      executor,
+      proposalCreatedBlock,
+      proposalExecutedBlock,
+      chainId: finalDeps.chainConfig.chainId,
+      simulationType: config.type,
+      simulation: sim,
+      coverage,
+      daoName: config.daoName,
+      contracts: sim.contracts,
+      proposalState,
+      provenance,
+    });
+  }
 
   // Prepare simulation data
   const simulationData: SimulationData = {
@@ -375,77 +386,290 @@ async function processSimulation(
     );
   }
 
-  return simulationData;
+  return {
+    simulationData,
+    mainnetResults,
+    destinationChecks,
+  };
+}
+
+async function buildProposalData(
+  governorType: GovernorType,
+  governorAddress: `0x${string}`,
+): Promise<ProposalData> {
+  return {
+    governor: getGovernor(governorType, governorAddress),
+    timelock: await getTimelock(governorType, governorAddress),
+    publicClient,
+    chainConfig: getChainConfig(1),
+    targets: [],
+    touchedContracts: [],
+  };
+}
+
+async function getProposalConfigById(
+  governorType: GovernorType,
+  governorAddress: `0x${string}`,
+  daoName: string,
+  proposalId: bigint,
+): Promise<{ config: SimulationConfig; state: string }> {
+  const stateNum = await getGovernor(governorType, governorAddress).read.state([proposalId]);
+  const stateKey = String(stateNum) as keyof typeof PROPOSAL_STATES;
+  const state = PROPOSAL_STATES[stateKey] || 'Unknown';
+
+  return {
+    config: {
+      type: state === 'Executed' ? 'executed' : 'proposed',
+      daoName,
+      governorAddress: getAddress(governorAddress),
+      governorType,
+      proposalId,
+    },
+    state,
+  };
+}
+
+async function buildDerivedContext(params: {
+  governorType: GovernorType;
+  predecessorConfig: SimulationConfig;
+  predecessorState: string;
+  referenceSimId?: string;
+}): Promise<DerivedContext | { skipReason: string }> {
+  const predecessorResult = await runSimulationPipeline(params.predecessorConfig);
+
+  const predecessorDeps = await buildProposalData(
+    params.governorType,
+    params.predecessorConfig.governorAddress,
+  );
+
+  const processedPredecessor = await processSimulation(
+    params.predecessorConfig,
+    params.governorType,
+    predecessorDeps,
+    predecessorResult,
+    predecessorResult.proposal.id.toString(),
+    params.predecessorState,
+    false,
+    undefined,
+    false,
+  );
+
+  const outcome = evaluateDependencyOutcome(
+    predecessorResult,
+    processedPredecessor.mainnetResults,
+    processedPredecessor.destinationChecks,
+  );
+
+  if (outcome.status !== 'passed') {
+    return {
+      skipReason: outcome.reason ?? `Dependency status was ${outcome.status}`,
+    };
+  }
+
+  const referenceProposalId =
+    'proposalId' in params.predecessorConfig && params.predecessorConfig.proposalId != null
+      ? params.predecessorConfig.proposalId.toString()
+      : undefined;
+
+  const provenance = buildDerivedProvenance({
+    outcome,
+    reference: {
+      proposalId: referenceProposalId,
+      simulationId: params.referenceSimId ?? predecessorResult.sim.simulation.id,
+    },
+    baselineChains: buildDerivedBaselineChains(predecessorResult),
+  });
+
+  return {
+    executionOptions: {
+      derivedStateByChain: buildDerivedStateByChain(predecessorResult),
+    },
+    provenance,
+  };
 }
 
 /**
  * @notice Simulate governance proposals and run proposal checks against them
  */
 async function main() {
-  // --- Run simulations ---
-  // Prepare array to store all simulation outputs
+  const cliOptions = parseCliOptions(process.argv.slice(2));
   const simOutputs: SimulationData[] = [];
+
+  if (cliOptions.derivedFromProposalId && cliOptions.derivedFromSimId) {
+    throw new Error(
+      'Choose only one dependency source: --derived-from-proposal-id or --derived-from-sim-id',
+    );
+  }
 
   let governorType: GovernorType;
 
-  // Determine if we are running a specific simulation or all on-chain proposals for a specified governor.
   if (SIM_NAME) {
-    // If a SIM_NAME is provided, we run that simulation
     const configPath = `./sims/${SIM_NAME}.sim.ts`;
     if (!existsSync(configPath)) {
       throw new Error(`Simulation config file not found for '${SIM_NAME}' at path: ${configPath}`);
     }
-    const config: SimulationConfig = await import(configPath).then((d) => d.config);
 
+    const config: SimulationConfig = await import(configPath).then((d) => d.config);
     governorType = await inferGovernorType(config.governorAddress);
 
-    // Run simulation pipeline (source + cross-chain)
+    let derivedExecutionOptions: SimulationExecutionOptions | undefined;
+    let provenance: DerivedSimulationDependency | undefined;
+
+    if (cliOptions.derivedFromSimId) {
+      const predecessorPath = `./sims/${cliOptions.derivedFromSimId}.sim.ts`;
+      if (!existsSync(predecessorPath)) {
+        throw new Error(`Dependency sim config not found: ${predecessorPath}`);
+      }
+
+      const predecessorConfig: SimulationConfig = await import(predecessorPath).then(
+        (d) => d.config,
+      );
+      const derivedContext = await buildDerivedContext({
+        governorType,
+        predecessorConfig,
+        predecessorState: 'Pending',
+        referenceSimId: cliOptions.derivedFromSimId,
+      });
+
+      if ('skipReason' in derivedContext) {
+        console.warn(`[Index][DERIVED_SKIP] ${derivedContext.skipReason}`);
+        return;
+      }
+
+      derivedExecutionOptions = derivedContext.executionOptions;
+      provenance = derivedContext.provenance;
+    }
+
+    if (cliOptions.derivedFromProposalId) {
+      const predecessor = await getProposalConfigById(
+        governorType,
+        config.governorAddress,
+        config.daoName,
+        cliOptions.derivedFromProposalId,
+      );
+
+      const derivedContext = await buildDerivedContext({
+        governorType,
+        predecessorConfig: predecessor.config,
+        predecessorState: predecessor.state,
+      });
+
+      if ('skipReason' in derivedContext) {
+        console.warn(`[Index][DERIVED_SKIP] ${derivedContext.skipReason}`);
+        return;
+      }
+
+      derivedExecutionOptions = derivedContext.executionOptions;
+      provenance = derivedContext.provenance;
+    }
+
     console.log(`[Index] Simulating source chain for ${SIM_NAME}...`);
-    const finalResult = await runSimulationPipeline(config);
+    const finalResult = await runSimulationPipeline(config, derivedExecutionOptions);
     console.log(`[Index] Cross-chain handling complete for ${SIM_NAME}.`);
 
     const { sim, proposal, deps } = finalResult;
 
-    // Check if source simulation itself failed
     if (!sim.transaction.status) {
       console.error(
         `[Index][FAILURE] Source simulation failed for ${SIM_NAME}. Proceeding to checks/reporting anyway.`,
       );
     }
-    // Log if destination simulation failed
+
     if (finalResult.crossChainFailure) {
       console.error(`[Index][FAILURE] One or more destination simulations failed for ${SIM_NAME}.`);
     }
 
-    // 3. Process simulation (checks, reports, etc.)
     console.log(`[Index] Processing ${SIM_NAME} simulation...`);
-
     await processSimulation(
       config,
       governorType,
-      deps, // Use deps from finalResult
+      deps,
       finalResult,
       proposal.id.toString(),
-      'Pending', // State for custom/new simulations (not yet on-chain)
-      false, // Don't cache custom simulations
+      'Pending',
+      false,
+      provenance,
     );
 
     console.log(`[Index] Reports saved for ${SIM_NAME}.`);
   } else {
-    // If no SIM_NAME is provided, we get proposals to simulate from the chain
     if (!GOVERNOR_ADDRESS) throw new Error('Must provide a GOVERNOR_ADDRESS');
     if (!DAO_NAME) throw new Error('Must provide a DAO_NAME');
+
+    const governorAddress = getAddress(GOVERNOR_ADDRESS);
+    const daoName = DAO_NAME;
+
+    governorType = await inferGovernorType(governorAddress);
+
+    let derivedExecutionOptions: SimulationExecutionOptions | undefined;
+    let provenance: DerivedSimulationDependency | undefined;
+
+    if (cliOptions.derivedFromSimId) {
+      const predecessorPath = `./sims/${cliOptions.derivedFromSimId}.sim.ts`;
+      if (!existsSync(predecessorPath)) {
+        throw new Error(`Dependency sim config not found: ${predecessorPath}`);
+      }
+
+      const predecessorConfig: SimulationConfig = await import(predecessorPath).then(
+        (d) => d.config,
+      );
+      const derivedContext = await buildDerivedContext({
+        governorType,
+        predecessorConfig,
+        predecessorState: 'Pending',
+        referenceSimId: cliOptions.derivedFromSimId,
+      });
+
+      if ('skipReason' in derivedContext) {
+        console.warn(`[Index][DERIVED_SKIP] ${derivedContext.skipReason}`);
+        return;
+      }
+
+      derivedExecutionOptions = derivedContext.executionOptions;
+      provenance = derivedContext.provenance;
+    }
+
+    if (cliOptions.derivedFromProposalId) {
+      const predecessor = await getProposalConfigById(
+        governorType,
+        governorAddress,
+        daoName,
+        cliOptions.derivedFromProposalId,
+      );
+
+      const derivedContext = await buildDerivedContext({
+        governorType,
+        predecessorConfig: predecessor.config,
+        predecessorState: predecessor.state,
+      });
+
+      if ('skipReason' in derivedContext) {
+        console.warn(`[Index][DERIVED_SKIP] ${derivedContext.skipReason}`);
+        return;
+      }
+
+      derivedExecutionOptions = derivedContext.executionOptions;
+      provenance = derivedContext.provenance;
+    }
+
+    if (
+      (cliOptions.derivedFromProposalId || cliOptions.derivedFromSimId) &&
+      !cliOptions.proposalId
+    ) {
+      throw new Error('Derived runs require --proposal-id <id> for the dependent proposal');
+    }
 
     const latestBlock = await publicClient.getBlock();
     if (!latestBlock.number) throw new Error('Failed to get latest block number');
 
-    // Fetch all proposal IDs
-    governorType = await inferGovernorType(GOVERNOR_ADDRESS);
-    const proposalIds = await getProposalIds(governorType, GOVERNOR_ADDRESS, latestBlock.number);
+    const proposalIds = cliOptions.proposalId
+      ? [cliOptions.proposalId]
+      : await getProposalIds(governorType, governorAddress, latestBlock.number);
 
     const states = await Promise.all(
-      proposalIds.map((id) => getGovernor(governorType, GOVERNOR_ADDRESS!).read.state([id])),
+      proposalIds.map((id) => getGovernor(governorType, governorAddress).read.state([id])),
     );
+
     const simProposals: { id: bigint; simType: SimulationConfigBase['type']; state: string }[] =
       proposalIds.map((id, i) => {
         const stateNum = String(states[i]) as keyof typeof PROPOSAL_STATES;
@@ -458,18 +682,20 @@ async function main() {
         };
       });
 
-    // If we aren't simulating all proposals, filter down to just the active ones. For now we
-    // assume we're simulating all by default
     const proposalsToSimulate: typeof simProposals = [];
     const cachedProposals: typeof simProposals = [];
+    const shouldCacheCanonicalProposal = derivedExecutionOptions?.derivedStateByChain === undefined;
+    const bypassCache = !shouldCacheCanonicalProposal;
 
     for (const simProposal of simProposals) {
-      const needsSim = needsSimulation({
-        daoName: DAO_NAME!,
-        governorAddress: GOVERNOR_ADDRESS!,
-        proposalId: simProposal.id.toString(),
-        currentState: simProposal.state,
-      });
+      const needsSim =
+        bypassCache ||
+        needsSimulation({
+          daoName,
+          governorAddress,
+          proposalId: simProposal.id.toString(),
+          currentState: simProposal.state,
+        });
 
       if (needsSim) {
         proposalsToSimulate.push(simProposal);
@@ -478,96 +704,80 @@ async function main() {
       }
     }
 
-    // Load cached proposals
     for (const cachedProposal of cachedProposals) {
       console.log(
-        `Using cached simulation and reports for ${DAO_NAME} proposal ${cachedProposal.id}...`,
+        `Using cached simulation and reports for ${daoName} proposal ${cachedProposal.id}...`,
       );
-      const cachedData = getCachedProposal(
-        DAO_NAME,
-        GOVERNOR_ADDRESS,
-        cachedProposal.id.toString(),
-      );
+      const cachedData = getCachedProposal(daoName, governorAddress, cachedProposal.id.toString());
 
-      if (cachedData) {
-        const reportPath = `./${REPORTS_OUTPUT_DIRECTORY}/${DAO_NAME}/${GOVERNOR_ADDRESS}/${cachedProposal.id}.md`;
-        if (existsSync(reportPath)) {
-          console.log(`  Using cached report for proposal ${cachedProposal.id}`);
-        } else {
-          console.log(
-            `  Report missing for cached proposal ${cachedProposal.id}, skipping for now.`,
-          );
-        }
-        simOutputs.push(cachedData);
+      if (!cachedData) continue;
+
+      const reportPath = `./${REPORTS_OUTPUT_DIRECTORY}/${daoName}/${governorAddress}/${cachedProposal.id}.md`;
+      if (existsSync(reportPath)) {
+        console.log(`  Using cached report for proposal ${cachedProposal.id}`);
+      } else {
+        console.log(`  Report missing for cached proposal ${cachedProposal.id}, skipping for now.`);
       }
+      simOutputs.push(cachedData);
     }
 
-    // Simulate proposals that need simulation
-    const numProposalsToSimulate = proposalsToSimulate.length;
-    if (numProposalsToSimulate > 0) {
+    if (proposalsToSimulate.length > 0) {
       console.log(
-        `Simulating ${numProposalsToSimulate} ${DAO_NAME} proposals: IDs of ${proposalsToSimulate
+        `Simulating ${proposalsToSimulate.length} ${daoName} proposals: IDs of ${proposalsToSimulate
           .map((sim) => formatProposalId(governorType, sim.id))
           .join(', ')}`,
       );
 
-      // Generate the proposal data and dependencies needed by checks
-      const proposalData: ProposalData = {
-        governor: getGovernor(governorType, GOVERNOR_ADDRESS),
-        timelock: await getTimelock(governorType, GOVERNOR_ADDRESS),
-        publicClient,
-        chainConfig: getChainConfig(1), // Mainnet chain config
-        targets: [], // Will be populated from simulation
-        touchedContracts: [], // Will be populated from simulation
-      };
+      const proposalData = await buildProposalData(governorType, governorAddress);
 
       for (const simProposal of proposalsToSimulate) {
-        if (simProposal.simType === 'new')
+        if (simProposal.simType === 'new') {
           throw new Error('Simulation type "new" is not supported in this branch');
-        // Determine if this proposal is already `executed` or currently in-progress (`proposed`)
-        console.log(`  Simulating ${DAO_NAME} proposal ${simProposal.id}...`);
+        }
+
+        console.log(`  Simulating ${daoName} proposal ${simProposal.id}...`);
         const config: SimulationConfig = {
           type: simProposal.simType,
-          daoName: DAO_NAME,
-          governorAddress: getAddress(GOVERNOR_ADDRESS),
+          daoName,
+          governorAddress,
           governorType,
           proposalId: simProposal.id,
         };
 
-        // Run simulation pipeline (source + cross-chain)
         console.log(`  Handling cross-chain messages for proposal ${simProposal.id}...`);
-        const finalResult = await runSimulationPipeline(config);
+        const finalResult = await runSimulationPipeline(config, derivedExecutionOptions);
 
-        // Check if simulations failed
         if (!finalResult.sim.transaction.status) {
           console.error(
             `  [FAILURE] Source simulation failed for proposal ${simProposal.id}. Proceeding to checks/reporting anyway.`,
           );
         }
+
         if (finalResult.crossChainFailure) {
           console.error(
             `  [FAILURE] One or more destination simulations failed for proposal ${simProposal.id}.`,
           );
         }
 
-        const simulationData = await processSimulation(
+        const processed = await processSimulation(
           config,
           governorType,
           proposalData,
           finalResult,
           simProposal.id.toString(),
           simProposal.state,
+          shouldCacheCanonicalProposal,
+          provenance,
         );
 
-        simOutputs.push(simulationData);
+        simOutputs.push(processed.simulationData);
         console.log('    done');
       }
     } else {
-      console.log(`No new proposals to simulate for ${DAO_NAME}`);
+      console.log(`No new proposals to simulate for ${daoName}`);
     }
   }
 
-  // Remove the separate check and report generation loop since we now do it inline
   console.log('All done!');
 }
 

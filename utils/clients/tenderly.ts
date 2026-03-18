@@ -2,6 +2,7 @@ import mftch from 'micro-ftch';
 import type { FETCH_OPT } from 'micro-ftch';
 import {
   type Address,
+  type Hex,
   encodeAbiParameters,
   encodeFunctionData,
   getAddress,
@@ -36,6 +37,7 @@ import {
   parseOptimismL1L2Messages,
   parseOptimismL1L2MessagesFromProposal,
 } from '../bridges/optimism';
+import { parseWormholeMessagesFromProposal } from '../bridges/wormhole';
 import { supportsTenderlyDestinationSimulation } from '../chains/capabilities';
 import {
   BLOCK_GAS_LIMIT,
@@ -55,6 +57,7 @@ import {
   hashOperationBatchOz,
   hashOperationOz,
 } from '../contracts/governor';
+import { type DerivedStateByChain, mergeStateObjects } from '../derived-state';
 import { parseWithSchema, z } from '../validation/zod';
 import { CacheManager } from './block-explorers/cache';
 import { BlockExplorerFactory } from './block-explorers/factory';
@@ -194,7 +197,7 @@ interface GovernorOverrideParams {
   // For new proposals only
   targets?: readonly `0x${string}`[];
   values?: readonly bigint[];
-  signatures?: readonly `0x${string}`[];
+  signatures?: readonly string[];
   calldatas?: readonly `0x${string}`[];
   description?: string;
   proposal?: ProposalEvent;
@@ -215,23 +218,31 @@ interface SimulationPayloadParams {
   saveIfFails?: boolean;
 }
 
+export interface SimulationExecutionOptions {
+  derivedStateByChain?: DerivedStateByChain;
+  initialStateByChain?: DerivedStateByChain;
+}
+
 // --- Simulation methods ---
 
 /**
  * @notice Simulates a proposal based on the provided configuration
  * @param config Configuration object
  */
-export async function simulate(config: SimulationConfig) {
-  if (config.type === 'executed') return await simulateExecuted(config);
-  if (config.type === 'proposed') return await simulateProposed(config);
-  return await simulateNew(config);
+export async function simulate(config: SimulationConfig, options?: SimulationExecutionOptions) {
+  if (config.type === 'executed') return await simulateExecuted(config, options);
+  if (config.type === 'proposed') return await simulateProposed(config, options);
+  return await simulateNew(config, options);
 }
 
 /**
  * @notice Simulates execution of an on-chain proposal that has not yet been executed
  * @param config Configuration object
  */
-export async function simulateNew(config: SimulationConfigNew): Promise<SimulationResult> {
+export async function simulateNew(
+  config: SimulationConfigNew,
+  options?: SimulationExecutionOptions,
+): Promise<SimulationResult> {
   // --- Validate config ---
   const { governorAddress, governorType, targets, values, signatures, calldatas, description } =
     config;
@@ -372,6 +383,15 @@ export async function simulateNew(config: SimulationConfigNew): Promise<Simulati
     saveIfFails: true,
   });
 
+  const seededMainnetState = mergeStateObjects(
+    options?.initialStateByChain?.[1],
+    options?.derivedStateByChain?.[1],
+  );
+  simulationPayload.state_objects = mergeStateObjects(
+    seededMainnetState,
+    simulationPayload.state_objects,
+  );
+
   // Handle ETH transfers if needed
   handleETHValueRequirements(simulationPayload, config.values, from, timelock.address);
 
@@ -397,7 +417,10 @@ export async function simulateNew(config: SimulationConfigNew): Promise<Simulati
  * @notice Simulates execution of an on-chain proposal that has not yet been executed
  * @param config Configuration object
  */
-async function simulateProposed(config: SimulationConfigProposed): Promise<SimulationResult> {
+async function simulateProposed(
+  config: SimulationConfigProposed,
+  options?: SimulationExecutionOptions,
+): Promise<SimulationResult> {
   const { governorAddress, governorType, proposalId } = config;
   const proposalIdBigInt = typeof proposalId === 'bigint' ? proposalId : BigInt(proposalId);
 
@@ -479,7 +502,7 @@ async function simulateProposed(config: SimulationConfigProposed): Promise<Simul
   const txHashes = computeTransactionHashes(
     targets as readonly `0x${string}`[],
     values,
-    sigs as readonly `0x${string}`[],
+    sigs,
     calldatas as readonly `0x${string}`[],
     eta,
   );
@@ -544,6 +567,11 @@ async function simulateProposed(config: SimulationConfigProposed): Promise<Simul
     saveIfFails: true, // Different for proposed
   });
 
+  simulationPayload.state_objects = mergeStateObjects(
+    options?.derivedStateByChain?.[1],
+    simulationPayload.state_objects,
+  );
+
   const formattedProposal: ProposalEvent = {
     id: proposalId,
     proposalId,
@@ -584,7 +612,10 @@ async function simulateProposed(config: SimulationConfigProposed): Promise<Simul
  * @notice Simulates execution of an already-executed governance proposal
  * @param config Configuration object
  */
-async function simulateExecuted(config: SimulationConfigExecuted): Promise<SimulationResult> {
+async function simulateExecuted(
+  config: SimulationConfigExecuted,
+  options?: SimulationExecutionOptions,
+): Promise<SimulationResult> {
   const { governorAddress, governorType, proposalId } = config;
   const proposalIdBigInt = typeof proposalId === 'bigint' ? proposalId : BigInt(proposalId);
 
@@ -672,6 +703,10 @@ async function simulateExecuted(config: SimulationConfigExecuted): Promise<Simul
       save: false,
       generate_access_list: true,
     };
+    simulationPayload.state_objects = mergeStateObjects(
+      options?.derivedStateByChain?.[1],
+      simulationPayload.state_objects,
+    );
     const sim = await sendSimulation(simulationPayload);
 
     // Validate required fields
@@ -775,6 +810,10 @@ async function simulateExecuted(config: SimulationConfigExecuted): Promise<Simul
     save: saveSimulation, // Save successful sims when enabled.
     generate_access_list: true,
   };
+  simulationPayload.state_objects = mergeStateObjects(
+    options?.derivedStateByChain?.[1],
+    simulationPayload.state_objects,
+  );
   const sim = await sendSimulation(simulationPayload);
 
   // Validate required fields
@@ -835,6 +874,7 @@ async function simulateExecuted(config: SimulationConfigExecuted): Promise<Simul
 
 export async function handleCrossChainSimulations(
   sourceResult: SimulationResult,
+  options?: SimulationExecutionOptions,
 ): Promise<SimulationResult> {
   const result = {
     ...sourceResult,
@@ -874,9 +914,13 @@ export async function handleCrossChainSimulations(
       result.proposal.calldatas,
       l1Sender,
     );
+    const wormholeFromProposal = parseWormholeMessagesFromProposal(
+      result.proposal.targets,
+      result.proposal.calldatas,
+    );
 
     let backfilledCount = 0;
-    for (const message of [...arbFromProposal, ...opFromProposal]) {
+    for (const message of [...arbFromProposal, ...opFromProposal, ...wormholeFromProposal]) {
       const key = getMessageKey(message);
       if (!messageMap.has(key)) {
         messageMap.set(key, message);
@@ -950,6 +994,16 @@ export async function handleCrossChainSimulations(
           save: saveSimulation,
         };
 
+        destinationPayload.state_objects = mergeStateObjects(
+          options?.initialStateByChain?.[destinationChainId],
+          destinationPayload.state_objects,
+        );
+
+        destinationPayload.state_objects = mergeStateObjects(
+          destinationPayload.state_objects,
+          options?.derivedStateByChain?.[destinationChainId],
+        );
+
         // Log the payload before sending
         console.log(
           `[CrossChainHandler] Sending L2 Simulation Payload (Chain ${destinationPayload.network_id}):`,
@@ -1022,6 +1076,9 @@ function handleETHValueRequirements(
   const totalValue = values.reduce((sum, val) => sum + val, 0n);
 
   if (totalValue > 0n) {
+    const normalizedFrom = getAddress(from);
+    const normalizedTimelockAddress = getAddress(timelockAddress);
+
     // If we need to send ETH, update the value and from address balance
     simulationPayload.value = totalValue.toString();
 
@@ -1029,14 +1086,14 @@ function handleETHValueRequirements(
     if (!simulationPayload.state_objects) {
       simulationPayload.state_objects = {};
     }
-    simulationPayload.state_objects[from] = {
-      ...simulationPayload.state_objects[from],
+    simulationPayload.state_objects[normalizedFrom] = {
+      ...simulationPayload.state_objects[normalizedFrom],
       balance: totalValue.toString(),
     };
 
     // Also ensure the timelock has enough ETH to execute the proposal
-    simulationPayload.state_objects[timelockAddress] = {
-      ...simulationPayload.state_objects[timelockAddress],
+    simulationPayload.state_objects[normalizedTimelockAddress] = {
+      ...simulationPayload.state_objects[normalizedTimelockAddress],
       balance: totalValue.toString(),
     };
   }
@@ -1061,6 +1118,10 @@ function buildSimulationPayload(params: SimulationPayloadParams): TenderlyPayloa
 
   const { save: saveSimulation, saveIfFails: saveSimulationIfFails } =
     getTenderlySaveFlags(saveIfFails);
+  const normalizedFrom = getAddress(from);
+  const normalizedTimelockAddress = getAddress(timelock.address);
+  const normalizedGovernorAddress = getAddress(governor.address);
+
   return {
     network_id: '1',
     // this field represents the block state to simulate against, so we use the latest block number
@@ -1086,13 +1147,13 @@ function buildSimulationPayload(params: SimulationPayloadParams): TenderlyPayloa
     state_objects: {
       // Since gas price is zero, the sender needs no balance. If the sender does need a balance to
       // send ETH with the execution, this will be overridden later.
-      [from]: { balance: '0' },
+      [normalizedFrom]: { balance: '0' },
       // Ensure transactions are queued in the timelock
-      [timelock.address]: {
+      [normalizedTimelockAddress]: {
         storage: storageObj.stateOverrides[timelock.address.toLowerCase()].value,
       },
       // Ensure governor storage is properly configured so `state(proposalId)` returns `Queued`
-      [governor.address]: {
+      [normalizedGovernorAddress]: {
         storage: storageObj.stateOverrides[governor.address.toLowerCase()].value,
       },
     },
@@ -1419,7 +1480,7 @@ function computeTransactionHashes(
   signatures: readonly string[],
   calldatas: readonly `0x${string}`[],
   eta: bigint,
-): string[] {
+): Hex[] {
   return targets.map((target, i) => {
     const [val, sig, calldata] = [values[i], signatures[i], calldatas[i]];
     return keccak256(

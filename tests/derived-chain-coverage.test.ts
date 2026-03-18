@@ -1,0 +1,194 @@
+import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { arbitrum, base, mainnet, optimism } from 'viem/chains';
+import { parseSimulationResultsJson } from '../frontend/src/lib/simulation-results';
+import { writeSimulationResultsJson } from '../presentation/report';
+import type {
+  AllCheckResults,
+  CoverageData,
+  DerivedSimulationDependency,
+  StructuredSimulationReport,
+} from '../types';
+
+const mainChecks: AllCheckResults = {
+  'check-main': {
+    name: 'Main Check',
+    result: { info: ['main info'], warnings: [], errors: [] },
+  },
+};
+
+const destinationChecks: Record<number, AllCheckResults> = {
+  [optimism.id]: {
+    'check-op': {
+      name: 'Optimism Check',
+      result: { info: ['op info'], warnings: [], errors: [] },
+    },
+  },
+  [arbitrum.id]: {
+    'check-arb': {
+      name: 'Arbitrum Check',
+      result: { info: ['arb info'], warnings: [], errors: [] },
+    },
+  },
+};
+
+function writeFixture(
+  path: string,
+  coverage: CoverageData,
+  provenance?: DerivedSimulationDependency,
+) {
+  writeSimulationResultsJson({
+    governorType: 'bravo',
+    blocks: {
+      current: { number: 22_000_100n, timestamp: 1_700_000_000n },
+      start: null,
+      end: null,
+    },
+    proposal: {
+      id: 95n,
+      proposalId: 95n,
+      proposer: '0x0000000000000000000000000000000000001234',
+      startBlock: 22_000_010n,
+      endBlock: 22_000_020n,
+      description: '# Proposal 95\n\nCross-chain dependent proposal.',
+      targets: ['0x0000000000000000000000000000000000005678'],
+      values: [0n],
+      signatures: [''],
+      calldatas: ['0x'],
+    },
+    checks: mainChecks,
+    markdownReport: '# Report',
+    governorAddress: '0x408ED6354d4973f66138C91495F2f2FCbd8724C3',
+    outputPath: path,
+    chainId: mainnet.id,
+    simulationType: 'proposed',
+    destinationChecks,
+    coverage,
+    provenance,
+  });
+}
+
+function readStructuredReport(path: string): StructuredSimulationReport {
+  const parsed = parseSimulationResultsJson(JSON.parse(readFileSync(path, 'utf8')));
+  const entry = parsed[0];
+  if (!entry) {
+    throw new Error(`Missing simulation result entry in fixture: ${path}`);
+  }
+
+  const structuredReport = entry.report.structuredReport;
+  if (!structuredReport) {
+    throw new Error(`Missing structuredReport in fixture: ${path}`);
+  }
+  return structuredReport as StructuredSimulationReport;
+}
+
+describe('derived report chain coverage invariants', () => {
+  test('derived output preserves destination chain reports/checks and chain coverage is superset/equal', () => {
+    const outDir = mkdtempSync(join(tmpdir(), 'seatbelt-derived-coverage-'));
+
+    const baselinePath = join(outDir, 'baseline.json');
+    const derivedPath = join(outDir, 'derived.json');
+
+    const baselineCoverage: CoverageData = {
+      metadata: {
+        gitCommitHash: 'baseline',
+        gitBranch: 'main',
+        timestamp: '2026-02-26T00:00:00.000Z',
+      },
+      checks: [
+        { checkId: 'check-main', checkName: 'Main Check', status: 'ran', chainId: mainnet.id },
+        {
+          checkId: 'check-op',
+          checkName: 'Optimism Check',
+          status: 'ran',
+          chainId: optimism.id,
+        },
+        {
+          checkId: 'check-arb',
+          checkName: 'Arbitrum Check',
+          status: 'ran',
+          chainId: arbitrum.id,
+        },
+      ],
+      summary: { total: 3, ran: 3, skipped: 0, failed: 0, inferredSkips: 0 },
+    };
+
+    const derivedCoverage: CoverageData = {
+      ...baselineCoverage,
+      metadata: {
+        ...baselineCoverage.metadata,
+        gitCommitHash: 'derived',
+      },
+      checks: [
+        ...baselineCoverage.checks,
+        {
+          checkId: 'check-base',
+          checkName: 'Base Check',
+          status: 'ran',
+          chainId: base.id,
+        },
+      ],
+      summary: { total: 4, ran: 4, skipped: 0, failed: 0, inferredSkips: 0 },
+    };
+
+    writeFixture(baselinePath, baselineCoverage);
+    writeFixture(derivedPath, derivedCoverage, {
+      mode: 'derived',
+      status: 'passed',
+      derivedFromProposalId: '94',
+      derivedFromSimulationId: 'sim-94',
+      baselineChains: [
+        { chainId: mainnet.id, simulationId: 'sim-94', blockNumber: '22000000' },
+        { chainId: optimism.id, simulationId: 'sim-94-op', blockNumber: '130000000' },
+        { chainId: arbitrum.id, simulationId: 'sim-94-arb', blockNumber: '310000000' },
+      ],
+    });
+
+    const baselineReport = readStructuredReport(baselinePath);
+    const derivedReport = readStructuredReport(derivedPath);
+
+    const baselineChainReports = baselineReport.chainReports ?? [];
+    const derivedChainReports = derivedReport.chainReports ?? [];
+
+    const baselineChainIds = baselineChainReports.map((chain) => chain.chainId);
+    const derivedChainIds = derivedChainReports.map((chain) => chain.chainId);
+
+    for (const chainId of baselineChainIds) {
+      expect(derivedChainIds).toContain(chainId);
+    }
+
+    for (const baselineChain of baselineChainReports.filter(
+      (chain) => chain.chainId !== mainnet.id,
+    )) {
+      const derivedChain = derivedChainReports.find(
+        (chain) => chain.chainId === baselineChain.chainId,
+      );
+      expect(derivedChain).toBeDefined();
+      expect((derivedChain?.checks ?? []).map((check) => check.checkId)).toEqual(
+        baselineChain.checks.map((check) => check.checkId),
+      );
+    }
+
+    const baselineCoverageChains = new Set(
+      (baselineReport.coverage?.checks ?? [])
+        .map((check) => check.chainId)
+        .filter((chainId): chainId is number => chainId != null),
+    );
+
+    const derivedCoverageChains = new Set(
+      (derivedReport.coverage?.checks ?? [])
+        .map((check) => check.chainId)
+        .filter((chainId): chainId is number => chainId != null),
+    );
+
+    for (const chainId of baselineCoverageChains) {
+      expect(derivedCoverageChains.has(chainId)).toBe(true);
+    }
+
+    expect(derivedReport.metadata.dependency?.mode).toBe('derived');
+
+    rmSync(outDir, { recursive: true, force: true });
+  });
+});

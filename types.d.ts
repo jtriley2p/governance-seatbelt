@@ -60,9 +60,20 @@ export interface SimulationConfigNew extends SimulationConfigBase {
   type: 'new';
   targets: Address[];
   values: bigint[];
-  signatures: `0x${string}`[];
+  signatures: string[];
   calldatas: `0x${string}`[];
   description: string;
+  stateObjectsByChain?: Record<
+    number,
+    Record<
+      string,
+      {
+        balance?: string;
+        code?: string;
+        storage?: Record<string, string>;
+      }
+    >
+  >;
 }
 
 export type SimulationConfig =
@@ -99,6 +110,23 @@ export interface SimulationResult {
 
 export interface SimulationData extends SimulationResult {
   config: SimulationConfig;
+}
+
+export type DependencyStatus = 'passed' | 'failed' | 'inconclusive' | 'skipped';
+
+export interface DerivedBaselineChain {
+  chainId: number;
+  simulationId?: string;
+  blockNumber?: string;
+}
+
+export interface DerivedSimulationDependency {
+  mode: 'derived';
+  status: DependencyStatus;
+  reason?: string;
+  derivedFromProposalId?: string;
+  derivedFromSimulationId?: string;
+  baselineChains: DerivedBaselineChain[];
 }
 
 // TODO If adding support for a third governor, instead of hardcoding optional governor-specific
@@ -211,7 +239,7 @@ export interface AllCheckResults {
 }
 
 // --- Extracted Cross-Chain Message Type ---
-export type BridgeType = 'ArbitrumL1L2' | 'OptimismL1L2';
+export type BridgeType = 'ArbitrumL1L2' | 'OptimismL1L2' | 'WormholeL1L2';
 
 /**
  * @notice Holds the parameters extracted from a source chain simulation
@@ -758,6 +786,8 @@ export interface StructuredSimulationReport {
     addressLabels?: Record<string, AddressLabel>;
     // On-chain proposal state (Issue #165)
     proposalState?: string;
+    // Dependency provenance for derived-state simulations
+    dependency?: DerivedSimulationDependency;
   };
 }
 
@@ -793,6 +823,8 @@ export interface GenerateReportsParams {
   contracts?: TenderlyContract[];
   // On-chain proposal state (Issue #165)
   proposalState?: string;
+  // Provenance metadata for derived-state simulation chains
+  provenance?: DerivedSimulationDependency;
 }
 
 export interface WriteSimulationResultsJsonParams {
@@ -816,6 +848,8 @@ export interface WriteSimulationResultsJsonParams {
   structuredReport?: StructuredSimulationReport;
   // On-chain proposal state (Issue #165)
   proposalState?: string;
+  // Provenance metadata for derived-state simulation chains
+  provenance?: DerivedSimulationDependency;
 }
 
 export interface FrontendData {

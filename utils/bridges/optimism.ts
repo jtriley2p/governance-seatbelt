@@ -503,7 +503,7 @@ export function parseOptimismL1L2Messages(
         `[Optimism Parser] Found portal deposit message to ${message.l2TargetAddress} on chain ${destinationChainId}`,
       );
     } catch {
-      // Skip invalid calldata.
+      // Best-effort decode only; ignore malformed calldata and keep scanning.
     }
   }
 
@@ -574,7 +574,7 @@ export function parseOptimismL1L2MessagesFromProposal(
           messages.push(message);
         }
       } catch {
-        // Skip invalid calldata.
+        // Best-effort decode only; ignore malformed calldata and keep scanning.
       }
 
       continue;
@@ -615,7 +615,7 @@ export function parseOptimismL1L2MessagesFromProposal(
           messages.push(message);
         }
       } catch {
-        // Skip invalid calldata.
+        // Best-effort decode only; ignore malformed calldata and keep scanning.
       }
     }
   }

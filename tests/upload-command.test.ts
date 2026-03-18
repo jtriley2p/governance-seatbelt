@@ -183,6 +183,35 @@ describe('bun upload command', () => {
     expect(readStringField(parsedLogEntry, 'mode')).toBe('managed-relay');
   });
 
+  it('strips markdown reports before sending managed relay payloads', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-managed-strip-'));
+    const artifactPath = fixturePath('simulation-results.proposed.json');
+    const logPath = join(tempDir, 'publish-log.jsonl');
+
+    let publishedArtifactRaw = '';
+
+    const runResult = await runWithCapturedConsole(
+      ['--artifact', artifactPath, '--publish', '--log', logPath],
+      {
+        env: {},
+        runManagedRelay: async (input) => {
+          publishedArtifactRaw = input.artifactRaw;
+          return {
+            deploymentUrl: 'https://seatbelt-managed-strip.vercel.app',
+          };
+        },
+      },
+    );
+
+    expect(runResult.code).toBe(0);
+    expect(publishedArtifactRaw.length).toBeGreaterThan(0);
+
+    const publishedArtifact = JSON.parse(publishedArtifactRaw);
+    const normalized = Array.isArray(publishedArtifact) ? publishedArtifact : [publishedArtifact];
+
+    expect(normalized[0]?.report?.markdownReport).toBe('');
+  });
+
   it('uses custom relay URL from --relay-url', async () => {
     const tempDir = mkdtempSync(join(tmpdir(), 'seatbelt-upload-custom-relay-'));
     const artifactPath = fixturePath('simulation-results.proposed.json');

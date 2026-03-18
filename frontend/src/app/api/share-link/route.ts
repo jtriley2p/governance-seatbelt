@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { buildRelayPublishArtifactRaw } from '@/lib/relay-publish-artifact';
 import { normalizePublishId } from '@/lib/share-link';
 import { SimulationResultsParseError, parseSimulationResultsJson } from '@/lib/simulation-results';
 import { NextResponse } from 'next/server';
@@ -167,19 +168,6 @@ function readRawArtifact(
   }
 }
 
-function stripMarkdownReports(artifact: ReturnType<typeof parseSimulationResultsJson>): string {
-  // Keep payloads small enough for serverless relay limits.
-  const artifactWithoutMarkdown = artifact.map((result) => ({
-    ...result,
-    report: {
-      ...result.report,
-      markdownReport: '',
-    },
-  }));
-
-  return JSON.stringify(artifactWithoutMarkdown);
-}
-
 async function publishViaManagedRelay(
   artifactRaw: string,
   artifactHash: string,
@@ -279,7 +267,7 @@ export async function POST(request: Request) {
 
     const parsedArtifact: unknown = JSON.parse(readResult.artifactRaw);
     const normalizedArtifact = parseSimulationResultsJson(parsedArtifact);
-    const artifactRawForPublish = stripMarkdownReports(normalizedArtifact);
+    const artifactRawForPublish = buildRelayPublishArtifactRaw(normalizedArtifact);
 
     const artifactHash = createHash('sha256').update(artifactRawForPublish).digest('hex');
     const publishResult = await publishViaManagedRelay(artifactRawForPublish, artifactHash);

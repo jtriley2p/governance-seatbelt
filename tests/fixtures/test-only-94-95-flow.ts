@@ -1,0 +1,40 @@
+import { getAddress, pad, toHex } from 'viem';
+import type { Address } from 'viem';
+import { celo } from 'viem/chains';
+import type { SimulationConfigNew } from '../../types';
+
+export const TEST_ONLY_CELO_PRE_94_OWNER = getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071');
+
+// Runtime bytecode for a tiny owner-gated test-only fixture contract. We keep it
+// inline because Tenderly state seeding needs raw runtime code and this harness
+// should not depend on an extra compile step.
+export const TEST_ONLY_OWNED_TARGET_RUNTIME_BYTECODE =
+  '0x608060405234801561000f575f5ffd5b5060043610610060575f3560e01c8063017e7e581461006457806313af4035146100935780638da5cb5b146100a8578063a2e74af614610093578063f2fde38b14610093578063f46901ed146100ba575b5f5ffd5b600154610077906001600160a01b031681565b6040516001600160a01b03909116815260200160405180910390f35b6100a66100a1366004610162565b6100cd565b005b5f54610077906001600160a01b031681565b6100a66100c8366004610162565b610117565b5f546001600160a01b031633146100f6576040516282b42960e81b815260040160405180910390fd5b5f80546001600160a01b0319166001600160a01b0392909216919091179055565b5f546001600160a01b03163314610140576040516282b42960e81b815260040160405180910390fd5b600180546001600160a01b0319166001600160a01b0392909216919091179055565b5f60208284031215610172575f5ffd5b81356001600160a01b0381168114610188575f5ffd5b939250505056fea264697066735822122023b46487b21aa1f7ef8ca5b6eb58918d1da4b9f825f74993f50e7c826ee6f6c964736f6c63430008210033' as const;
+
+const OWNER_SLOT = toHex(0n, { size: 32 });
+const FEE_TO_SLOT = toHex(1n, { size: 32 });
+
+type SeededStateObjects = NonNullable<SimulationConfigNew['stateObjectsByChain']>;
+
+export function buildTestOnlyOwnedTargetState(
+  owner: Address,
+): NonNullable<SeededStateObjects[number]>[string] {
+  return {
+    code: TEST_ONLY_OWNED_TARGET_RUNTIME_BYTECODE,
+    storage: {
+      [OWNER_SLOT]: pad(owner, { size: 32 }),
+      [FEE_TO_SLOT]: pad('0x0000000000000000000000000000000000000000', { size: 32 }),
+    },
+  };
+}
+
+export function build94To95TestOnlyCeloState(targets: readonly Address[]): SeededStateObjects {
+  return {
+    [celo.id]: Object.fromEntries(
+      targets.map((target) => [
+        getAddress(target),
+        buildTestOnlyOwnedTargetState(TEST_ONLY_CELO_PRE_94_OWNER),
+      ]),
+    ),
+  };
+}
