@@ -3,12 +3,12 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { arbitrum, base, mainnet, optimism } from 'viem/chains';
+import { parseSimulationResultsJson } from '../frontend/src/lib/simulation-results';
 import { writeSimulationResultsJson } from '../presentation/report';
 import type {
   AllCheckResults,
   CoverageData,
   DerivedSimulationDependency,
-  FrontendData,
   StructuredSimulationReport,
 } from '../types';
 
@@ -71,12 +71,17 @@ function writeFixture(
 }
 
 function readStructuredReport(path: string): StructuredSimulationReport {
-  const parsed = JSON.parse(readFileSync(path, 'utf8')) as FrontendData;
-  const structuredReport = parsed.report.structuredReport;
+  const parsed = parseSimulationResultsJson(JSON.parse(readFileSync(path, 'utf8')));
+  const entry = parsed[0];
+  if (!entry) {
+    throw new Error(`Missing simulation result entry in fixture: ${path}`);
+  }
+
+  const structuredReport = entry.report.structuredReport;
   if (!structuredReport) {
     throw new Error(`Missing structuredReport in fixture: ${path}`);
   }
-  return structuredReport;
+  return structuredReport as StructuredSimulationReport;
 }
 
 describe('derived report chain coverage invariants', () => {
