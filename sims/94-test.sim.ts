@@ -10,13 +10,13 @@
  */
 import { encodeFunctionData, getAddress, parseAbi, parseEther, parseGwei } from 'viem';
 
+import { build94To95TestOnlyCeloState } from '../tests/fixtures/test-only-94-95-flow';
 import type { SimulationConfigNew } from '../types';
 import ArbitrumDelayedInboxAbi from '../utils/abis/ArbitrumDelayedInboxAbi.json' assert {
   type: 'json',
 };
 import L2CrossChainAccount from '../utils/abis/L2CrossChainAccount.json' assert { type: 'json' };
 import v3FactoryAbi from '../utils/abis/v3FactoryAbi.json' assert { type: 'json' };
-import { build94To95TestOnlyCeloState } from '../tests/fixtures/test-only-94-95-flow';
 
 const XDM_GAS_LIMIT = 200_000;
 const ARB_GAS_LIMIT = 200_000n;

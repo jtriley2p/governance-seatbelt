@@ -16,12 +16,7 @@ import type {
   SimulationData,
   SimulationResult,
 } from './types';
-import {
-  cacheProposal,
-  getCachedProposal,
-  needsSimulation,
-  shouldWriteCanonicalProposalCache,
-} from './utils/cache/proposalCache';
+import { cacheProposal, getCachedProposal, needsSimulation } from './utils/cache/proposalCache';
 import { supportsL2Checks } from './utils/chains/capabilities';
 import { mergeAllCheckResults } from './utils/check-results';
 import { getChainConfig, getClientForChain, publicClient } from './utils/clients/client';
@@ -689,7 +684,7 @@ async function main() {
 
     const proposalsToSimulate: typeof simProposals = [];
     const cachedProposals: typeof simProposals = [];
-    const shouldCacheCanonicalProposal = shouldWriteCanonicalProposalCache(derivedExecutionOptions);
+    const shouldCacheCanonicalProposal = derivedExecutionOptions?.derivedStateByChain === undefined;
     const bypassCache = !shouldCacheCanonicalProposal;
 
     for (const simProposal of simProposals) {

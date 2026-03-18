@@ -21,14 +21,6 @@ function bigIntReplacer(_key: string, value: any) {
   return value;
 }
 
-export function shouldWriteCanonicalProposalCache(executionOptions?: {
-  derivedStateByChain?: unknown;
-}): boolean {
-  // Only non-derived runs should update the main proposal cache entry. Derived
-  // runs are scenario-specific and should not overwrite the canonical baseline.
-  return executionOptions?.derivedStateByChain === undefined;
-}
-
 function isValidCachedProposal(data: unknown): data is ProposalCacheEntry {
   if (!data || typeof data !== 'object') return false;
   const entry = data as ProposalCacheEntry;
