@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { arbitrum, base, mainnet, optimism } from 'viem/chains';
 import { writeSimulationResultsJson } from '../presentation/report';
-import type { AllCheckResults, CoverageData, DerivedSimulationDependency } from '../types';
+import type {
+  AllCheckResults,
+  CoverageData,
+  DerivedSimulationDependency,
+  FrontendData,
+  StructuredSimulationReport,
+} from '../types';
 
 const mainChecks: AllCheckResults = {
   'check-main': {
@@ -62,6 +68,15 @@ function writeFixture(
     coverage,
     provenance,
   });
+}
+
+function readStructuredReport(path: string): StructuredSimulationReport {
+  const parsed = JSON.parse(readFileSync(path, 'utf8')) as FrontendData;
+  const structuredReport = parsed.report.structuredReport;
+  if (!structuredReport) {
+    throw new Error(`Missing structuredReport in fixture: ${path}`);
+  }
+  return structuredReport;
 }
 
 describe('derived report chain coverage invariants', () => {
@@ -126,18 +141,11 @@ describe('derived report chain coverage invariants', () => {
       ],
     });
 
-    const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
-    const derived = JSON.parse(readFileSync(derivedPath, 'utf8'));
+    const baselineReport = readStructuredReport(baselinePath);
+    const derivedReport = readStructuredReport(derivedPath);
 
-    const baselineChainReports = baseline.report.structuredReport.chainReports as Array<{
-      chainId: number;
-      checks: Array<{ checkId: string }>;
-    }>;
-
-    const derivedChainReports = derived.report.structuredReport.chainReports as Array<{
-      chainId: number;
-      checks: Array<{ checkId: string }>;
-    }>;
+    const baselineChainReports = baselineReport.chainReports ?? [];
+    const derivedChainReports = derivedReport.chainReports ?? [];
 
     const baselineChainIds = baselineChainReports.map((chain) => chain.chainId);
     const derivedChainIds = derivedChainReports.map((chain) => chain.chainId);
@@ -159,13 +167,13 @@ describe('derived report chain coverage invariants', () => {
     }
 
     const baselineCoverageChains = new Set(
-      (baseline.report.structuredReport.coverage.checks as Array<{ chainId?: number }>)
+      (baselineReport.coverage?.checks ?? [])
         .map((check) => check.chainId)
         .filter((chainId): chainId is number => chainId != null),
     );
 
     const derivedCoverageChains = new Set(
-      (derived.report.structuredReport.coverage.checks as Array<{ chainId?: number }>)
+      (derivedReport.coverage?.checks ?? [])
         .map((check) => check.chainId)
         .filter((chainId): chainId is number => chainId != null),
     );
@@ -174,7 +182,7 @@ describe('derived report chain coverage invariants', () => {
       expect(derivedCoverageChains.has(chainId)).toBe(true);
     }
 
-    expect(derived.report.structuredReport.metadata.dependency.mode).toBe('derived');
+    expect(derivedReport.metadata.dependency?.mode).toBe('derived');
 
     rmSync(outDir, { recursive: true, force: true });
   });

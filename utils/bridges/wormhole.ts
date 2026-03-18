@@ -1,5 +1,4 @@
-import { decodeFunctionData, getAddress, parseAbi, slice, toFunctionSelector } from 'viem';
-import type { Hex } from 'viem';
+import { decodeFunctionData, getAddress, isHex, parseAbi, slice, toFunctionSelector } from 'viem';
 import type { ExtractedCrossChainMessage } from '../../types.d';
 
 const WORMHOLE_SEND_MESSAGE_ABI = parseAbi([
@@ -32,10 +31,6 @@ function hasMatchingLengths(
   return targets.length === values.length && values.length === datas.length;
 }
 
-function isHexString(value: unknown): value is Hex {
-  return typeof value === 'string' && value.startsWith('0x');
-}
-
 /**
  * Extract wormhole destination calls from proposal calldata.
  *
@@ -50,7 +45,7 @@ export function parseWormholeMessagesFromProposal(
   for (let i = 0; i < Math.min(targets.length, calldatas.length); i += 1) {
     const target = targets[i];
     const data = calldatas[i];
-    if (!target || !isHexString(data) || data === '0x' || data.length < 10) continue;
+    if (!target || !isHex(data) || data === '0x' || data.length < 10) continue;
 
     let normalizedTarget: string;
     try {
@@ -89,7 +84,7 @@ export function parseWormholeMessagesFromProposal(
         const value = wormholeValues[j];
         const calldata = wormholeDatas[j];
 
-        if (typeof target !== 'string' || typeof value !== 'bigint' || !isHexString(calldata)) {
+        if (typeof target !== 'string' || typeof value !== 'bigint' || !isHex(calldata)) {
           continue;
         }
 
