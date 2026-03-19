@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { encodeFunctionData, getAddress, parseAbi } from 'viem';
 import { mainnet } from 'viem/chains';
 import type { TenderlySimulation } from '../../types.d';
@@ -46,9 +46,12 @@ const transportCalls: Array<Record<string, unknown> | undefined> = [];
 const transportQueue: TransportOutcome[] = [];
 
 let handleCrossChainSimulations: CrossChainHandler;
+let tenderlyImportVersion = 0;
 
-beforeAll(async () => {
-  ({ handleCrossChainSimulations } = await import('../../utils/clients/tenderly'));
+beforeEach(async () => {
+  ({ handleCrossChainSimulations } = await import(
+    `../../utils/clients/tenderly?execution-engine-test=${tenderlyImportVersion++}`
+  ));
 });
 
 afterEach(() => {
@@ -82,7 +85,8 @@ function makeSimulation(params: {
   sim.transaction.block_number = 31_000_000;
   sim.transaction.status = params.status ?? true;
 
-  const callTrace = sim.transaction.transaction_info.call_trace as typeof sim.transaction.transaction_info.call_trace & {
+  const callTrace = sim.transaction.transaction_info
+    .call_trace as typeof sim.transaction.transaction_info.call_trace & {
     error_reason?: string;
   };
   callTrace.error_reason = params.errorReason;
