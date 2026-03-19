@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { encodeFunctionData } from 'viem';
 import { mainnet } from 'viem/chains';
-import type { CallTrace, SimulationConfigNew, TenderlySimulation } from '../../types';
+import type { CallTrace, SimulationConfigNew } from '../../types';
 import { extractArbitrumL1L2Jobs } from '../../utils/bridges/arbitrum';
-import { extractOptimismL1L2Jobs, SEND_MESSAGE_ABI } from '../../utils/bridges/optimism';
+import { SEND_MESSAGE_ABI, extractOptimismL1L2Jobs } from '../../utils/bridges/optimism';
 import { getChainConfig } from '../../utils/clients/client';
 import { simulateNew } from '../../utils/clients/tenderly';
 import { handleCrossChainSimulations } from '../../utils/clients/tenderly';

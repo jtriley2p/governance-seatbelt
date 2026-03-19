@@ -3,13 +3,8 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Address, type Hex, parseAbi, zeroAddress, zeroHash } from 'viem';
-import type {
-  AllCheckResults,
-  ProposalEvent,
-  SimulationBlock,
-  SimulationResult,
-} from '../types';
 import { createMockSimulation } from '../checks/tests/test-utils';
+import type { AllCheckResults, ProposalEvent, SimulationBlock, SimulationResult } from '../types';
 import { clearFunctionSignatureRegistryCache } from '../utils/clients/function-signature-registry';
 
 describe('cross-chain selector fallback decode', () => {

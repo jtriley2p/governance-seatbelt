@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { encodeFunctionData, parseAbiItem } from 'viem';
-import type { ProposalData, ProposalEvent, TenderlySimulation } from '../../types';
+import type { ProposalData, ProposalEvent } from '../../types';
 import { BlockExplorerFactory } from '../../utils/clients/block-explorers/factory';
 import { checkDecodeCalldata } from '../check-decode-calldata';
 import { createMockSimulation } from './test-utils';

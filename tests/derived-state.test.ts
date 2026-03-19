@@ -490,9 +490,7 @@ describe('derived-state execution helpers', () => {
     );
     expect(
       overrides[mainnet.id]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.storage?.['0x01'],
-    ).toBe(
-      '0x99',
-    );
+    ).toBe('0x99');
   });
 
   test('omits empty balances from derived state overrides', () => {
@@ -521,9 +519,7 @@ describe('derived-state execution helpers', () => {
     ).toBeUndefined();
     expect(
       overrides[mainnet.id]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.storage?.['0x01'],
-    ).toBe(
-      '0x99',
-    );
+    ).toBe('0x99');
   });
 
   test('extracts deployed bytecode alongside balance and storage overrides', () => {
@@ -556,9 +552,7 @@ describe('derived-state execution helpers', () => {
     );
     expect(
       overrides[mainnet.id]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.storage?.['0x01'],
-    ).toBe(
-      '0x99',
-    );
+    ).toBe('0x99');
   });
 
   test('target proposal bookkeeping can override overlapping derived governance slots', () => {

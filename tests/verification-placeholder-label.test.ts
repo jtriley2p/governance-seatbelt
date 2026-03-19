@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { getAddress } from 'viem';
 import { createMockSimulation } from '../checks/tests/test-utils';
-import type { ProposalData, ProposalEvent, TenderlySimulation } from '../types';
+import type { ProposalData, ProposalEvent } from '../types';
 
 function seedEnv(): void {
   process.env.MAINNET_RPC_URL ??= 'http://localhost:8545';
