@@ -51,7 +51,7 @@ export function ChainLogo({ chainId, size = 20 }: { chainId: number; size?: numb
     [unichain.id]: '/chain-logos/unichain.svg',
     [ink.id]: '/chain-logos/ink.png',
     [bob.id]: '/chain-logos/bob.svg',
-    [bsc.id]: '/chain-logos/bsc.png',
+    [bsc.id]: '/chain-logos/bsc.svg',
     [polygon.id]: '/chain-logos/polygon.png',
     [avalanche.id]: '/chain-logos/avalanche.svg',
     [monad.id]: '/chain-logos/monad.svg',
