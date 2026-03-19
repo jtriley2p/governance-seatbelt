@@ -9,6 +9,7 @@ import {
   UserIcon,
 } from 'lucide-react';
 import { useMemo } from 'react';
+import { ADDRESS_MARKDOWN_LINK_REGEX } from './addressMarkdownLink';
 
 type VerificationStatus = 'verified' | 'unverified' | 'eoa' | 'unknown';
 
@@ -30,7 +31,7 @@ function normalizeBaseUrl(baseUrl?: string): string {
 }
 
 function parseVerificationLine(line: string): ParsedContractBase | null {
-  const markdownLinkMatch = line.match(/\[`?(0x[a-fA-F0-9]{40})`?\]\((https?:\/\/[^)]+)\)/);
+  const markdownLinkMatch = line.match(ADDRESS_MARKDOWN_LINK_REGEX);
   const plainAddressMatch = line.match(/(0x[a-fA-F0-9]{40})/);
   const address = markdownLinkMatch?.[1] || plainAddressMatch?.[1];
 

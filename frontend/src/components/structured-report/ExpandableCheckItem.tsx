@@ -32,6 +32,10 @@ import { FormattedCheckDetails } from './FormattedCheckDetails';
 import { ProxyResolutionDetails } from './ProxyResolutionDetails';
 import { StateChanges } from './StateChanges';
 
+function stripMarkdownLinks(text: string): string {
+  return text.replace(/\[`?([^`\]]+)`?\]\((https?:\/\/[^)]+)\)/g, '$1');
+}
+
 export function ExpandableCheckItem({
   check,
   stateChanges,
@@ -159,13 +163,14 @@ export function ExpandableCheckItem({
 
   const outcome = getOutcome(check, coverage);
   const methodTag = coverage?.wasInferred ? 'Inferred' : null;
-  const secondaryLine =
-    outcome === 'not_applicable'
-      ? (coverage?.skipReason ?? check.skipReason ?? 'Not applicable')
+  const secondaryLine = isVerificationCheck
+    ? null
+    : outcome === 'not_applicable'
+      ? stripMarkdownLinks(coverage?.skipReason ?? check.skipReason ?? 'Not applicable')
       : outcome === 'not_run'
-        ? (coverage?.skipReason ?? 'Not run')
+        ? stripMarkdownLinks(coverage?.skipReason ?? 'Not run')
         : coverage?.wasInferred && coverage?.skipReason
-          ? `Inferred: ${coverage.skipReason}`
+          ? `Inferred: ${stripMarkdownLinks(coverage.skipReason)}`
           : null;
 
   const treasuryData = useMemo(() => {

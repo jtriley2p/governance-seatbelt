@@ -13,6 +13,7 @@ import { EventsDisplay } from './EventsDisplay';
 import { SecurityAnalysisOutput } from './SecurityAnalysisOutput';
 import { SimulationPlaceholderBadge } from './SimulationPlaceholderBadge';
 import { StateChanges } from './StateChanges';
+import { ADDRESS_MARKDOWN_LINK_REGEX } from './addressMarkdownLink';
 import { buildAddressLink, isPlaceholderAddress } from './explorer';
 
 export function FormattedCheckDetails({
@@ -144,14 +145,12 @@ export function FormattedCheckDetails({
             processedLine.includes('Contract (with DELEGATECALL') ||
             processedLine.includes('Contract (with SELFDESTRUCT)') ||
             processedLine.includes('Empty account (could deploy code later)') ||
-            processedLine.includes('EOA (may have code later)') ||
+            processedLine.includes('EOA (may have code later') ||
             processedLine.includes(': EOA') ||
             processedLine.includes('Trusted contract (not checked)');
 
           if (isTargetLine) {
-            const markdownLinkMatch = processedLine.match(
-              /\[(0x[a-fA-F0-9]{40})\]\(https?:\/\/[^)]+\)/,
-            );
+            const markdownLinkMatch = processedLine.match(ADDRESS_MARKDOWN_LINK_REGEX);
             const backtickMatch =
               processedLine.match(/\[`(0x[a-fA-F0-9]{40})`\]/) ||
               processedLine.match(/at `(0x[a-fA-F0-9]{40})`/);
@@ -172,7 +171,7 @@ export function FormattedCheckDetails({
                 status = 'Contract (with SELFDESTRUCT)';
               else if (processedLine.includes('Empty account (could deploy code later)'))
                 status = 'Empty account (could deploy code later)';
-              else if (processedLine.includes('EOA (may have code later)'))
+              else if (processedLine.includes('EOA (may have code later'))
                 status = 'EOA (may have code later)';
               else if (processedLine.includes(': EOA')) status = 'EOA';
 
@@ -393,7 +392,7 @@ export function FormattedCheckDetails({
           }
 
           const combinedRegex =
-            /\[(0x[a-fA-F0-9]{40})\]\(https?:\/\/[^)]+\)|`(0x[a-fA-F0-9]{40})`/g;
+            /\[`?(0x[a-fA-F0-9]{40})`?\]\(https?:\/\/[^)]+\)|`(0x[a-fA-F0-9]{40})`/g;
           let combinedMatch: RegExpExecArray | null;
 
           combinedMatch = combinedRegex.exec(processedLine);
