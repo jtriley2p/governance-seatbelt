@@ -23,7 +23,7 @@ const tenderlyBlockNumberSchema = z
   })
   .passthrough();
 
-const tenderlyStorageEncodingSchema = z
+const tenderlyStorageEncodingSchema: z.ZodType<StorageEncodingResponse> = z
   .object({
     stateOverrides: z.record(
       z.string(),
@@ -167,7 +167,7 @@ export async function sendEncodeRequest(
       'Tenderly storage encoding response',
     );
 
-    return response as StorageEncodingResponse;
+    return response;
   } catch (err) {
     console.log('logging sendEncodeRequest error');
     console.log(JSON.stringify(err, null, 2));
