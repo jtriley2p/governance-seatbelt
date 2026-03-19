@@ -17,6 +17,7 @@ import ArbitrumDelayedInboxAbi from '../utils/abis/ArbitrumDelayedInboxAbi.json'
 };
 import L2CrossChainAccount from '../utils/abis/L2CrossChainAccount.json' assert { type: 'json' };
 import v3FactoryAbi from '../utils/abis/v3FactoryAbi.json' assert { type: 'json' };
+import { WORMHOLE_SEND_MESSAGE_ABI } from '../utils/bridges/wormhole';
 
 const XDM_GAS_LIMIT = 200_000;
 const ARB_GAS_LIMIT = 200_000n;
@@ -60,10 +61,6 @@ const SEND_MESSAGE_ABI = parseAbi([
 const V2_FACTORY_ABI = parseAbi(['function setFeeTo(address)', 'function setFeeToSetter(address)']);
 const OWNED_ABI = parseAbi(['function transferOwnership(address newOwner)']);
 const WETH_ABI = parseAbi(['function deposit()']);
-const WORMHOLE_SENDER_ABI = parseAbi([
-  'function sendMessage(address[] targets, uint256[] values, bytes[] datas, address wormhole, uint16 chainId)',
-]);
-
 const opV3Forward = encodeFunctionData({
   abi: L2CrossChainAccount,
   functionName: 'forward',
@@ -240,7 +237,7 @@ const calls = [
   {
     target: WORMHOLE_SENDER,
     calldata: encodeFunctionData({
-      abi: WORMHOLE_SENDER_ABI,
+      abi: WORMHOLE_SEND_MESSAGE_ABI,
       functionName: 'sendMessage',
       args: [
         [...celoTargets],
