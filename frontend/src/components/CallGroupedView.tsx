@@ -1024,9 +1024,6 @@ function CrossChainCallsSection({
                         </Badge>
                       )}
                     </div>
-                    <div className="text-[11px] text-muted-foreground whitespace-nowrap">
-                      {job.steps.length} step{job.steps.length === 1 ? '' : 's'}
-                    </div>
                   </div>
 
                   {job.error && (

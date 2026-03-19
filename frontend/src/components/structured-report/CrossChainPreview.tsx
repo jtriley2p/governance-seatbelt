@@ -101,10 +101,6 @@ export function CrossChainPreview({ jobs }: { jobs: CrossChainJobPreview[] }) {
                       {call}
                     </code>
 
-                    <div className="text-[10px] text-muted-foreground mt-1">
-                      {job.steps.length} step{job.steps.length === 1 ? '' : 's'}
-                    </div>
-
                     {job.error ? (
                       <div className="text-[10px] text-red-600 mt-1">{job.error}</div>
                     ) : null}
