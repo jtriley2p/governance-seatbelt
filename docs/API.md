@@ -54,7 +54,7 @@ Consumers should treat these outputs as a **pipeline** with four gates. If a gat
      - If `coverage.summary.skipped > 0`, treat as incomplete.
      - If `coverage.summary.inferredSkips > 0`, treat as incomplete (heuristic skips indicate partial execution).
    - If `report.structuredReport.crossChain` exists:
-     - If any `crossChain.messages[].status === "failure"`, treat as incomplete (destination simulation did not complete).
+     - If any `crossChain.jobs[].status === "failure"`, treat as incomplete (destination simulation did not complete).
 
 4) **Gate 4 — Decision**
    - Use `report.structuredReport.status` as the canonical decision bucket:
@@ -196,42 +196,38 @@ export interface CheckCoverage {
 
 ### `CrossChainPreview` (destination simulation preview)
 
-This is a lightweight, UI-friendly summary of extracted L2 messages. It is **optional** and may be absent.
-If `destinationChains` is present, it includes the full per-chain check findings for destination simulations.
+This is a lightweight, UI-friendly summary of destination-chain actions. It is **optional** and may be absent.
+Each `job` is one cross-chain action on a destination chain. Its `steps` are the ordered low-level calls used to carry that action out.
 
 ```ts
 export interface CrossChainPreview {
-  messages: CrossChainMessagePreview[];
-  destinationChains?: Array<{
-    chainId: number;
-    chainName: string;
-    blockExplorerBaseUrl?: string;
-    status: 'success' | 'warning' | 'error';
-    checks: SimulationCheck[];
-  }>;
+  jobs: CrossChainJobPreview[];
 }
 
-export interface CrossChainMessagePreview {
+export interface CrossChainJobPreview {
   chainId: number;
   chainName: string;
   blockExplorerBaseUrl: string;
   bridgeType: string;                    // e.g. "ArbitrumL1L2" | "OptimismL1L2"
+  status: 'success' | 'failure' | 'skipped';
+  error?: string;
+  l2FromAddress: `0x${string}`;
+  sourceOrder: number;
+  steps: CrossChainJobStepPreview[];
+}
+
+export interface CrossChainJobStepPreview {
+  stepIndex: number;
   status: 'success' | 'failure';
   error?: string;
-
-  l2FromAddress?: `0x${string}`;
-  l2TargetAddress?: `0x${string}`;
-  l2Value?: string;                      // decimal string
-  l2InputData?: `0x${string}`;           // calldata
-
-  // Optional label inferred from the destination simulation contract list.
-  targetLabel?: string;
-
-  // Optional decode (best-effort).
+  l2TargetAddress: `0x${string}`;
+  l2Value: string;                       // decimal string
+  l2InputData: `0x${string}`;            // calldata
+  targetLabel?: string;                  // inferred from destination contracts
   call?: {
     selector: `0x${string}`;
     signature?: string;                  // e.g. "transfer(address,uint256)"
-    args?: unknown[];                    // optional; present when full decoding is available
+    args?: unknown[];
   };
 }
 ```

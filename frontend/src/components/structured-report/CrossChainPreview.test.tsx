@@ -43,7 +43,9 @@ describe('CrossChainPreview', () => {
     expect(html).toContain('Arbitrum');
     expect(html).toContain('Arbitrum target');
     expect(html).toContain('bridgeAction1()');
-    expect(html).toContain('Execution 2');
+    expect(html).not.toContain('Action 1');
+    expect(html).not.toContain('Action 2');
+    expect(html).not.toContain('Execution 2');
     expect(html).not.toContain('1 step');
     expect(html).not.toContain('2 steps');
   });

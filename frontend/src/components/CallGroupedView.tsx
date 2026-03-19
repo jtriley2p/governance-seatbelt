@@ -970,7 +970,6 @@ function CrossChainCallsSection({
                 )}
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                {chainJobs.length > 1 ? <span>{chainJobs.length} executions</span> : null}
                 {failedCount > 0 && (
                   <Badge variant="destructive" className="text-[10px] px-1.5">
                     {failedCount} failed
@@ -979,11 +978,10 @@ function CrossChainCallsSection({
               </div>
             </div>
 
-            {chainJobs.map((job, jobIndex) => {
+            {chainJobs.map((job) => {
               const firstStep = job.steps[0];
               const target = firstStep?.l2TargetAddress;
               const targetLabel = firstStep?.targetLabel;
-              const executionLabel = chainJobs.length > 1 ? `Execution ${jobIndex + 1}` : null;
 
               return (
                 <div
@@ -1008,11 +1006,6 @@ function CrossChainCallsSection({
                           {targetLabel}
                         </Badge>
                       )}
-                      {executionLabel ? (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                          {executionLabel}
-                        </Badge>
-                      ) : null}
                       {job.status === 'skipped' && (
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                           Skipped

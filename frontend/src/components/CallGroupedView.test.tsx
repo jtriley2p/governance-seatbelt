@@ -66,7 +66,7 @@ function makeReport(jobs: CrossChainJobPreview[]): StructuredSimulationReport {
 }
 
 describe('CallGroupedView cross-chain summary headers', () => {
-  it('removes step-count copy but keeps multi-job labels and technical step details', () => {
+  it('omits aggregate action labels while keeping technical step details', () => {
     const html = renderToStaticMarkup(
       createElement(CallGroupedView, {
         proposal,
@@ -77,8 +77,11 @@ describe('CallGroupedView cross-chain summary headers', () => {
       }),
     );
 
-    expect(html).toContain('Execution 1');
-    expect(html).toContain('Execution 2');
+    expect(html).not.toContain('2 actions');
+    expect(html).not.toContain('Action 1');
+    expect(html).not.toContain('Action 2');
+    expect(html).not.toContain('Execution 1');
+    expect(html).not.toContain('Execution 2');
     expect(html).toContain('bridgeFirst');
     expect(html).toContain('bridgeSecond');
     expect(html).toContain('cleanup');
