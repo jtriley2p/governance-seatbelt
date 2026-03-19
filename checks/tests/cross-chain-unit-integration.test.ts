@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import type { CallTrace, TenderlySimulation } from '../../types';
-import { parseArbitrumL1L2Messages } from '../../utils/bridges/arbitrum';
-import { parseOptimismL1L2Messages } from '../../utils/bridges/optimism';
+import { arbitrum, base, optimism } from 'viem/chains';
+import type { CallTrace, CrossChainExecutionJob, TenderlySimulation } from '../../types';
+import { extractArbitrumL1L2Jobs } from '../../utils/bridges/arbitrum';
+import { extractOptimismL1L2Jobs } from '../../utils/bridges/optimism';
 import { createMockSimulation } from './test-utils';
+
+function firstCall(job: CrossChainExecutionJob) {
+  return job.calls[0];
+}
 
 describe('Cross-Chain Unit Integration Tests', () => {
   describe('Arbitrum Bridge Integration', () => {
@@ -17,15 +22,17 @@ describe('Cross-Chain Unit Integration Tests', () => {
       };
 
       const simulation = createMockSimulation([arbitrumCall]);
-      const messages = parseArbitrumL1L2Messages(simulation);
+      const messages = extractArbitrumL1L2Jobs(simulation);
 
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         bridgeType: 'ArbitrumL1L2',
-        destinationChainId: '42161',
-        l2TargetAddress: '0x912CE59144191C1204E64559FE8253a0e49E6548',
+        destinationChainId: arbitrum.id,
         l2FromAddress: '0x2BAD8182C09F50c8318d769245beA52C32Be46CD',
       });
+      expect(firstCall(messages[0]).l2TargetAddress).toBe(
+        '0x912CE59144191C1204E64559FE8253a0e49E6548',
+      );
     });
 
     test('should handle multiple Arbitrum calls with deduplication', () => {
@@ -38,7 +45,7 @@ describe('Cross-Chain Unit Integration Tests', () => {
       };
 
       const simulation = createMockSimulation([duplicateCall, duplicateCall]);
-      const messages = parseArbitrumL1L2Messages(simulation);
+      const messages = extractArbitrumL1L2Jobs(simulation);
 
       // Should deduplicate
       expect(messages).toHaveLength(1);
@@ -54,7 +61,7 @@ describe('Cross-Chain Unit Integration Tests', () => {
       };
 
       const simulation = createMockSimulation([call]);
-      const messages = parseArbitrumL1L2Messages(simulation);
+      const messages = extractArbitrumL1L2Jobs(simulation);
 
       expect(messages).toHaveLength(1);
 
@@ -79,16 +86,18 @@ describe('Cross-Chain Unit Integration Tests', () => {
       };
 
       const simulation = createMockSimulation([optimismCall]);
-      const messages = parseOptimismL1L2Messages(simulation);
+      const messages = extractOptimismL1L2Jobs(simulation);
 
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         bridgeType: 'OptimismL1L2',
-        destinationChainId: '10',
-        l2TargetAddress: '0x4200000000000000000000000000000000000006',
-        l2InputData: '0xd0e30db0',
+        destinationChainId: optimism.id,
         l2FromAddress: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC',
       });
+      expect(firstCall(messages[0]).l2TargetAddress).toBe(
+        '0x4200000000000000000000000000000000000006',
+      );
+      expect(firstCall(messages[0]).l2InputData).toBe('0xd0e30db0');
     });
 
     test('should handle Base transactions', () => {
@@ -102,10 +111,10 @@ describe('Cross-Chain Unit Integration Tests', () => {
       };
 
       const simulation = createMockSimulation([baseCall]);
-      const messages = parseOptimismL1L2Messages(simulation);
+      const messages = extractOptimismL1L2Jobs(simulation);
 
       expect(messages).toHaveLength(1);
-      expect(messages[0].destinationChainId).toBe('8453');
+      expect(messages[0].destinationChainId).toBe(base.id);
     });
 
     test('should validate address preservation (no aliasing)', () => {
@@ -119,7 +128,7 @@ describe('Cross-Chain Unit Integration Tests', () => {
       };
 
       const simulation = createMockSimulation([call]);
-      const messages = parseOptimismL1L2Messages(simulation);
+      const messages = extractOptimismL1L2Jobs(simulation);
 
       expect(messages).toHaveLength(1);
 
@@ -150,8 +159,8 @@ describe('Cross-Chain Unit Integration Tests', () => {
 
       const simulation = createMockSimulation([arbitrumCall, optimismCall]);
 
-      const arbMessages = parseArbitrumL1L2Messages(simulation);
-      const opMessages = parseOptimismL1L2Messages(simulation);
+      const arbMessages = extractArbitrumL1L2Jobs(simulation);
+      const opMessages = extractOptimismL1L2Jobs(simulation);
 
       expect(arbMessages).toHaveLength(1);
       expect(opMessages).toHaveLength(1);
@@ -190,7 +199,7 @@ describe('Cross-Chain Unit Integration Tests', () => {
       const deepSimulation = createMockSimulation([createNestedCall(10)]);
 
       const start = performance.now();
-      const messages = parseArbitrumL1L2Messages(deepSimulation);
+      const messages = extractArbitrumL1L2Jobs(deepSimulation);
       const end = performance.now();
 
       expect(messages).toHaveLength(1);
@@ -209,7 +218,7 @@ describe('Cross-Chain Unit Integration Tests', () => {
       } as TenderlySimulation;
 
       expect(() => {
-        const messages = parseArbitrumL1L2Messages(corruptedSimulation);
+        const messages = extractArbitrumL1L2Jobs(corruptedSimulation);
         expect(messages).toHaveLength(0);
       }).not.toThrow();
     });
@@ -223,10 +232,10 @@ describe('Cross-Chain Unit Integration Tests', () => {
 
       // The parsers should handle null gracefully and return empty arrays
       // This is consistent with other invalid data handling throughout the system
-      const arbMessages = parseArbitrumL1L2Messages(emptySimulation);
+      const arbMessages = extractArbitrumL1L2Jobs(emptySimulation);
       expect(arbMessages).toHaveLength(0);
 
-      const opMessages = parseOptimismL1L2Messages(emptySimulation);
+      const opMessages = extractOptimismL1L2Jobs(emptySimulation);
       expect(opMessages).toHaveLength(0);
     });
   });
@@ -242,7 +251,7 @@ describe('Cross-Chain Unit Integration Tests', () => {
       };
 
       const simulation = createMockSimulation([call]);
-      const messages = parseArbitrumL1L2Messages(simulation);
+      const messages = extractArbitrumL1L2Jobs(simulation);
 
       expect(messages).toHaveLength(1);
 
@@ -250,12 +259,12 @@ describe('Cross-Chain Unit Integration Tests', () => {
 
       // Validate all required fields
       expect(message.bridgeType).toBe('ArbitrumL1L2');
-      expect(message.destinationChainId).toBe('42161');
-      expect(message.l2TargetAddress).toMatch(/^0x[a-fA-F0-9]{40}$/);
+      expect(message.destinationChainId).toBe(arbitrum.id);
+      expect(firstCall(message).l2TargetAddress).toMatch(/^0x[a-fA-F0-9]{40}$/);
       expect(message.l2FromAddress).toMatch(/^0x[a-fA-F0-9]{40}$/);
-      expect(message.l2InputData).toMatch(/^0x[a-fA-F0-9]*$/);
-      expect(message.l2Value).toBeDefined();
-      expect(typeof message.l2Value).toBe('string');
+      expect(firstCall(message).l2InputData).toMatch(/^0x[a-fA-F0-9]*$/);
+      expect(firstCall(message).l2Value).toBeDefined();
+      expect(typeof firstCall(message).l2Value).toBe('string');
     });
 
     test('should validate Optimism message format', () => {
@@ -269,7 +278,7 @@ describe('Cross-Chain Unit Integration Tests', () => {
       };
 
       const simulation = createMockSimulation([call]);
-      const messages = parseOptimismL1L2Messages(simulation);
+      const messages = extractOptimismL1L2Jobs(simulation);
 
       expect(messages).toHaveLength(1);
 
@@ -277,12 +286,12 @@ describe('Cross-Chain Unit Integration Tests', () => {
 
       // Validate all required fields
       expect(message.bridgeType).toBe('OptimismL1L2');
-      expect(message.destinationChainId).toBe('10');
-      expect(message.l2TargetAddress).toMatch(/^0x[a-fA-F0-9]{40}$/);
+      expect(message.destinationChainId).toBe(optimism.id);
+      expect(firstCall(message).l2TargetAddress).toMatch(/^0x[a-fA-F0-9]{40}$/);
       expect(message.l2FromAddress).toMatch(/^0x[a-fA-F0-9]{40}$/);
-      expect(message.l2InputData).toMatch(/^0x[a-fA-F0-9]*$/);
-      expect(message.l2Value).toBeDefined();
-      expect(typeof message.l2Value).toBe('string');
+      expect(firstCall(message).l2InputData).toMatch(/^0x[a-fA-F0-9]*$/);
+      expect(firstCall(message).l2Value).toBeDefined();
+      expect(typeof firstCall(message).l2Value).toBe('string');
     });
   });
 });

@@ -4,6 +4,7 @@
 
 import { existsSync } from 'node:fs';
 import { getAddress } from 'viem';
+import { mainnet } from 'viem/chains';
 import { generateAndSaveReports } from './presentation/report';
 import { buildCoverageFromResults, buildCoverageMetadata, runChecksForChain } from './run-checks';
 import type {
@@ -157,18 +158,18 @@ async function fetchBlockData(
 }
 
 /**
- * @notice Process cross-chain destination simulations and run checks
+ * @notice Process cross-chain destination job results and run checks
  */
-async function processDestinationSimulations(
+async function processDestinationJobResults(
   proposal: SimulationResult['proposal'],
   deps: ProposalData,
-  destinationSimulations: SimulationResult['destinationSimulations'],
+  destinationJobResults: SimulationResult['destinationJobResults'],
 ) {
   const destinationChecks: Record<number, AllCheckResults> = {};
 
-  if (destinationSimulations) {
-    for (const destSim of destinationSimulations) {
-      if (destSim.status !== 'success' || !destSim.sim) {
+  if (destinationJobResults) {
+    for (const destSim of destinationJobResults) {
+      if (destSim.status !== 'success') {
         continue;
       }
 
@@ -185,16 +186,20 @@ async function processDestinationSimulations(
           publicClient: getClientForChain(destSim.chainId),
           chainConfig: getChainConfig(destSim.chainId),
         };
-        const checkResults = await runChecksForChain(
-          proposal,
-          destSim.sim,
-          l2Deps,
-          destSim.chainId,
-          destinationSimulations,
-        );
-        destinationChecks[destSim.chainId] = destinationChecks[destSim.chainId]
-          ? mergeAllCheckResults(destinationChecks[destSim.chainId], checkResults)
-          : checkResults;
+        for (const step of destSim.stepResults) {
+          if (step.status !== 'success' || !step.sim) continue;
+
+          const checkResults = await runChecksForChain(
+            proposal,
+            step.sim,
+            l2Deps,
+            destSim.chainId,
+            destinationJobResults,
+          );
+          destinationChecks[destSim.chainId] = destinationChecks[destSim.chainId]
+            ? mergeAllCheckResults(destinationChecks[destSim.chainId], checkResults)
+            : checkResults;
+        }
       } catch (error) {
         console.error(
           `[Index][L2_CHECK_FAILURE] Failed to run L2 checks for chain ${destSim.chainId}; continuing without destination checks for this chain.`,
@@ -229,7 +234,7 @@ async function processSimulation(
     proposalExecutedBlock,
     executor,
     deps,
-    destinationSimulations,
+    destinationJobResults,
   } = simulationResult;
 
   // Use deps from simulationResult if available, otherwise use fallbackDeps
@@ -245,23 +250,23 @@ async function processSimulation(
     proposal,
     sim,
     finalDeps,
-    1, // Mainnet chain ID
-    destinationSimulations,
+    mainnet.id,
+    destinationJobResults,
   );
 
   // Fetch block data
   const blocks = await fetchBlockData(proposal, latestBlock);
 
-  // Process destination simulations and run checks
-  const destinationChecks = await processDestinationSimulations(
+  // Process destination job results and run checks
+  const destinationChecks = await processDestinationJobResults(
     proposal,
     finalDeps,
-    destinationSimulations,
+    destinationJobResults,
   );
 
-  // Build coverage data - include mainnet (chainId 1) and all L2 chains
+  // Build coverage data - include mainnet and all L2 chains
   const coverageMetadata = buildCoverageMetadata();
-  const coverage = buildCoverageFromResults(mainnetResults, coverageMetadata, 1);
+  const coverage = buildCoverageFromResults(mainnetResults, coverageMetadata, mainnet.id);
 
   // Merge L2 check coverage into the main coverage
   for (const [chainIdStr, destResults] of Object.entries(destinationChecks)) {
@@ -283,9 +288,9 @@ async function processSimulation(
   const coveredChainIds = new Set(Object.keys(destinationChecks).map((id) => Number(id)));
   const simsByChain = new Map<
     number,
-    Array<NonNullable<SimulationResult['destinationSimulations']>[number]>
+    Array<NonNullable<SimulationResult['destinationJobResults']>[number]>
   >();
-  for (const destinationSim of destinationSimulations ?? []) {
+  for (const destinationSim of destinationJobResults ?? []) {
     const list = simsByChain.get(destinationSim.chainId) ?? [];
     list.push(destinationSim);
     simsByChain.set(destinationSim.chainId, list);
@@ -311,19 +316,18 @@ async function processSimulation(
     } else if (skips.length > 0) {
       status = 'skipped';
       const reasons = skips.map((sim) => sim.error).filter(Boolean);
-      skipReason = reasons.length > 0 ? reasons.join(' | ') : 'Destination simulation skipped.';
+      skipReason = reasons.length > 0 ? reasons.join(' | ') : 'Destination job skipped.';
     } else if (successes.length > 0) {
       status = 'failed';
-      skipReason =
-        'Destination simulation succeeded but no L2 checks were recorded for this chain.';
+      skipReason = 'Destination job succeeded but no L2 checks were recorded for this chain.';
     } else {
       status = 'skipped';
-      skipReason = 'No destination simulation result was available for this chain.';
+      skipReason = 'No destination job result was available for this chain.';
     }
 
     coverage.checks.push({
       checkId: 'crossChainDestination',
-      checkName: 'Cross-chain destination simulation status',
+      checkName: 'Cross-chain destination execution status',
       status,
       skipReason,
       chainId,
@@ -347,7 +351,7 @@ async function processSimulation(
       checks: mainnetResults,
       outputDir: dir,
       governorAddress: config.governorAddress,
-      destinationSimulations,
+      destinationJobResults,
       destinationChecks,
       executor,
       proposalCreatedBlock,
@@ -401,7 +405,7 @@ async function buildProposalData(
     governor: getGovernor(governorType, governorAddress),
     timelock: await getTimelock(governorType, governorAddress),
     publicClient,
-    chainConfig: getChainConfig(1),
+    chainConfig: getChainConfig(mainnet.id),
     targets: [],
     touchedContracts: [],
   };
@@ -576,7 +580,9 @@ async function main() {
     }
 
     if (finalResult.crossChainFailure) {
-      console.error(`[Index][FAILURE] One or more destination simulations failed for ${SIM_NAME}.`);
+      console.error(
+        `[Index][FAILURE] One or more destination execution jobs failed for ${SIM_NAME}.`,
+      );
     }
 
     console.log(`[Index] Processing ${SIM_NAME} simulation...`);
@@ -744,7 +750,7 @@ async function main() {
           proposalId: simProposal.id,
         };
 
-        console.log(`  Handling cross-chain messages for proposal ${simProposal.id}...`);
+        console.log(`  Handling cross-chain execution jobs for proposal ${simProposal.id}...`);
         const finalResult = await runSimulationPipeline(config, derivedExecutionOptions);
 
         if (!finalResult.sim.transaction.status) {
@@ -755,7 +761,7 @@ async function main() {
 
         if (finalResult.crossChainFailure) {
           console.error(
-            `  [FAILURE] One or more destination simulations failed for proposal ${simProposal.id}.`,
+            `  [FAILURE] One or more destination execution jobs failed for proposal ${simProposal.id}.`,
           );
         }
 

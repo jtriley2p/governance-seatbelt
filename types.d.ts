@@ -97,14 +97,13 @@ export interface SimulationResult {
   executor?: string; // Who executed the proposal (for executed proposals)
   proposalCreatedBlock?: SimulationBlock; // Block when proposal was created
   proposalExecutedBlock?: SimulationBlock; // Block when proposal was executed (for executed proposals)
-  destinationSimulations?: Array<{
-    chainId: number;
-    bridgeType: string; // e.g., 'ArbitrumL1L2'
-    status: 'success' | 'failure' | 'skipped';
-    error?: string; // Optional error message on failure
-    sim?: TenderlySimulation; // Tenderly result for the destination sim
-    l2Params?: ExtractedCrossChainMessage;
-  }>;
+  /**
+   * One result per destination execution job. The job is the execution unit;
+   * Tenderly simulations live inside each job result as step-level `sim` values
+   * and, on success, the final `accumulatedSim`.
+   */
+  destinationJobResults?: CrossChainExecutionJobResult[];
+  destinationStateByChain?: Record<number, NonNullable<TenderlyPayload['state_objects']>>;
   crossChainFailure?: boolean;
 }
 
@@ -238,26 +237,50 @@ export interface AllCheckResults {
   [checkId: string]: { name: string; result: CheckResult };
 }
 
-// --- Extracted Cross-Chain Message Type ---
 export type BridgeType = 'ArbitrumL1L2' | 'OptimismL1L2' | 'WormholeL1L2';
 
 /**
- * @notice Holds the parameters extracted from a source chain simulation
- * that are necessary to initiate a simulation on a destination chain via a bridge.
+ * @notice One destination call executed inside a cross-chain execution job.
  */
-export interface ExtractedCrossChainMessage {
-  /** @notice Identifier for the type of bridge/messaging protocol used (e.g., 'ArbitrumL1L2'). */
-  bridgeType: BridgeType;
-  /** @notice The chain ID of the destination network. */
-  destinationChainId: string;
-  /** @notice The target contract address to be called on the destination chain. */
+export interface CrossChainExecutionCall {
   l2TargetAddress: Address;
-  /** @notice The encoded calldata to be used in the transaction on the destination chain. */
   l2InputData: Hex;
-  /** @notice The native token value (as a string) to be sent with the transaction on the destination chain. */
   l2Value: string;
-  /** @notice The address initiating the transaction on the destination chain (often a bridge contract or alias). Optional. */
-  l2FromAddress?: Address;
+}
+
+/**
+ * @notice One cross-chain execution job emitted by a bridge parser.
+ * `sourceOrder` mirrors the originating proposal calldata index.
+ */
+export interface CrossChainExecutionJob {
+  bridgeType: BridgeType;
+  destinationChainId: number;
+  l2FromAddress: Address;
+  sourceOrder: number;
+  calls: CrossChainExecutionCall[];
+}
+
+export interface CrossChainExecutionStepResult {
+  stepIndex: number;
+  call: CrossChainExecutionCall;
+  status: 'success' | 'failure';
+  sim?: TenderlySimulation;
+  error?: string;
+}
+
+export interface CrossChainExecutionJobResult {
+  chainId: number;
+  bridgeType: BridgeType;
+  job: CrossChainExecutionJob;
+  status: 'success' | 'failure' | 'skipped';
+  stepResults: CrossChainExecutionStepResult[];
+  /**
+   * Present only on successful jobs. This is the Tenderly simulation for the
+   * most recent successful step, executed against the state accumulated by all
+   * earlier successful steps in the same job.
+   */
+  accumulatedSim?: TenderlySimulation;
+  error?: string;
 }
 
 // --- Tenderly types, Request ---
@@ -362,6 +385,8 @@ interface TenderlyContract {
   id: string;
   contract_id: string;
   balance: string;
+  creation_bytecode?: string;
+  deployed_bytecode?: string;
   network_id: string;
   public: boolean;
   verified_by: string;
@@ -713,28 +738,45 @@ export interface CrossChainDecodedCall {
   args?: unknown[];
 }
 
-export interface CrossChainMessagePreview {
+/**
+ * Reporting/view model for one executed step inside a cross-chain job.
+ * Derived from execution results for display only; not used by the runtime engine.
+ */
+export interface CrossChainJobStepPreview {
+  stepIndex: number;
+  status: 'success' | 'failure';
+  error?: string;
+  l2TargetAddress: Address;
+  l2Value: string;
+  l2InputData: Hex;
+  targetLabel?: string;
+  /** Optional decoded calldata metadata for display. */
+  call?: CrossChainDecodedCall;
+}
+
+/**
+ * Reporting/view model for one cross-chain job, including its ordered steps.
+ * Used by reporting and UI as the canonical preview shape.
+ */
+export interface CrossChainJobPreview {
   chainId: number;
   chainName: string;
   blockExplorerBaseUrl: string;
   bridgeType: string;
   status: 'success' | 'failure' | 'skipped';
   error?: string;
-  l2FromAddress?: Address;
-  l2TargetAddress?: Address;
-  l2Value?: string;
-  l2InputData?: Hex;
-  targetLabel?: string;
-  call?: CrossChainDecodedCall;
+  l2FromAddress: Address;
+  sourceOrder: number;
+  steps: CrossChainJobStepPreview[];
 }
 
 export interface CrossChainPreview {
-  messages: CrossChainMessagePreview[];
+  jobs: CrossChainJobPreview[];
   /**
-   * Optional per-chain check details for destination simulations.
+   * Optional per-chain check details for destination execution job results.
    * This is redundant with `StructuredSimulationReport.chainReports`, but is
    * colocated under `crossChain` for integrators that primarily consume
-   * `crossChain.messages`.
+   * `crossChain.jobs`.
    */
   destinationChains?: Array<{
     chainId: number;
@@ -809,7 +851,7 @@ export interface GenerateReportsParams {
   checks: AllCheckResults;
   outputDir: string;
   governorAddress: string;
-  destinationSimulations?: SimulationResult['destinationSimulations'];
+  destinationJobResults?: SimulationResult['destinationJobResults'];
   destinationChecks?: Record<number, AllCheckResults>;
   executor?: string;
   proposalCreatedBlock?: SimulationBlock;
@@ -835,7 +877,7 @@ export interface WriteSimulationResultsJsonParams {
   markdownReport: string;
   governorAddress: string;
   outputPath: string;
-  destinationSimulations?: SimulationResult['destinationSimulations'];
+  destinationJobResults?: SimulationResult['destinationJobResults'];
   destinationChecks?: Record<number, AllCheckResults>;
   executor?: string;
   proposalCreatedBlock?: SimulationBlock;

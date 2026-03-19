@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import type { CallTrace, TenderlySimulation } from '../../types';
-import { parseArbitrumL1L2Messages } from '../../utils/bridges/arbitrum';
-import { parseOptimismL1L2Messages } from '../../utils/bridges/optimism';
+import { arbitrum, base, optimism } from 'viem/chains';
+import type { CallTrace, CrossChainExecutionJob, TenderlySimulation } from '../../types';
+import { extractArbitrumL1L2Jobs } from '../../utils/bridges/arbitrum';
+import { extractOptimismL1L2Jobs } from '../../utils/bridges/optimism';
+
+function firstCall(job: CrossChainExecutionJob) {
+  return job.calls[0];
+}
 
 // Helper function to create a mock simulation with minimal required fields
 function createMockSimulation(calls: CallTrace[]): TenderlySimulation {
@@ -30,15 +35,17 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseArbitrumL1L2Messages(mockSim);
+      const messages = extractArbitrumL1L2Jobs(mockSim);
 
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         bridgeType: 'ArbitrumL1L2',
-        destinationChainId: '42161',
-        l2TargetAddress: '0x912CE59144191C1204E64559FE8253a0e49E6548',
+        destinationChainId: arbitrum.id,
         l2FromAddress: '0x2BAD8182C09F50c8318d769245beA52C32Be46CD', // L2 alias of timelock
       });
+      expect(firstCall(messages[0]).l2TargetAddress).toBe(
+        '0x912CE59144191C1204E64559FE8253a0e49E6548',
+      );
     });
 
     test('should handle empty or invalid input data', () => {
@@ -57,7 +64,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseArbitrumL1L2Messages(mockSim);
+      const messages = extractArbitrumL1L2Jobs(mockSim);
       expect(messages).toHaveLength(0);
     });
 
@@ -79,7 +86,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseArbitrumL1L2Messages(mockSim);
+      const messages = extractArbitrumL1L2Jobs(mockSim);
       expect(messages).toHaveLength(1); // Should deduplicate to 1 message
     });
 
@@ -101,7 +108,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseArbitrumL1L2Messages(mockSim);
+      const messages = extractArbitrumL1L2Jobs(mockSim);
       expect(messages).toHaveLength(1);
     });
   });
@@ -122,7 +129,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseArbitrumL1L2Messages(mockSim);
+      const messages = extractArbitrumL1L2Jobs(mockSim);
       expect(messages[0]?.l2FromAddress?.toLowerCase()).toBe(expectedAlias.toLowerCase());
     });
   });
@@ -142,17 +149,19 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
 
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         bridgeType: 'OptimismL1L2',
-        destinationChainId: '10',
-        l2TargetAddress: '0x4200000000000000000000000000000000000006',
-        l2InputData: '0xd0e30db0', // deposit() function selector
-        l2Value: '0',
+        destinationChainId: optimism.id,
         l2FromAddress: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC', // Preserved on Optimism
       });
+      expect(firstCall(messages[0]).l2TargetAddress).toBe(
+        '0x4200000000000000000000000000000000000006',
+      );
+      expect(firstCall(messages[0]).l2InputData).toBe('0xd0e30db0');
+      expect(firstCall(messages[0]).l2Value).toBe('0');
     });
 
     test('should extract messages from sendMessage calls to Base', () => {
@@ -168,17 +177,19 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
 
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         bridgeType: 'OptimismL1L2',
-        destinationChainId: '8453',
-        l2TargetAddress: '0x4200000000000000000000000000000000000006',
-        l2InputData: '0xd0e30db0',
-        l2Value: '0',
+        destinationChainId: base.id,
         l2FromAddress: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC',
       });
+      expect(firstCall(messages[0]).l2TargetAddress).toBe(
+        '0x4200000000000000000000000000000000000006',
+      );
+      expect(firstCall(messages[0]).l2InputData).toBe('0xd0e30db0');
+      expect(firstCall(messages[0]).l2Value).toBe('0');
     });
 
     test('should handle multiple messages to different chains', () => {
@@ -201,10 +212,13 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
 
       expect(messages).toHaveLength(2);
-      expect(messages.map((m) => m.destinationChainId).sort()).toEqual(['10', '8453']);
+      expect(messages.map((m) => m.destinationChainId).sort((a, b) => a - b)).toEqual([
+        optimism.id,
+        base.id,
+      ]);
     });
 
     test('should handle empty or invalid input data', () => {
@@ -229,7 +243,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
       expect(messages).toHaveLength(0);
     });
 
@@ -244,7 +258,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
       expect(messages).toHaveLength(0);
     });
 
@@ -268,7 +282,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
       expect(messages).toHaveLength(1); // Should deduplicate to 1 message
     });
 
@@ -291,7 +305,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
       expect(messages).toHaveLength(1);
     });
 
@@ -308,7 +322,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
       expect(messages).toHaveLength(0); // Should handle invalid length gracefully
     });
 
@@ -324,7 +338,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
       expect(messages).toHaveLength(0); // Should skip unknown messengers
     });
   });

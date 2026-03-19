@@ -4,6 +4,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { getAddress } from 'viem';
+import { mainnet } from 'viem/chains';
 import ALL_CHECKS from './checks';
 import { generateAndSaveReports } from './presentation/report';
 import type {
@@ -231,7 +232,7 @@ export async function runChecksForChain(
   sim: TenderlySimulation,
   deps: ProposalData,
   chainId: number,
-  allL2Simulations?: SimulationResult['destinationSimulations'],
+  allL2Simulations?: SimulationResult['destinationJobResults'],
 ): Promise<AllCheckResults> {
   const results: AllCheckResults = {};
   const chainConfig = getChainConfig(chainId);
@@ -244,8 +245,12 @@ export async function runChecksForChain(
 
   // For L2 checks, pass all L2 simulations
   const l2Simulations =
-    chainId !== 1 && allL2Simulations
-      ? allL2Simulations.filter((s) => s.sim).map((s) => ({ chainId: s.chainId, sim: s.sim! }))
+    chainId !== mainnet.id && allL2Simulations
+      ? allL2Simulations.flatMap((jobResult) =>
+          jobResult.stepResults
+            .filter((step) => step.status === 'success' && step.sim)
+            .map((step) => ({ chainId: jobResult.chainId, sim: step.sim! })),
+        )
       : undefined;
 
   // Chain-agnostic checks
@@ -378,7 +383,7 @@ async function main() {
     governor,
     timelock: await getTimelock(governorType, governor.address),
     publicClient,
-    chainConfig: getChainConfig(1), // Mainnet chain config
+    chainConfig: getChainConfig(mainnet.id),
     targets: [], // Will be populated from simulation
     touchedContracts: [], // Will be populated from simulation
   };
@@ -386,7 +391,7 @@ async function main() {
   // Run source simulation
   const sourceResult = await simulate(config);
 
-  // Handle cross-chain messages
+  // Handle cross-chain execution jobs
   const finalResult = await handleCrossChainSimulations(sourceResult);
 
   // Run checks for source chain
@@ -394,15 +399,15 @@ async function main() {
     finalResult.proposal,
     finalResult.sim,
     proposalData,
-    1, // Mainnet chain ID
-    finalResult.destinationSimulations,
+    mainnet.id,
+    finalResult.destinationJobResults,
   );
 
   // Run checks for destination chains if any
   const destinationChecks: Record<number, AllCheckResults> = {};
-  if (finalResult.destinationSimulations) {
-    for (const destSim of finalResult.destinationSimulations) {
-      if (destSim.status !== 'success' || !destSim.sim) continue;
+  if (finalResult.destinationJobResults) {
+    for (const destSim of finalResult.destinationJobResults) {
+      if (destSim.status !== 'success') continue;
 
       if (!supportsL2Checks(destSim.chainId)) {
         console.log(
@@ -417,16 +422,20 @@ async function main() {
           publicClient: getClientForChain(destSim.chainId),
           chainConfig: getChainConfig(destSim.chainId),
         };
-        const checkResults = await runChecksForChain(
-          finalResult.proposal,
-          destSim.sim,
-          l2Deps,
-          destSim.chainId,
-          finalResult.destinationSimulations,
-        );
-        destinationChecks[destSim.chainId] = destinationChecks[destSim.chainId]
-          ? mergeAllCheckResults(destinationChecks[destSim.chainId], checkResults)
-          : checkResults;
+        for (const step of destSim.stepResults) {
+          if (step.status !== 'success' || !step.sim) continue;
+
+          const checkResults = await runChecksForChain(
+            finalResult.proposal,
+            step.sim,
+            l2Deps,
+            destSim.chainId,
+            finalResult.destinationJobResults,
+          );
+          destinationChecks[destSim.chainId] = destinationChecks[destSim.chainId]
+            ? mergeAllCheckResults(destinationChecks[destSim.chainId], checkResults)
+            : checkResults;
+        }
       } catch (error) {
         console.error(
           `[run-checks][L2_CHECK_FAILURE] Failed to run L2 checks for chain ${destSim.chainId}; continuing without destination checks for this chain.`,
@@ -453,9 +462,9 @@ async function main() {
     end: endBlock,
   };
 
-  // Build coverage data - include mainnet (chainId 1) and all L2 chains
+  // Build coverage data - include mainnet and all L2 chains
   const coverageMetadata = buildCoverageMetadata();
-  const coverage = buildCoverageFromResults(sourceChecks, coverageMetadata, 1);
+  const coverage = buildCoverageFromResults(sourceChecks, coverageMetadata, mainnet.id);
 
   // Merge L2 check coverage into the main coverage
   for (const [chainIdStr, destResults] of Object.entries(destinationChecks)) {
@@ -477,10 +486,10 @@ async function main() {
   const coveredChainIds = new Set(Object.keys(destinationChecks).map((id) => Number(id)));
   const simsByChain = new Map<
     number,
-    Array<NonNullable<SimulationResult['destinationSimulations']>[number]>
+    Array<NonNullable<SimulationResult['destinationJobResults']>[number]>
   >();
 
-  for (const destinationSim of finalResult.destinationSimulations ?? []) {
+  for (const destinationSim of finalResult.destinationJobResults ?? []) {
     const list = simsByChain.get(destinationSim.chainId) ?? [];
     list.push(destinationSim);
     simsByChain.set(destinationSim.chainId, list);
@@ -506,19 +515,18 @@ async function main() {
     } else if (skips.length > 0) {
       status = 'skipped';
       const reasons = skips.map((sim) => sim.error).filter(Boolean);
-      skipReason = reasons.length > 0 ? reasons.join(' | ') : 'Destination simulation skipped.';
+      skipReason = reasons.length > 0 ? reasons.join(' | ') : 'Destination job skipped.';
     } else if (successes.length > 0) {
       status = 'failed';
-      skipReason =
-        'Destination simulation succeeded but no L2 checks were recorded for this chain.';
+      skipReason = 'Destination job succeeded but no L2 checks were recorded for this chain.';
     } else {
       status = 'skipped';
-      skipReason = 'No destination simulation result was available for this chain.';
+      skipReason = 'No destination job result was available for this chain.';
     }
 
     coverage.checks.push({
       checkId: 'crossChainDestination',
-      checkName: 'Cross-chain destination simulation status',
+      checkName: 'Cross-chain destination execution status',
       status,
       skipReason,
       chainId,
@@ -548,7 +556,7 @@ async function main() {
     checks: sourceChecks,
     outputDir: dir,
     governorAddress: config.governorAddress,
-    destinationSimulations: finalResult.destinationSimulations,
+    destinationJobResults: finalResult.destinationJobResults,
     destinationChecks,
     executor: finalResult.executor,
     proposalCreatedBlock: finalResult.proposalCreatedBlock,

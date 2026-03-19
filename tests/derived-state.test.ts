@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import type { AllCheckResults, SimulationResult, TenderlySimulation } from '../types.d';
+import { arbitrum, mainnet } from 'viem/chains';
+import type {
+  AllCheckResults,
+  CrossChainExecutionJobResult,
+  SimulationResult,
+  TenderlySimulation,
+} from '../types.d';
 import {
   buildDerivedBaselineChains,
   buildDerivedProvenance,
@@ -13,7 +19,7 @@ function makeSimulation(params: {
   blockNumber: number;
   status?: boolean;
   stateDiff?: Array<{ address: string; key: string; dirty: string; original?: string }>;
-  contracts?: Array<{ address: string; balance: string }>;
+  contracts?: Array<{ address: string; balance: string; deployedBytecode?: string }>;
 }): TenderlySimulation {
   const stateDiff =
     params.stateDiff?.map((entry) => ({
@@ -35,7 +41,7 @@ function makeSimulation(params: {
       id: params.id,
       project_id: 'project',
       owner_id: 'owner',
-      network_id: '1',
+      network_id: `${mainnet.id}`,
       block_number: params.blockNumber,
       transaction_index: 0,
       from: '0x0000000000000000000000000000000000001234',
@@ -71,7 +77,7 @@ function makeSimulation(params: {
       status: params.status ?? true,
       addresses: [],
       contract_ids: [],
-      network_id: '1',
+      network_id: `${mainnet.id}`,
       function_selector: '0x',
       transaction_info: {
         contract_id: 'contract',
@@ -105,7 +111,8 @@ function makeSimulation(params: {
         id: `contract-${index}`,
         contract_id: `contract-${index}`,
         balance: contract.balance,
-        network_id: '1',
+        deployed_bytecode: contract.deployedBytecode,
+        network_id: `${mainnet.id}`,
         public: true,
         verified_by: 'test',
         verification_date: null,
@@ -148,6 +155,50 @@ const passingChecks: AllCheckResults = {
   },
 };
 
+function makeJobResult(params: {
+  chainId: number;
+  bridgeType: CrossChainExecutionJobResult['bridgeType'];
+  status: CrossChainExecutionJobResult['status'];
+  sim?: TenderlySimulation;
+  error?: string;
+}): CrossChainExecutionJobResult {
+  return {
+    chainId: params.chainId,
+    bridgeType: params.bridgeType,
+    job: {
+      bridgeType: params.bridgeType,
+      destinationChainId: params.chainId,
+      l2FromAddress: '0x0000000000000000000000000000000000001234',
+      sourceOrder: 0,
+      calls: [
+        {
+          l2TargetAddress: '0x0000000000000000000000000000000000005678',
+          l2InputData: '0x',
+          l2Value: '0',
+        },
+      ],
+    },
+    status: params.status,
+    stepResults:
+      params.sim && params.status === 'success'
+        ? [
+            {
+              stepIndex: 0,
+              call: {
+                l2TargetAddress: '0x0000000000000000000000000000000000005678',
+                l2InputData: '0x',
+                l2Value: '0',
+              },
+              status: 'success',
+              sim: params.sim,
+            },
+          ]
+        : [],
+    accumulatedSim: params.status === 'success' ? params.sim : undefined,
+    error: params.error,
+  };
+}
+
 describe('derived-state execution helpers', () => {
   test('builds cross-chain derived state and provenance for happy path', () => {
     const mainnetAddress = '0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa';
@@ -177,36 +228,39 @@ describe('derived-state execution helpers', () => {
       ],
     });
 
-    const predecessorResult: {
-      sim: TenderlySimulation;
-      destinationSimulations: Array<{
-        chainId: number;
-        bridgeType: string;
-        status: 'success';
-        sim: TenderlySimulation;
-      }>;
-      crossChainFailure: boolean;
-    } = {
+    const predecessorResult: Pick<
+      SimulationResult,
+      'sim' | 'destinationJobResults' | 'destinationStateByChain' | 'crossChainFailure'
+    > = {
       sim: source,
-      destinationSimulations: [
-        {
-          chainId: 42_161,
+      destinationStateByChain: {
+        [arbitrum.id]: {
+          [arbitrumAddress]: {
+            storage: {
+              '0x02': '0x09',
+            },
+          },
+        },
+      },
+      destinationJobResults: [
+        makeJobResult({
+          chainId: arbitrum.id,
           bridgeType: 'ArbitrumL1L2',
           status: 'success',
           sim: destination,
-        },
+        }),
       ],
       crossChainFailure: false,
     };
 
     const outcome = evaluateDependencyOutcome(predecessorResult, passingChecks, {
-      42161: passingChecks,
+      [arbitrum.id]: passingChecks,
     });
     expect(outcome.status).toBe('passed');
 
     const derivedState = buildDerivedStateByChain(predecessorResult);
-    expect(derivedState[1]?.[mainnetAddress]?.storage?.['0x01']).toBe('0x05');
-    expect(derivedState[42_161]?.[arbitrumAddress]?.storage?.['0x02']).toBe('0x09');
+    expect(derivedState[mainnet.id]?.[mainnetAddress]?.storage?.['0x01']).toBe('0x05');
+    expect(derivedState[arbitrum.id]?.[arbitrumAddress]?.storage?.['0x02']).toBe('0x09');
 
     const provenance = buildDerivedProvenance({
       outcome,
@@ -221,8 +275,12 @@ describe('derived-state execution helpers', () => {
     expect(provenance.status).toBe('passed');
     expect(provenance.derivedFromProposalId).toBe('94');
     expect(provenance.derivedFromSimulationId).toBe('sim-94');
-    expect(provenance.baselineChains.some((baseline) => baseline.chainId === 1)).toBe(true);
-    expect(provenance.baselineChains.some((baseline) => baseline.chainId === 42_161)).toBe(true);
+    expect(provenance.baselineChains.some((baseline) => baseline.chainId === mainnet.id)).toBe(
+      true,
+    );
+    expect(provenance.baselineChains.some((baseline) => baseline.chainId === arbitrum.id)).toBe(
+      true,
+    );
   });
 
   test('fails closed when predecessor simulation fails', () => {
@@ -269,22 +327,22 @@ describe('derived-state execution helpers', () => {
   test('marks dependency as inconclusive when destination chain is unsupported for checks', () => {
     const predecessor: Pick<
       SimulationResult,
-      'sim' | 'destinationSimulations' | 'crossChainFailure'
+      'sim' | 'destinationJobResults' | 'crossChainFailure'
     > = {
       sim: makeSimulation({
         id: 'sim-unsupported-destination',
         blockNumber: 22_000_003,
       }),
-      destinationSimulations: [
-        {
+      destinationJobResults: [
+        makeJobResult({
           chainId: 999_999,
-          bridgeType: 'UnknownBridge',
+          bridgeType: 'OptimismL1L2',
           status: 'success',
           sim: makeSimulation({
             id: 'sim-unsupported-destination-l2',
             blockNumber: 123,
           }),
-        },
+        }),
       ],
       crossChainFailure: false,
     };
@@ -294,28 +352,28 @@ describe('derived-state execution helpers', () => {
     expect(outcome.reason).toContain('does not support L2 checks');
   });
 
-  test('marks dependency as inconclusive when destination simulation is skipped', () => {
+  test('marks dependency as inconclusive when destination job is skipped', () => {
     const predecessor: Pick<
       SimulationResult,
-      'sim' | 'destinationSimulations' | 'crossChainFailure'
+      'sim' | 'destinationJobResults' | 'crossChainFailure'
     > = {
       sim: makeSimulation({
         id: 'sim-skipped-destination',
         blockNumber: 22_000_004,
       }),
-      destinationSimulations: [
-        {
-          chainId: 42_161,
+      destinationJobResults: [
+        makeJobResult({
+          chainId: arbitrum.id,
           bridgeType: 'ArbitrumL1L2',
           status: 'skipped',
           error: 'Destination simulation skipped by executor',
-        },
+        }),
       ],
       crossChainFailure: false,
     };
 
     const outcome = evaluateDependencyOutcome(predecessor, passingChecks, {
-      42161: passingChecks,
+      [arbitrum.id]: passingChecks,
     });
     expect(outcome.status).toBe('inconclusive');
     expect(outcome.reason).toContain('not fully validated');
@@ -324,22 +382,22 @@ describe('derived-state execution helpers', () => {
   test('marks dependency as inconclusive when destination checks are missing after successful sim', () => {
     const predecessor: Pick<
       SimulationResult,
-      'sim' | 'destinationSimulations' | 'crossChainFailure'
+      'sim' | 'destinationJobResults' | 'crossChainFailure'
     > = {
       sim: makeSimulation({
         id: 'sim-missing-destination-checks',
         blockNumber: 22_000_005,
       }),
-      destinationSimulations: [
-        {
-          chainId: 42_161,
+      destinationJobResults: [
+        makeJobResult({
+          chainId: arbitrum.id,
           bridgeType: 'ArbitrumL1L2',
           status: 'success',
           sim: makeSimulation({
             id: 'sim-missing-destination-checks-l2',
             blockNumber: 321,
           }),
-        },
+        }),
       ],
       crossChainFailure: false,
     };
@@ -427,10 +485,12 @@ describe('derived-state execution helpers', () => {
 
     const overrides = buildDerivedStateByChain({ sim });
 
-    expect(overrides[1]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.balance).toBe('123');
-    expect(overrides[1]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.storage?.['0x01']).toBe(
-      '0x99',
+    expect(overrides[mainnet.id]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.balance).toBe(
+      '123',
     );
+    expect(
+      overrides[mainnet.id]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.storage?.['0x01'],
+    ).toBe('0x99');
   });
 
   test('omits empty balances from derived state overrides', () => {
@@ -454,10 +514,45 @@ describe('derived-state execution helpers', () => {
 
     const overrides = buildDerivedStateByChain({ sim });
 
-    expect(overrides[1]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.balance).toBeUndefined();
-    expect(overrides[1]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.storage?.['0x01']).toBe(
-      '0x99',
+    expect(
+      overrides[mainnet.id]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.balance,
+    ).toBeUndefined();
+    expect(
+      overrides[mainnet.id]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.storage?.['0x01'],
+    ).toBe('0x99');
+  });
+
+  test('extracts deployed bytecode alongside balance and storage overrides', () => {
+    const sim = makeSimulation({
+      id: 'sim-code',
+      blockNumber: 22_000_102,
+      contracts: [
+        {
+          address: '0x408ED6354d4973f66138C91495F2f2FCbd8724C3',
+          balance: '123',
+          deployedBytecode: '0x6001600055',
+        },
+      ],
+      stateDiff: [
+        {
+          address: '0x408ed6354d4973f66138c91495f2f2fcbd8724c3',
+          key: '0x01',
+          dirty: '0x99',
+        },
+      ],
+    });
+
+    const overrides = buildDerivedStateByChain({ sim });
+
+    expect(overrides[mainnet.id]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.code).toBe(
+      '0x6001600055',
     );
+    expect(overrides[mainnet.id]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.balance).toBe(
+      '123',
+    );
+    expect(
+      overrides[mainnet.id]?.['0x408ED6354d4973f66138C91495F2f2FCbd8724C3']?.storage?.['0x01'],
+    ).toBe('0x99');
   });
 
   test('target proposal bookkeeping can override overlapping derived governance slots', () => {

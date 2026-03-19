@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
+import { mainnet } from 'viem/chains';
 import { runChecksForChain } from '../../run-checks';
-import type { SimulationConfigNew, SimulationResult } from '../../types';
+import type { SimulationConfigNew } from '../../types';
+import { getChainConfig } from '../../utils/clients/client';
 import { handleCrossChainSimulations, simulateNew } from '../../utils/clients/tenderly';
 import {
   getArbDistroCrossChainResult,
@@ -10,6 +12,7 @@ import {
 } from './cross-chain-fixtures';
 
 const EXTERNAL_API_TIMEOUT_MS = 120000;
+type CrossChainSourceResult = Parameters<typeof handleCrossChainSimulations>[0];
 
 describe('Cross-Chain Integration Tests', () => {
   describe('Arbitrum Cross-Chain Integration', () => {
@@ -28,15 +31,15 @@ describe('Cross-Chain Integration Tests', () => {
         expect(crossChainResult.sim).toBeDefined();
         expect(crossChainResult.proposal).toBeDefined();
 
-        // 3. Verify destination simulations were created
-        expect(crossChainResult.destinationSimulations).toBeDefined();
+        // 3. Verify destination job results were created
+        expect(crossChainResult.destinationJobResults).toBeDefined();
         if (
-          crossChainResult.destinationSimulations &&
-          crossChainResult.destinationSimulations.length > 0
+          crossChainResult.destinationJobResults &&
+          crossChainResult.destinationJobResults.length > 0
         ) {
-          expect(crossChainResult.destinationSimulations[0].chainId).toBe(42161);
-          expect(crossChainResult.destinationSimulations[0].bridgeType).toBeDefined();
-          expect(crossChainResult.destinationSimulations[0].status).toBeDefined();
+          expect(crossChainResult.destinationJobResults[0].chainId).toBe(42161);
+          expect(crossChainResult.destinationJobResults[0].bridgeType).toBeDefined();
+          expect(crossChainResult.destinationJobResults[0].status).toBeDefined();
         }
 
         // 4. Run checks for both chains
@@ -45,7 +48,7 @@ describe('Cross-Chain Integration Tests', () => {
           crossChainResult.sim,
           crossChainResult.deps,
           1, // Mainnet chain ID
-          crossChainResult.destinationSimulations,
+          crossChainResult.destinationJobResults,
         );
 
         expect(mainnetResults).toBeDefined();
@@ -76,17 +79,17 @@ describe('Cross-Chain Integration Tests', () => {
         const sourceResult = await simulateNew(failingConfig);
         const crossChainResult = await handleCrossChainSimulations(sourceResult);
 
-        // Should still return results even if destination simulation fails
+        // Should still return results even if a destination job fails
         expect(crossChainResult).toBeDefined();
         expect(crossChainResult.sim).toBeDefined();
 
-        // Run checks - should handle failed destination simulations
+        // Run checks - should handle failed destination job results
         const results = await runChecksForChain(
           crossChainResult.proposal,
           crossChainResult.sim,
           crossChainResult.deps,
           1,
-          crossChainResult.destinationSimulations,
+          crossChainResult.destinationJobResults,
         );
 
         expect(results).toBeDefined();
@@ -108,13 +111,13 @@ describe('Cross-Chain Integration Tests', () => {
         const crossChainResult = await getOptimismBridgeCrossChainResult();
         expect(crossChainResult).toBeDefined();
 
-        // 3. Verify destination simulations for both OP and Base
-        expect(crossChainResult.destinationSimulations).toBeDefined();
+        // 3. Verify destination job results for both OP and Base
+        expect(crossChainResult.destinationJobResults).toBeDefined();
         if (
-          crossChainResult.destinationSimulations &&
-          crossChainResult.destinationSimulations.length > 0
+          crossChainResult.destinationJobResults &&
+          crossChainResult.destinationJobResults.length > 0
         ) {
-          const chainIds = crossChainResult.destinationSimulations.map((sim) => sim.chainId);
+          const chainIds = crossChainResult.destinationJobResults.map((sim) => sim.chainId);
           expect(chainIds).toContain(10); // OP Mainnet
           expect(chainIds).toContain(8453); // Base
         }
@@ -125,7 +128,7 @@ describe('Cross-Chain Integration Tests', () => {
           crossChainResult.sim,
           crossChainResult.deps,
           1,
-          crossChainResult.destinationSimulations,
+          crossChainResult.destinationJobResults,
         );
 
         expect(results).toBeDefined();
@@ -151,12 +154,12 @@ describe('Cross-Chain Integration Tests', () => {
         const crossChainResult = await getOptimismBridgeCrossChainResult();
 
         // Should have simulations for both OP and Base
-        expect(crossChainResult.destinationSimulations).toBeDefined();
-        if (crossChainResult.destinationSimulations) {
-          expect(crossChainResult.destinationSimulations.length).toBeGreaterThan(0);
+        expect(crossChainResult.destinationJobResults).toBeDefined();
+        if (crossChainResult.destinationJobResults) {
+          expect(crossChainResult.destinationJobResults.length).toBeGreaterThan(0);
 
           // Check that we have both chain IDs
-          const chainIds = crossChainResult.destinationSimulations.map((sim) => sim.chainId);
+          const chainIds = crossChainResult.destinationJobResults.map((sim) => sim.chainId);
           expect(chainIds).toContain(10); // OP Mainnet
           expect(chainIds).toContain(8453); // Base
         }
@@ -167,7 +170,7 @@ describe('Cross-Chain Integration Tests', () => {
           crossChainResult.sim,
           crossChainResult.deps,
           1,
-          crossChainResult.destinationSimulations,
+          crossChainResult.destinationJobResults,
         );
 
         expect(results).toBeDefined();
@@ -191,8 +194,8 @@ describe('Cross-Chain Integration Tests', () => {
         const sourceResult = await simulateNew(normalSimConfig);
         const crossChainResult = await handleCrossChainSimulations(sourceResult);
 
-        // Should not have destination simulations
-        expect(crossChainResult.destinationSimulations).toEqual([]);
+        // Should not have destination job results
+        expect(crossChainResult.destinationJobResults).toEqual([]);
 
         // Should still have valid main simulation
         expect(crossChainResult.sim).toBeDefined();
@@ -204,7 +207,7 @@ describe('Cross-Chain Integration Tests', () => {
           crossChainResult.sim,
           crossChainResult.deps,
           1,
-          crossChainResult.destinationSimulations,
+          crossChainResult.destinationJobResults,
         );
 
         expect(results).toBeDefined();
@@ -233,20 +236,22 @@ describe('Cross-Chain Integration Tests', () => {
 
         // Should handle empty/invalid configs without crashing
         expect(crossChainResult).toBeDefined();
-        expect(crossChainResult.destinationSimulations).toEqual([]);
+        expect(crossChainResult.destinationJobResults).toEqual([]);
       } catch (error) {
         // If simulation fails, that's expected for invalid config
         expect(error).toBeDefined();
       }
     });
 
-    test('should return no destination simulations when no cross-chain messages are present', async () => {
+    test('should return no destination job results when no cross-chain jobs are present', async () => {
       // Mock a network failure scenario by trying to run cross-chain with minimal data
-      const partialSourceResult = {
+      const partialSourceResult: CrossChainSourceResult = {
         sim: {
           transaction: {
             transaction_info: {
               call_trace: {
+                from: '0x0000000000000000000000000000000000000000',
+                input: '0x',
                 calls: [],
               },
             },
@@ -255,6 +260,7 @@ describe('Cross-Chain Integration Tests', () => {
         },
         proposal: {
           id: 999n,
+          proposalId: 999n,
           proposer: '0x0000000000000000000000000000000000000000',
           targets: [],
           values: [],
@@ -264,20 +270,25 @@ describe('Cross-Chain Integration Tests', () => {
           endBlock: 2000n,
           description: 'Test proposal',
         },
-        deps: {},
+        deps: {
+          governor: null,
+          timelock: { address: '0x0000000000000000000000000000000000000000' },
+          publicClient: null,
+          chainConfig: getChainConfig(mainnet.id),
+          targets: [],
+          touchedContracts: [],
+        },
         latestBlock: {
           number: 1500n,
           timestamp: 1600000000n,
         },
       };
 
-      const crossChainResult = await handleCrossChainSimulations(
-        partialSourceResult as unknown as SimulationResult,
-      );
+      const crossChainResult = await handleCrossChainSimulations(partialSourceResult);
 
       // With no call-trace bridge calls and no proposal calldata, no destination sims should be produced.
       expect(crossChainResult).toBeDefined();
-      expect(crossChainResult.destinationSimulations).toEqual([]);
+      expect(crossChainResult.destinationJobResults).toEqual([]);
       expect(crossChainResult.crossChainFailure).toBe(false);
     });
   });
@@ -291,7 +302,7 @@ describe('Cross-Chain Integration Tests', () => {
         crossChainResult.sim,
         crossChainResult.deps,
         1,
-        crossChainResult.destinationSimulations,
+        crossChainResult.destinationJobResults,
       );
 
       // Verify that all expected checks ran
@@ -317,13 +328,13 @@ describe('Cross-Chain Integration Tests', () => {
     test('should include cross-chain information in check results', async () => {
       const crossChainResult = await getArbDistroCrossChainResult();
 
-      // Only run checks if we have destination simulations
+      // Only run checks if we have destination job results
       // Ensure destinations (when present) don't break checks
       if (
-        crossChainResult.destinationSimulations &&
-        crossChainResult.destinationSimulations.length > 0
+        crossChainResult.destinationJobResults &&
+        crossChainResult.destinationJobResults.length > 0
       ) {
-        expect(crossChainResult.destinationSimulations.length).toBeGreaterThan(0);
+        expect(crossChainResult.destinationJobResults.length).toBeGreaterThan(0);
       }
     }, 120000); // External API calls can be slow/rate-limited in CI
   });

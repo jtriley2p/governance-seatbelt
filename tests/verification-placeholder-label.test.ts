@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { getAddress } from 'viem';
-import type { ProposalData, ProposalEvent, TenderlySimulation } from '../types';
+import { createMockSimulation } from '../checks/tests/test-utils';
+import type { ProposalData, ProposalEvent } from '../types';
 
 function seedEnv(): void {
   process.env.MAINNET_RPC_URL ??= 'http://localhost:8545';
@@ -72,7 +73,7 @@ describe('Verification checks - placeholder labeling', () => {
       const proposal = makeProposal([placeholder, realContract]);
       const res = await checkTargetsVerifiedOnBlockExplorer.checkProposal(
         proposal,
-        {} as unknown as TenderlySimulation,
+        createMockSimulation([]),
         deps,
       );
 
