@@ -1,11 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { encodeFunctionData, getAddress, parseAbi } from 'viem';
+import { encodeFunctionData, getAddress } from 'viem';
 import { celo } from 'viem/chains';
-import { extractWormholeExecutionJobsFromProposal } from '../utils/bridges/wormhole';
-
-const WORMHOLE_SENDER_ABI = parseAbi([
-  'function sendMessage(address[] targets, uint256[] values, bytes[] datas, address wormhole, uint16 chainId)',
-]);
+import {
+  WORMHOLE_SEND_MESSAGE_ABI,
+  extractWormholeExecutionJobsFromProposal,
+} from '../utils/bridges/wormhole';
 
 describe('wormhole proposal parser', () => {
   test('extracts celo destination calls from wormhole sendMessage calldata', () => {
@@ -22,7 +21,7 @@ describe('wormhole proposal parser', () => {
     ] as const;
 
     const calldata = encodeFunctionData({
-      abi: WORMHOLE_SENDER_ABI,
+      abi: WORMHOLE_SEND_MESSAGE_ABI,
       functionName: 'sendMessage',
       args: [
         celoTargets,
@@ -52,7 +51,7 @@ describe('wormhole proposal parser', () => {
 
   test('does not parse wormhole messages when proposal target is not known wormhole sender', () => {
     const calldata = encodeFunctionData({
-      abi: WORMHOLE_SENDER_ABI,
+      abi: WORMHOLE_SEND_MESSAGE_ABI,
       functionName: 'sendMessage',
       args: [
         [getAddress('0xAfE208a311B21f13EF87E33A90049fC17A7acDEc')],

@@ -14,6 +14,7 @@ import ArbitrumDelayedInboxAbi from '../utils/abis/ArbitrumDelayedInboxAbi.json'
 };
 import L2CrossChainAccount from '../utils/abis/L2CrossChainAccount.json' assert { type: 'json' };
 import v3FactoryAbi from '../utils/abis/v3FactoryAbi.json' assert { type: 'json' };
+import { WORMHOLE_SEND_MESSAGE_ABI } from '../utils/bridges/wormhole';
 
 // ─── Gas limits (match Solidity script) ───
 const XDM_GAS_LIMIT = 200_000;
@@ -66,10 +67,6 @@ const SEND_MESSAGE_ABI = parseAbi([
 const V2_FACTORY_ABI = parseAbi(['function setFeeTo(address)', 'function setFeeToSetter(address)']);
 const V3_FEE_ADAPTER_ABI = parseAbi(['function setFactoryOwner(address newOwner)']);
 const OWNED_ABI = parseAbi(['function transferOwnership(address newOwner)']);
-const WORMHOLE_SENDER_ABI = parseAbi([
-  'function sendMessage(address[] targets, uint256[] values, bytes[] datas, address wormhole, uint16 chainId)',
-]);
-
 // Action 0: OP Mainnet V3 factory → V3OpenFeeAdapter (XDM → CrossChainAccount.forward)
 const opV3Forward = encodeFunctionData({
   abi: L2CrossChainAccount,
@@ -252,7 +249,7 @@ const celoDatas = [
 const call7 = {
   target: WORMHOLE_SENDER,
   calldata: encodeFunctionData({
-    abi: WORMHOLE_SENDER_ABI,
+    abi: WORMHOLE_SEND_MESSAGE_ABI,
     functionName: 'sendMessage',
     args: [
       [...celoTargets],

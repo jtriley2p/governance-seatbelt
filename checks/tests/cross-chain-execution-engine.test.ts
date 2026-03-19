@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { encodeFunctionData, getAddress, parseAbi } from 'viem';
+import { encodeFunctionData, getAddress } from 'viem';
 import { mainnet } from 'viem/chains';
 import type { TenderlySimulation } from '../../types.d';
+import { WORMHOLE_SEND_MESSAGE_ABI } from '../../utils/bridges/wormhole';
 import { getChainConfig } from '../../utils/clients/client';
 import { createMockSimulation } from './test-utils';
 
@@ -25,10 +26,6 @@ const mockedMicroFetch = mock(
 mock.module('micro-ftch', () => ({
   default: mockedMicroFetch,
 }));
-
-const WORMHOLE_SEND_MESSAGE_ABI = parseAbi([
-  'function sendMessage(address[] targets, uint256[] values, bytes[] datas, address wormhole, uint16 chainId)',
-]);
 
 const WORMHOLE_PROPOSAL_TARGET = '0xf5F4496219F31CDCBa6130B5402873624585615a' as const;
 const WORMHOLE_ADDRESS = '0x00000000000000000000000000000000000000AA' as const;

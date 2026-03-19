@@ -1,7 +1,7 @@
 import { decodeFunctionData, getAddress, isHex, parseAbi, slice, toFunctionSelector } from 'viem';
 import type { CrossChainExecutionCall, CrossChainExecutionJob } from '../../types.d';
 
-const WORMHOLE_SEND_MESSAGE_ABI = parseAbi([
+export const WORMHOLE_SEND_MESSAGE_ABI = parseAbi([
   'function sendMessage(address[] targets, uint256[] values, bytes[] datas, address wormhole, uint16 chainId)',
 ]);
 
