@@ -1,11 +1,15 @@
 import {
   arbitrum,
+  avalanche,
   base,
   bob,
+  bsc,
   celo,
   ink,
   mainnet,
+  monad,
   optimism,
+  polygon,
   soneium,
   unichain,
   worldchain,
@@ -61,10 +65,30 @@ const CHAIN_CAPABILITIES: Record<number, ChainCapability> = {
     supportsTenderlyDestinationSimulation: true,
     isOpStackDestination: true,
   },
+  [bsc.id]: {
+    supportsL2Checks: true,
+    supportsTenderlyDestinationSimulation: true,
+    isOpStackDestination: false,
+  },
   [celo.id]: {
     supportsL2Checks: true,
     supportsTenderlyDestinationSimulation: true,
     isOpStackDestination: true,
+  },
+  [polygon.id]: {
+    supportsL2Checks: true,
+    supportsTenderlyDestinationSimulation: true,
+    isOpStackDestination: false,
+  },
+  [avalanche.id]: {
+    supportsL2Checks: true,
+    supportsTenderlyDestinationSimulation: true,
+    isOpStackDestination: false,
+  },
+  [monad.id]: {
+    supportsL2Checks: true,
+    supportsTenderlyDestinationSimulation: true,
+    isOpStackDestination: false,
   },
   [worldchain.id]: {
     supportsL2Checks: true,

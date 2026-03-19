@@ -11,6 +11,10 @@ describe('chain capabilities registry', () => {
     expect(getChainName(1)).toBe('Ethereum');
     expect(getChainName(42161)).toContain('Arbitrum');
     expect(getChainName(10)).toBeTruthy();
+    expect(getChainName(56)).toContain('BNB');
+    expect(getChainName(137)).toContain('Polygon');
+    expect(getChainName(43114)).toContain('Avalanche');
+    expect(getChainName(143)).toContain('Monad');
   });
 
   test('falls back to generic chain label for unknown chain ids', () => {
@@ -23,6 +27,14 @@ describe('chain capabilities registry', () => {
 
     expect(supportsL2Checks(42161)).toBe(true);
     expect(supportsTenderlyDestinationSimulation(42161)).toBe(true);
+    expect(supportsL2Checks(56)).toBe(true);
+    expect(supportsTenderlyDestinationSimulation(56)).toBe(true);
+    expect(supportsL2Checks(137)).toBe(true);
+    expect(supportsTenderlyDestinationSimulation(137)).toBe(true);
+    expect(supportsL2Checks(43114)).toBe(true);
+    expect(supportsTenderlyDestinationSimulation(43114)).toBe(true);
+    expect(supportsL2Checks(143)).toBe(true);
+    expect(supportsTenderlyDestinationSimulation(143)).toBe(true);
   });
 
   test('exposes OP Stack destination ordering used for summaries', () => {

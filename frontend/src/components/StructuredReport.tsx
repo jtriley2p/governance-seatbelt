@@ -184,7 +184,7 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
               {report.crossChain?.jobs?.length ? (
                 <section className="rounded-lg border-2 border-border bg-card p-4 sm:p-5">
                   <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-                    Cross-Chain Jobs
+                    Cross-Chain Executions
                   </h3>
                   <CrossChainPreview jobs={report.crossChain.jobs} />
                 </section>
