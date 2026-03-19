@@ -137,7 +137,7 @@ function tryDecodeWormholeBatch(data: string): WormholeBatch | null {
  *
  * Current coverage: Celo wormhole chain id 14 -> EVM chain id 42220.
  */
-export function parseWormholeMessagesFromProposal(
+export function extractWormholeExecutionJobsFromProposal(
   targets: readonly string[],
   calldatas: readonly string[],
 ): CrossChainExecutionJob[] {

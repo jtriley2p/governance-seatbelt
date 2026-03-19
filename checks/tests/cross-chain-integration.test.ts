@@ -79,7 +79,7 @@ describe('Cross-Chain Integration Tests', () => {
         const sourceResult = await simulateNew(failingConfig);
         const crossChainResult = await handleCrossChainSimulations(sourceResult);
 
-        // Should still return results even if destination simulation fails
+        // Should still return results even if a destination job fails
         expect(crossChainResult).toBeDefined();
         expect(crossChainResult.sim).toBeDefined();
 

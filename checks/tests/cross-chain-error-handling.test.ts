@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { encodeFunctionData } from 'viem';
 import { mainnet } from 'viem/chains';
 import type { CallTrace, SimulationConfigNew, TenderlySimulation } from '../../types';
-import { parseArbitrumL1L2Messages } from '../../utils/bridges/arbitrum';
-import { parseOptimismL1L2Messages, SEND_MESSAGE_ABI } from '../../utils/bridges/optimism';
+import { extractArbitrumL1L2Jobs } from '../../utils/bridges/arbitrum';
+import { extractOptimismL1L2Jobs, SEND_MESSAGE_ABI } from '../../utils/bridges/optimism';
 import { getChainConfig } from '../../utils/clients/client';
 import { simulateNew } from '../../utils/clients/tenderly';
 import { handleCrossChainSimulations } from '../../utils/clients/tenderly';
@@ -29,7 +29,7 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
         },
       ]);
 
-      const messages = parseArbitrumL1L2Messages(corruptedSimulation);
+      const messages = extractArbitrumL1L2Jobs(corruptedSimulation);
 
       // Should return empty array without crashing
       expect(messages).toHaveLength(0);
@@ -53,7 +53,7 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(malformedSimulation);
+      const messages = extractOptimismL1L2Jobs(malformedSimulation);
 
       // Should handle gracefully
       expect(messages).toHaveLength(0);
@@ -62,8 +62,8 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
     test('should handle missing call trace data', () => {
       const emptySimulation = createMockSimulation([]);
 
-      const arbMessages = parseArbitrumL1L2Messages(emptySimulation);
-      const opMessages = parseOptimismL1L2Messages(emptySimulation);
+      const arbMessages = extractArbitrumL1L2Jobs(emptySimulation);
+      const opMessages = extractOptimismL1L2Jobs(emptySimulation);
 
       expect(arbMessages).toHaveLength(0);
       expect(opMessages).toHaveLength(0);
@@ -85,7 +85,7 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
         },
       ]);
 
-      const messages = parseArbitrumL1L2Messages(nullDataSimulation);
+      const messages = extractArbitrumL1L2Jobs(nullDataSimulation);
 
       // Should handle null/undefined gracefully
       expect(messages).toHaveLength(0);
@@ -346,8 +346,8 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
 
       // Should handle deep nesting without stack overflow
       expect(() => {
-        const arbMessages = parseArbitrumL1L2Messages(deepSimulation);
-        const opMessages = parseOptimismL1L2Messages(deepSimulation);
+        const arbMessages = extractArbitrumL1L2Jobs(deepSimulation);
+        const opMessages = extractOptimismL1L2Jobs(deepSimulation);
 
         expect(arbMessages).toBeDefined();
         expect(opMessages).toBeDefined();
@@ -370,8 +370,8 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
 
       // Should handle wide traces efficiently
       const start = performance.now();
-      const arbMessages = parseArbitrumL1L2Messages(wideSimulation);
-      const opMessages = parseOptimismL1L2Messages(wideSimulation);
+      const arbMessages = extractArbitrumL1L2Jobs(wideSimulation);
+      const opMessages = extractOptimismL1L2Jobs(wideSimulation);
       const end = performance.now();
 
       expect(arbMessages).toBeDefined();
@@ -407,8 +407,8 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
       ]);
 
       // Should parse valid calls and skip invalid ones
-      const arbMessages = parseArbitrumL1L2Messages(mixedSimulation);
-      const opMessages = parseOptimismL1L2Messages(mixedSimulation);
+      const arbMessages = extractArbitrumL1L2Jobs(mixedSimulation);
+      const opMessages = extractOptimismL1L2Jobs(mixedSimulation);
 
       expect(arbMessages).toHaveLength(1); // Should find 1 valid Arbitrum call
       expect(opMessages).toHaveLength(1); // Should find 1 valid Optimism call

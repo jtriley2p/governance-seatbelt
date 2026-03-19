@@ -151,7 +151,7 @@ export function buildDerivedStateByChain(
 
 /**
  * Fail-closed dependency gate.
- * - failed if source/destination simulation failed or any check has errors
+ * - failed if source execution or destination job execution failed, or any check has errors
  * - inconclusive if checks did not execute for source/destination chains
  * - otherwise passed
  */
@@ -241,7 +241,7 @@ export function evaluateDependencyOutcome(
     if (notFullyValidated) {
       return {
         status: 'inconclusive',
-        reason: `Predecessor destination simulation for chain ${chainId} was not fully validated`,
+        reason: `Predecessor destination job for chain ${chainId} was not fully validated`,
       };
     }
 

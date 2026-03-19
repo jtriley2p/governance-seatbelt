@@ -515,19 +515,18 @@ async function main() {
     } else if (skips.length > 0) {
       status = 'skipped';
       const reasons = skips.map((sim) => sim.error).filter(Boolean);
-      skipReason = reasons.length > 0 ? reasons.join(' | ') : 'Destination simulation skipped.';
+      skipReason = reasons.length > 0 ? reasons.join(' | ') : 'Destination job skipped.';
     } else if (successes.length > 0) {
       status = 'failed';
-      skipReason =
-        'Destination simulation succeeded but no L2 checks were recorded for this chain.';
+      skipReason = 'Destination job succeeded but no L2 checks were recorded for this chain.';
     } else {
       status = 'skipped';
-      skipReason = 'No destination simulation result was available for this chain.';
+      skipReason = 'No destination job result was available for this chain.';
     }
 
     coverage.checks.push({
       checkId: 'crossChainDestination',
-      checkName: 'Cross-chain destination simulation status',
+      checkName: 'Cross-chain destination execution status',
       status,
       skipReason,
       chainId,

@@ -92,7 +92,7 @@ function findArbitrumInboxCalls(call: CallTrace): CallTrace[] {
  * @param sourceSim The Tenderly simulation result from the source chain.
  * @returns An array of destination execution jobs, grouped by L2 target.
  */
-export function parseArbitrumL1L2Messages(sourceSim: TenderlySimulation): CrossChainExecutionJob[] {
+export function extractArbitrumL1L2Jobs(sourceSim: TenderlySimulation): CrossChainExecutionJob[] {
   // Map to store jobs by target address and calldata hash
   const jobsByTargetAndCalldata = new Map<string, CrossChainExecutionJob>();
   const unknownSelectorCounts = new Map<string, number>();
@@ -310,7 +310,7 @@ export function parseArbitrumL1L2Messages(sourceSim: TenderlySimulation): CrossC
  * @param l1Sender Address treated as the L1 sender for L2 alias (e.g. timelock). Optional.
  * @returns One execution job for each inbox call found.
  */
-export function parseArbitrumL1L2MessagesFromProposal(
+export function extractArbitrumL1L2JobsFromProposal(
   targets: readonly string[],
   calldatas: readonly string[],
   l1Sender?: Address,

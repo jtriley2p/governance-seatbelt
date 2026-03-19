@@ -3,12 +3,12 @@ import { encodeFunctionData, parseAbi } from 'viem';
 import { arbitrum, base, optimism } from 'viem/chains';
 import type { CallTrace, CrossChainExecutionJob } from '../../types';
 import {
-  parseArbitrumL1L2Messages,
-  parseArbitrumL1L2MessagesFromProposal,
+  extractArbitrumL1L2Jobs,
+  extractArbitrumL1L2JobsFromProposal,
 } from '../../utils/bridges/arbitrum';
 import {
-  parseOptimismL1L2Messages,
-  parseOptimismL1L2MessagesFromProposal,
+  extractOptimismL1L2Jobs,
+  extractOptimismL1L2JobsFromProposal,
 } from '../../utils/bridges/optimism';
 import { createRealisticSimulation } from './test-utils';
 
@@ -36,7 +36,7 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
         },
       ]);
 
-      const messages = parseArbitrumL1L2Messages(complexSimulation);
+      const messages = extractArbitrumL1L2Jobs(complexSimulation);
 
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
@@ -67,7 +67,7 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
         },
       ]);
 
-      const messages = parseArbitrumL1L2Messages(multiCallSimulation);
+      const messages = extractArbitrumL1L2Jobs(multiCallSimulation);
 
       expect(messages).toHaveLength(2);
       expect(firstCall(messages[0]).l2TargetAddress).toBe(
@@ -100,7 +100,7 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
         },
       ]);
 
-      const messages = parseArbitrumL1L2Messages(edgeCaseSimulation);
+      const messages = extractArbitrumL1L2Jobs(edgeCaseSimulation);
 
       // Should handle all edge cases gracefully
       expect(messages).toHaveLength(0);
@@ -128,7 +128,7 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(opSimulation);
+      const messages = extractOptimismL1L2Jobs(opSimulation);
 
       expect(messages).toHaveLength(2);
 
@@ -173,7 +173,7 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(portalSimulation);
+      const messages = extractOptimismL1L2Jobs(portalSimulation);
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         bridgeType: 'OptimismL1L2',
@@ -205,7 +205,7 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(nestedSimulation);
+      const messages = extractOptimismL1L2Jobs(nestedSimulation);
 
       expect(messages).toHaveLength(1);
       expect(messages[0].destinationChainId).toBe(optimism.id);
@@ -241,7 +241,7 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(edgeCaseSimulation);
+      const messages = extractOptimismL1L2Jobs(edgeCaseSimulation);
 
       // Should handle all edge cases gracefully
       expect(messages).toHaveLength(0);
@@ -260,7 +260,7 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
         },
       ]);
 
-      const messages = parseArbitrumL1L2Messages(validArbitrumSim);
+      const messages = extractArbitrumL1L2Jobs(validArbitrumSim);
 
       expect(messages).toHaveLength(1);
 
@@ -285,7 +285,7 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(validOptimismSim);
+      const messages = extractOptimismL1L2Jobs(validOptimismSim);
 
       expect(messages).toHaveLength(1);
 
@@ -329,7 +329,7 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
       const largeSimulation = createRealisticSimulation(largeCalls);
 
       const start = performance.now();
-      const messages = parseArbitrumL1L2Messages(largeSimulation);
+      const messages = extractArbitrumL1L2Jobs(largeSimulation);
       const end = performance.now();
 
       // Should complete in reasonable time (< 1 second)
@@ -346,10 +346,10 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
     const arbCreateRetryableCalldata =
       '0x679b6ded000000000000000000000000912ce59144191c1204e64559fe8253a0e49e654800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a46fc7c680000000000000000000000000002bad8182c09f50c8318d769245bea52c32be46cd0000000000000000000000002bad8182c09f50c8318d769245bea52c32be46cd0000000000000000000000000000000000000000000000000000000000030d40000000000000000000000000000000000000000000000000000000003b9aca0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000044a9059cbb00000000000000000000000066ccbf509cd28c2fc0f40b4469d6b6aa1fc0fed300000000000000000000000000000000000000000000152d02c7e14af680000000000000000000000000000000000000000000000000000000000000';
 
-    test('parseArbitrumL1L2MessagesFromProposal extracts messages for inbox targets', () => {
+    test('extractArbitrumL1L2JobsFromProposal extracts messages for inbox targets', () => {
       const targets = ['0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', arbInbox];
       const calldatas = ['0xdead', arbCreateRetryableCalldata];
-      const messages = parseArbitrumL1L2MessagesFromProposal(targets, calldatas);
+      const messages = extractArbitrumL1L2JobsFromProposal(targets, calldatas);
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         bridgeType: 'ArbitrumL1L2',
@@ -360,21 +360,21 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
       );
     });
 
-    test('parseArbitrumL1L2MessagesFromProposal ignores non-inbox targets', () => {
+    test('extractArbitrumL1L2JobsFromProposal ignores non-inbox targets', () => {
       const targets = ['0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984'];
       const calldatas = [
         '0x679b6ded000000000000000000000000912ce59144191c1204e64559fe8253a0e49e6548',
       ];
-      const messages = parseArbitrumL1L2MessagesFromProposal(targets, calldatas);
+      const messages = extractArbitrumL1L2JobsFromProposal(targets, calldatas);
       expect(messages).toHaveLength(0);
     });
 
-    test('parseOptimismL1L2MessagesFromProposal extracts messages for messenger targets', () => {
+    test('extractOptimismL1L2JobsFromProposal extracts messages for messenger targets', () => {
       const sendMessageCalldata =
         '0x3dbb202b0000000000000000000000004200000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000000004d0e30db000000000000000000000000000000000000000000000000000000000';
       const targets = ['0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', opMessenger];
       const calldatas = ['0xdead', sendMessageCalldata];
-      const messages = parseOptimismL1L2MessagesFromProposal(targets, calldatas);
+      const messages = extractOptimismL1L2JobsFromProposal(targets, calldatas);
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         bridgeType: 'OptimismL1L2',
@@ -382,22 +382,22 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
       });
     });
 
-    test('parseOptimismL1L2MessagesFromProposal ignores non-messenger targets', () => {
+    test('extractOptimismL1L2JobsFromProposal ignores non-messenger targets', () => {
       const targets = ['0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984'];
       const calldatas = [
         '0x3dbb202b0000000000000000000000000000000000000000000000000000000000000000',
       ];
-      const messages = parseOptimismL1L2MessagesFromProposal(targets, calldatas);
+      const messages = extractOptimismL1L2JobsFromProposal(targets, calldatas);
       expect(messages).toHaveLength(0);
     });
 
-    test('parseOptimismL1L2MessagesFromProposal parses worldchain messenger targets', () => {
+    test('extractOptimismL1L2JobsFromProposal parses worldchain messenger targets', () => {
       const sendMessageCalldata =
         '0x3dbb202b0000000000000000000000004200000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000000004d0e30db000000000000000000000000000000000000000000000000000000000';
       const worldchainMessenger = '0xf931a81D18B1766d15695ffc7c1920a62b7e710a';
       const targets = ['0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', worldchainMessenger];
       const calldatas = ['0xdead', sendMessageCalldata];
-      const messages = parseOptimismL1L2MessagesFromProposal(targets, calldatas);
+      const messages = extractOptimismL1L2JobsFromProposal(targets, calldatas);
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         bridgeType: 'OptimismL1L2',
@@ -405,7 +405,7 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
       });
     });
 
-    test('parseOptimismL1L2MessagesFromProposal parses portal depositTransaction targets', () => {
+    test('extractOptimismL1L2JobsFromProposal parses portal depositTransaction targets', () => {
       const setOwnerAbi = parseAbi(['function setOwner(address _owner)']);
       const portalAbi = parseAbi([
         'function depositTransaction(address _to, uint256 _value, uint64 _gasLimit, bool _isCreation, bytes _data)',
@@ -423,7 +423,7 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
 
       const soneiumPortal = '0x88e529A6ccd302c948689Cd5156C83D4614FAE92';
       const l1Sender = '0x1a9C8182C09F50C8318d769245beA52c32BE35BC';
-      const messages = parseOptimismL1L2MessagesFromProposal(
+      const messages = extractOptimismL1L2JobsFromProposal(
         [soneiumPortal],
         [depositCalldata],
         l1Sender,

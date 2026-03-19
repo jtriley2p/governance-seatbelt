@@ -119,7 +119,7 @@ describe('Cross-Chain Simulation Metadata Tests', () => {
       expect(crossChainResult.crossChainFailure).toBeDefined();
       expect(typeof crossChainResult.crossChainFailure).toBe('boolean');
 
-      // Validate destination simulation states
+      // Validate destination job result states
       if (
         crossChainResult.destinationJobResults &&
         crossChainResult.destinationJobResults.length > 0

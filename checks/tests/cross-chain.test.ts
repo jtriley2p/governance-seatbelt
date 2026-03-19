@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { arbitrum, base, optimism } from 'viem/chains';
 import type { CallTrace, CrossChainExecutionJob, TenderlySimulation } from '../../types';
-import { parseArbitrumL1L2Messages } from '../../utils/bridges/arbitrum';
-import { parseOptimismL1L2Messages } from '../../utils/bridges/optimism';
+import { extractArbitrumL1L2Jobs } from '../../utils/bridges/arbitrum';
+import { extractOptimismL1L2Jobs } from '../../utils/bridges/optimism';
 
 function firstCall(job: CrossChainExecutionJob) {
   return job.calls[0];
@@ -35,7 +35,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseArbitrumL1L2Messages(mockSim);
+      const messages = extractArbitrumL1L2Jobs(mockSim);
 
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
@@ -64,7 +64,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseArbitrumL1L2Messages(mockSim);
+      const messages = extractArbitrumL1L2Jobs(mockSim);
       expect(messages).toHaveLength(0);
     });
 
@@ -86,7 +86,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseArbitrumL1L2Messages(mockSim);
+      const messages = extractArbitrumL1L2Jobs(mockSim);
       expect(messages).toHaveLength(1); // Should deduplicate to 1 message
     });
 
@@ -108,7 +108,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseArbitrumL1L2Messages(mockSim);
+      const messages = extractArbitrumL1L2Jobs(mockSim);
       expect(messages).toHaveLength(1);
     });
   });
@@ -129,7 +129,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseArbitrumL1L2Messages(mockSim);
+      const messages = extractArbitrumL1L2Jobs(mockSim);
       expect(messages[0]?.l2FromAddress?.toLowerCase()).toBe(expectedAlias.toLowerCase());
     });
   });
@@ -149,7 +149,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
 
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
@@ -177,7 +177,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
 
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
@@ -212,7 +212,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
 
       expect(messages).toHaveLength(2);
       expect(messages.map((m) => m.destinationChainId).sort((a, b) => a - b)).toEqual([
@@ -243,7 +243,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
       expect(messages).toHaveLength(0);
     });
 
@@ -258,7 +258,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
       expect(messages).toHaveLength(0);
     });
 
@@ -282,7 +282,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
       expect(messages).toHaveLength(1); // Should deduplicate to 1 message
     });
 
@@ -305,7 +305,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
       expect(messages).toHaveLength(1);
     });
 
@@ -322,7 +322,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
       expect(messages).toHaveLength(0); // Should handle invalid length gracefully
     });
 
@@ -338,7 +338,7 @@ describe('Cross-Chain Implementation', () => {
         },
       ]);
 
-      const messages = parseOptimismL1L2Messages(mockSim);
+      const messages = extractOptimismL1L2Jobs(mockSim);
       expect(messages).toHaveLength(0); // Should skip unknown messengers
     });
   });

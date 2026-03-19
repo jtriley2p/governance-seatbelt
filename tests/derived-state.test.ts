@@ -352,7 +352,7 @@ describe('derived-state execution helpers', () => {
     expect(outcome.reason).toContain('does not support L2 checks');
   });
 
-  test('marks dependency as inconclusive when destination simulation is skipped', () => {
+  test('marks dependency as inconclusive when destination job is skipped', () => {
     const predecessor: Pick<
       SimulationResult,
       'sim' | 'destinationJobResults' | 'crossChainFailure'

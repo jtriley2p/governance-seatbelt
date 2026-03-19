@@ -337,7 +337,7 @@ function buildMessageFromDecodedPayload(input: {
  * Parses a source chain simulation trace to find OP-style L1 -> L2 messages
  * initiated via L1CrossDomainMessenger.sendMessage or OptimismPortal.depositTransaction.
  */
-export function parseOptimismL1L2Messages(sourceSim: TenderlySimulation): CrossChainExecutionJob[] {
+export function extractOptimismL1L2Jobs(sourceSim: TenderlySimulation): CrossChainExecutionJob[] {
   const jobsByKey = new Map<string, CrossChainExecutionJob>();
 
   if (!sourceSim?.transaction?.transaction_info?.call_trace) {
@@ -516,7 +516,7 @@ export function parseOptimismL1L2Messages(sourceSim: TenderlySimulation): CrossC
  * Extracts OP-style L1->L2 messages from a proposal's targets and calldatas.
  * Used when the simulation call trace does not yield decodeable bridge calls.
  */
-export function parseOptimismL1L2MessagesFromProposal(
+export function extractOptimismL1L2JobsFromProposal(
   targets: readonly string[],
   calldatas: readonly string[],
   l1Sender?: Address,
