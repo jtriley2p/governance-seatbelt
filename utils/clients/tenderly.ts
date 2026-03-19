@@ -1,5 +1,3 @@
-import mftch from 'micro-ftch';
-import type { FETCH_OPT } from 'micro-ftch';
 import {
   type Address,
   type Hex,
@@ -12,8 +10,6 @@ import {
   zeroHash,
 } from 'viem';
 import type {
-  CrossChainExecutionJob,
-  CrossChainExecutionJobResult,
   GovernorType,
   ProposalData,
   ProposalEvent,
@@ -26,21 +22,10 @@ import type {
   StorageEncodingResponse,
   TenderlyContract,
   TenderlyPayload,
-  TenderlySimulation,
 } from '../../types.d';
 import { GOVERNOR_ABI } from '../abis/GovernorBravo';
 import { timelockAbi } from '../abis/Timelock';
-import { extractArbitrumL1L2JobsFromProposal } from '../bridges/arbitrum';
-import { extractOptimismL1L2JobsFromProposal } from '../bridges/optimism';
-import { extractWormholeExecutionJobsFromProposal } from '../bridges/wormhole';
-import { supportsTenderlyDestinationSimulation } from '../chains/capabilities';
-import {
-  BLOCK_GAS_LIMIT,
-  TENDERLY_ACCESS_TOKEN,
-  TENDERLY_BASE_URL,
-  TENDERLY_ENCODE_URL,
-  TENDERLY_SIM_URL,
-} from '../constants';
+import { BLOCK_GAS_LIMIT } from '../constants';
 import { GOVERNOR_OZ_ABI } from '../constants/abi';
 import { fetchTokenMetadata } from '../contracts/erc20';
 import {
@@ -52,141 +37,25 @@ import {
   hashOperationBatchOz,
   hashOperationOz,
 } from '../contracts/governor';
-import {
-  type DerivedStateByChain,
-  type SimulationStateObjects,
-  extractStateOverridesFromSimulation,
-  mergeStateObjects,
-} from '../derived-state';
-import { parseWithSchema, z } from '../validation/zod';
+import type { TenderlySimulationExecutionOptions } from '../cross-chain/tenderly-execution-engine';
+import { mergeStateObjects } from '../derived-state';
+export type { TenderlySimulationExecutionOptions as SimulationExecutionOptions } from '../cross-chain/tenderly-execution-engine';
+export { handleCrossChainSimulations } from '../cross-chain/tenderly-execution-engine';
 import { CacheManager } from './block-explorers/cache';
 import { BlockExplorerFactory } from './block-explorers/factory';
 import { getChainConfig, publicClient } from './client';
-
-const fetchUrl = mftch;
-
-const TENDERLY_FETCH_OPTIONS = {
-  type: 'json' as const,
-  headers: { 'X-Access-Key': TENDERLY_ACCESS_TOKEN },
-};
-
-const tenderlyBlockNumberSchema = z
-  .object({
-    block_number: z.number(),
-  })
-  .passthrough();
-
-const tenderlyStorageEncodingSchema = z
-  .object({
-    stateOverrides: z.record(
-      z.string(),
-      z.object({
-        value: z.record(z.string(), z.string()),
-      }),
-    ),
-  })
-  .passthrough();
-
-const tenderlySimulationSchema: z.ZodType<TenderlySimulation> = z
-  .custom<TenderlySimulation>((value) => typeof value === 'object' && value !== null, {
-    message: 'Expected object',
-  })
-  .superRefine((value, ctx) => {
-    const candidate = value as {
-      transaction?: { status?: unknown; addresses?: unknown };
-      contracts?: Array<{ address?: unknown }> | unknown;
-      simulation?: { id?: unknown };
-    };
-
-    if (!candidate.transaction || typeof candidate.transaction !== 'object') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Expected object',
-        path: ['transaction'],
-      });
-    } else {
-      if (typeof candidate.transaction.status !== 'boolean') {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Expected boolean',
-          path: ['transaction', 'status'],
-        });
-      }
-      if (
-        !Array.isArray(candidate.transaction.addresses) ||
-        !candidate.transaction.addresses.every((address) => typeof address === 'string')
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Expected string[]',
-          path: ['transaction', 'addresses'],
-        });
-      }
-    }
-
-    if (!Array.isArray(candidate.contracts)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Expected array',
-        path: ['contracts'],
-      });
-    } else {
-      candidate.contracts.forEach((contract, index) => {
-        if (!contract || typeof contract.address !== 'string') {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'Expected string',
-            path: ['contracts', index, 'address'],
-          });
-        }
-      });
-    }
-
-    if (!candidate.simulation || typeof candidate.simulation !== 'object') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Expected object',
-        path: ['simulation'],
-      });
-    } else if (typeof candidate.simulation.id !== 'string') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Expected string',
-        path: ['simulation', 'id'],
-      });
-    }
-  });
-
-function parseBooleanEnv(value: string | undefined): boolean | undefined {
-  if (!value) return undefined;
-  const normalized = value.trim().toLowerCase();
-  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
-  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
-  return undefined;
-}
-
-function getTenderlySaveFlags(defaultSaveIfFails: boolean): {
-  save: boolean;
-  saveIfFails: boolean;
-} {
-  const save = parseBooleanEnv(process.env.TENDERLY_SAVE_SIMULATIONS) ?? true;
-  const saveIfFails = parseBooleanEnv(process.env.TENDERLY_SAVE_IF_FAILS) ?? defaultSaveIfFails;
-  return { save, saveIfFails: save ? saveIfFails : false };
-}
+import {
+  type StateOverridesPayload,
+  getLatestBlock,
+  getTenderlySaveFlags,
+  sendEncodeRequest,
+  sendSimulation,
+} from './tenderly-api';
 
 // Placeholder sender for simulations.
 // IMPORTANT: This MUST remain an empty EOA on mainnet (no code, nonce = 0).
 // The test at tests/placeholder-constant.test.ts enforces this invariant.
 export const DEFAULT_SIMULATION_ADDRESS = '0x0000000000000000000000000000000000001234' as Address;
-
-type TenderlyError = {
-  statusCode?: number;
-};
-
-type StateOverridesPayload = {
-  networkID: string;
-  stateOverrides: Record<string, { value: Record<string, string> }>;
-};
 
 interface GovernorOverrideParams {
   governorType: GovernorType;
@@ -218,238 +87,16 @@ interface SimulationPayloadParams {
   saveIfFails?: boolean;
 }
 
-export interface SimulationExecutionOptions {
-  derivedStateByChain?: DerivedStateByChain;
-  initialStateByChain?: DerivedStateByChain;
-}
-
-type CrossChainSimulationSourceResult = Pick<
-  SimulationResult,
-  'proposal' | 'deps' | 'latestBlock'
-> & {
-  sim: {
-    transaction: {
-      status: boolean;
-      transaction_info?: {
-        call_trace?: {
-          from: string;
-          input: string;
-          calls?: unknown[];
-        };
-      };
-    };
-  };
-  destinationJobResults?: CrossChainExecutionJobResult[];
-  destinationStateByChain?: Record<number, NonNullable<TenderlyPayload['state_objects']>>;
-  crossChainFailure?: boolean;
-};
-
-type CrossChainSimulationHandledResult<T extends CrossChainSimulationSourceResult> = Omit<
-  T,
-  'destinationJobResults' | 'destinationStateByChain' | 'crossChainFailure'
-> &
-  Required<
-    Pick<
-      SimulationResult,
-      'destinationJobResults' | 'destinationStateByChain' | 'crossChainFailure'
-    >
-  >;
-
-type DestinationJobExecutionOutcome =
-  | {
-      status: 'success';
-      jobResult: CrossChainExecutionJobResult;
-      committedState: SimulationStateObjects | undefined;
-    }
-  | {
-      status: 'failure';
-      jobResult: CrossChainExecutionJobResult;
-    };
-
-function extractDestinationJobs(
-  targets: readonly string[],
-  calldatas: readonly string[],
-  l1Sender?: Address,
-): CrossChainExecutionJob[] {
-  return [
-    ...extractArbitrumL1L2JobsFromProposal(targets, calldatas, l1Sender),
-    ...extractOptimismL1L2JobsFromProposal(targets, calldatas, l1Sender),
-    ...extractWormholeExecutionJobsFromProposal(targets, calldatas),
-  ].sort((a, b) => a.sourceOrder - b.sourceOrder);
-}
-
-function initializeCommittedStateByChain(
-  jobs: CrossChainExecutionJob[],
-  options?: SimulationExecutionOptions,
-): DerivedStateByChain {
-  const committedStateByChain: DerivedStateByChain = {};
-
-  for (const chainId of new Set(jobs.map((job) => job.destinationChainId))) {
-    const committed = mergeStateObjects(
-      options?.initialStateByChain?.[chainId],
-      options?.derivedStateByChain?.[chainId],
-    );
-    if (committed) {
-      committedStateByChain[chainId] = committed;
-    }
-  }
-
-  return committedStateByChain;
-}
-
-function getDestinationFailureReason(sim: TenderlySimulation): string {
-  const traceReason = sim.transaction?.transaction_info?.call_trace?.error_reason;
-  if (traceReason && traceReason.trim().length > 0) return traceReason;
-
-  const stackReason = sim.transaction?.transaction_info?.stack_trace?.find(
-    (frame) =>
-      (typeof frame.error_reason === 'string' && frame.error_reason.trim().length > 0) ||
-      (typeof frame.error === 'string' && frame.error.trim().length > 0),
-  );
-  if (stackReason?.error_reason?.trim()) return stackReason.error_reason;
-  if (stackReason?.error?.trim()) return stackReason.error;
-
-  return 'Destination job failed (no detailed error returned by Tenderly).';
-}
-
-function buildSkippedDestinationJobResult(
-  job: CrossChainExecutionJob,
-): CrossChainExecutionJobResult {
-  return {
-    chainId: job.destinationChainId,
-    bridgeType: job.bridgeType,
-    job,
-    status: 'skipped',
-    stepResults: [],
-    error: `Skipping destination job: chain ${job.destinationChainId} is not currently supported in this Tenderly workflow.`,
-  };
-}
-
-function buildDestinationSimulationPayload(
-  job: CrossChainExecutionJob,
-  call: CrossChainExecutionJob['calls'][number],
-  workingState: SimulationStateObjects | undefined,
-): TenderlyPayload {
-  const { save: saveSimulation, saveIfFails: saveSimulationIfFails } = getTenderlySaveFlags(true);
-
-  return {
-    network_id: job.destinationChainId.toString() as TenderlyPayload['network_id'],
-    from: job.l2FromAddress,
-    to: call.l2TargetAddress,
-    input: call.l2InputData,
-    gas: BLOCK_GAS_LIMIT,
-    gas_price: '0',
-    value: call.l2Value,
-    save_if_fails: saveSimulationIfFails,
-    save: saveSimulation,
-    state_objects: workingState,
-  };
-}
-
-async function executeDestinationJob(
-  job: CrossChainExecutionJob,
-  committedState: SimulationStateObjects | undefined,
-): Promise<DestinationJobExecutionOutcome> {
-  let workingState = mergeStateObjects(committedState, undefined);
-  const stepResults: CrossChainExecutionJobResult['stepResults'] = [];
-  let accumulatedSim: TenderlySimulation | undefined;
-
-  for (let stepIndex = 0; stepIndex < job.calls.length; stepIndex += 1) {
-    const call = job.calls[stepIndex];
-    const destinationPayload = buildDestinationSimulationPayload(job, call, workingState);
-
-    console.log(
-      `[CrossChainHandler] Sending L2 Simulation Payload (Chain ${destinationPayload.network_id}, Step ${stepIndex + 1}/${job.calls.length}):`,
-      JSON.stringify(destinationPayload, null, 2),
-    );
-
-    try {
-      const destSim = await sendSimulation(destinationPayload);
-
-      if (!destSim.transaction.status) {
-        const jobError = getDestinationFailureReason(destSim);
-        console.error(
-          `[CrossChainHandler] Destination job step failed for L2 target: ${call.l2TargetAddress}`,
-        );
-        stepResults.push({
-          stepIndex,
-          call,
-          status: 'failure',
-          sim: destSim,
-          error: jobError,
-        });
-
-        return {
-          status: 'failure',
-          jobResult: {
-            chainId: job.destinationChainId,
-            bridgeType: job.bridgeType,
-            job,
-            status: 'failure',
-            stepResults,
-            error: jobError,
-          },
-        };
-      }
-
-      accumulatedSim = destSim;
-      stepResults.push({
-        stepIndex,
-        call,
-        status: 'success',
-        sim: destSim,
-      });
-      workingState =
-        mergeStateObjects(workingState, extractStateOverridesFromSimulation(destSim)) ??
-        workingState;
-    } catch (error: unknown) {
-      const jobError = `Destination job step simulation API call failed: ${(error as Error).message}`;
-      console.error(
-        `[CrossChainHandler] Error during destination job step simulation API call for L2 target ${call.l2TargetAddress}:`,
-        error,
-      );
-      stepResults.push({
-        stepIndex,
-        call,
-        status: 'failure',
-        error: jobError,
-      });
-
-      return {
-        status: 'failure',
-        jobResult: {
-          chainId: job.destinationChainId,
-          bridgeType: job.bridgeType,
-          job,
-          status: 'failure',
-          stepResults,
-          error: jobError,
-        },
-      };
-    }
-  }
-
-  return {
-    status: 'success',
-    jobResult: {
-      chainId: job.destinationChainId,
-      bridgeType: job.bridgeType,
-      job,
-      status: 'success',
-      stepResults,
-      accumulatedSim,
-    },
-    committedState: workingState,
-  };
-}
-
 // --- Simulation methods ---
 
 /**
  * @notice Simulates a proposal based on the provided configuration
  * @param config Configuration object
  */
-export async function simulate(config: SimulationConfig, options?: SimulationExecutionOptions) {
+export async function simulate(
+  config: SimulationConfig,
+  options?: TenderlySimulationExecutionOptions,
+) {
   if (config.type === 'executed') return await simulateExecuted(config, options);
   if (config.type === 'proposed') return await simulateProposed(config, options);
   return await simulateNew(config, options);
@@ -461,7 +108,7 @@ export async function simulate(config: SimulationConfig, options?: SimulationExe
  */
 export async function simulateNew(
   config: SimulationConfigNew,
-  options?: SimulationExecutionOptions,
+  options?: TenderlySimulationExecutionOptions,
 ): Promise<SimulationResult> {
   // --- Validate config ---
   const { governorAddress, governorType, targets, values, signatures, calldatas, description } =
@@ -639,7 +286,7 @@ export async function simulateNew(
  */
 async function simulateProposed(
   config: SimulationConfigProposed,
-  options?: SimulationExecutionOptions,
+  options?: TenderlySimulationExecutionOptions,
 ): Promise<SimulationResult> {
   const { governorAddress, governorType, proposalId } = config;
   const proposalIdBigInt = typeof proposalId === 'bigint' ? proposalId : BigInt(proposalId);
@@ -834,7 +481,7 @@ async function simulateProposed(
  */
 async function simulateExecuted(
   config: SimulationConfigExecuted,
-  options?: SimulationExecutionOptions,
+  options?: TenderlySimulationExecutionOptions,
 ): Promise<SimulationResult> {
   const { governorAddress, governorType, proposalId } = config;
   const proposalIdBigInt = typeof proposalId === 'bigint' ? proposalId : BigInt(proposalId);
@@ -1085,100 +732,6 @@ async function simulateExecuted(
   };
 }
 
-/**
- * @notice Takes a completed source simulation result and handles parsing for
- *         cross-chain execution jobs and executes them on destination chains.
- *
- * Runtime model:
- * - a job is the destination execution unit emitted by bridge parsers
- * - a successful one-call job usually yields one Tenderly simulation
- * - a successful multi-call job yields one step simulation per call, each run
- *   against the state accumulated by earlier successful steps in the same job
- * - `accumulatedSim` is the final successful simulation artifact for the job
- *
- * `accumulatedSim` is not specific to derived-state flows. Derived state is one
- * consumer of it, but reporting, checks, provenance, and debugging can all use
- * it as the canonical final successful result for a job.
- *
- * @param sourceResult The result of the source chain simulation.
- * @returns The potentially augmented SimulationResult including destination job results.
- */
-
-export async function handleCrossChainSimulations<T extends CrossChainSimulationSourceResult>(
-  sourceResult: T,
-  options?: SimulationExecutionOptions,
-): Promise<CrossChainSimulationHandledResult<T>> {
-  const result: CrossChainSimulationHandledResult<T> = {
-    ...sourceResult,
-    destinationJobResults: sourceResult.destinationJobResults ?? [],
-    destinationStateByChain: sourceResult.destinationStateByChain ?? {},
-    crossChainFailure: sourceResult.crossChainFailure ?? false,
-  };
-
-  if (!result.sim.transaction.status) {
-    console.log('[CrossChainHandler] Source simulation failed, skipping destination checks.');
-    return result;
-  }
-
-  // 1. Parse source simulation for cross-chain execution jobs
-  console.log('[CrossChainHandler] Parsing source sim for execution jobs...');
-
-  if (!result.proposal?.targets?.length || !result.proposal?.calldatas?.length) {
-    console.log('[CrossChainHandler] No cross-chain execution jobs detected.');
-    return result; // Return early with original source data
-  }
-
-  const l1Sender = result.deps?.timelock?.address;
-  const extractedJobs = extractDestinationJobs(
-    result.proposal.targets,
-    result.proposal.calldatas,
-    l1Sender,
-  );
-
-  if (extractedJobs.length === 0) {
-    console.log('[CrossChainHandler] No cross-chain execution jobs detected.');
-    return result;
-  }
-
-  const committedStateByChain = initializeCommittedStateByChain(extractedJobs, options);
-  const destinationResults: CrossChainExecutionJobResult[] = [];
-
-  // 2. If jobs found, execute them on destination chains
-  console.log(
-    `[CrossChainHandler] Detected ${extractedJobs.length} execution jobs. Executing destination jobs...`,
-  );
-
-  for (const job of extractedJobs) {
-    const destinationChainId = job.destinationChainId;
-    const targetSummary = job.calls.map((call) => call.l2TargetAddress).join(', ');
-    console.log(
-      `[CrossChainHandler] Executing destination job on chain ${destinationChainId}: ${targetSummary}`,
-    );
-
-    if (!supportsTenderlyDestinationSimulation(destinationChainId)) {
-      const skippedResult = buildSkippedDestinationJobResult(job);
-      console.warn(`[CrossChainHandler] ${skippedResult.error}`);
-      destinationResults.push(skippedResult);
-      continue;
-    }
-
-    const executionOutcome = await executeDestinationJob(
-      job,
-      committedStateByChain[destinationChainId],
-    );
-    if (executionOutcome.status === 'success' && executionOutcome.committedState) {
-      committedStateByChain[destinationChainId] = executionOutcome.committedState;
-    }
-    destinationResults.push(executionOutcome.jobResult);
-  }
-
-  result.destinationJobResults = destinationResults;
-  result.destinationStateByChain = committedStateByChain;
-  result.crossChainFailure = destinationResults.some((res) => res.status === 'failure');
-
-  return result;
-}
-
 // --- Helper methods ---
 
 /**
@@ -1361,12 +914,6 @@ function buildGovernorStateOverrides(params: GovernorOverrideParams): Record<str
   throw new Error(`Cannot generate overrides for unknown governor type: ${governorType}`);
 }
 
-// Sleep for the specified number of milliseconds
-const sleep = (delay: number) => new Promise((resolve) => setTimeout(resolve, delay)); // delay in milliseconds
-
-// Get a random integer between two values
-const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min) + min); // max is exclusive, min is inclusive
-
 async function findProposalCreatedEventNearBlock(params: {
   governorType: GovernorType;
   governorAddress: Address;
@@ -1486,104 +1033,6 @@ export function getContractNameFromTenderly(contract: TenderlyContract | undefin
   // Priority 2: Fall back to technical contract name
   const contractName = contract?.contract_name || 'Unknown Contract';
   return `${contractName} at \`${contractAddress}\``;
-}
-
-/**
- * Gets the latest block number known to Tenderly
- * @param chainId Chain ID to get block number for
- */
-async function getLatestBlock(chainId: number): Promise<number> {
-  try {
-    // Send simulation request
-    const url = `${TENDERLY_BASE_URL}/network/${(chainId).toString()}/block-number`;
-    const fetchOptions = <Partial<FETCH_OPT>>{
-      method: 'GET',
-      ...TENDERLY_FETCH_OPTIONS,
-    };
-    const rawRes = await fetchUrl(url, fetchOptions);
-    const res = parseWithSchema(
-      tenderlyBlockNumberSchema,
-      rawRes,
-      'Tenderly block-number response',
-    );
-    return res.block_number;
-  } catch (err) {
-    console.log('logging getLatestBlock error');
-    console.log(JSON.stringify(err, null, 2));
-    throw err;
-  }
-}
-
-/**
- * @notice Encode state overrides
- * @param payload State overrides to send
- */
-async function sendEncodeRequest(payload: StateOverridesPayload): Promise<StorageEncodingResponse> {
-  try {
-    const fetchOptions = <Partial<FETCH_OPT>>{
-      method: 'POST',
-      data: payload,
-      ...TENDERLY_FETCH_OPTIONS,
-    };
-    const rawResponse = await fetchUrl(TENDERLY_ENCODE_URL, fetchOptions);
-    const response = parseWithSchema(
-      tenderlyStorageEncodingSchema,
-      rawResponse,
-      'Tenderly storage encoding response',
-    );
-
-    return response as StorageEncodingResponse;
-  } catch (err) {
-    console.log('logging sendEncodeRequest error');
-    console.log(JSON.stringify(err, null, 2));
-    console.log(JSON.stringify(payload));
-    throw err;
-  }
-}
-
-/**
- * @notice Sends a transaction simulation request to the Tenderly API
- * @dev Uses a simple exponential backoff when requests fail, with the following parameters:
- *   - Initial delay is 1 second
- *   - We randomize the delay duration to avoid synchronization issues if client is sending multiple requests simultaneously
- *   - We double delay each time and throw an error if delay is over 8 seconds
- * @param payload Transaction simulation parameters
- * @param delay How long to wait until next simulation request after failure, in milliseconds
- */
-async function sendSimulation(payload: TenderlyPayload, delay = 1000): Promise<TenderlySimulation> {
-  const fetchOptions = <Partial<FETCH_OPT>>{
-    method: 'POST',
-    data: payload,
-    ...TENDERLY_FETCH_OPTIONS,
-  };
-  try {
-    // Send simulation request
-    const rawSim = await fetchUrl(TENDERLY_SIM_URL, fetchOptions);
-    const sim = parseWithSchema(tenderlySimulationSchema, rawSim, 'Tenderly simulate response');
-
-    // Post-processing to ensure addresses we use are checksummed (since ethers returns checksummed addresses)
-    sim.transaction.addresses = sim.transaction.addresses.map(getAddress);
-    for (const contract of sim.contracts) {
-      contract.address = getAddress(contract.address);
-    }
-
-    return sim;
-  } catch (err) {
-    console.log('err in sendSimulation: ', JSON.stringify(err));
-    const is429 = (err as TenderlyError)?.statusCode === 429;
-    if (delay > 8000 || !is429) {
-      console.warn('Simulation request failed with the below request payload and error');
-      console.log(JSON.stringify(fetchOptions));
-      throw err;
-    }
-    console.warn(err);
-    console.warn(
-      `Simulation request failed with the above error, retrying in ~${delay} milliseconds. See request payload below`,
-    );
-    console.log(JSON.stringify(payload));
-    await sleep(delay + randomInt(0, 1000));
-    return await sendSimulation(payload, delay * 2);
-  }
 }
 
 /**
