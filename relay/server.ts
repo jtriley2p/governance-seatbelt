@@ -1259,8 +1259,7 @@ export function createRelayFetchHandler(
     }
 
     const shouldRateLimitPublishEndpoint =
-      (request.method === 'POST' && pathname === '/api/v1/publishes') ||
-      (request.method === 'GET' && pathname.startsWith('/api/v1/publishes/'));
+      request.method === 'POST' && pathname === '/api/v1/publishes';
 
     if (shouldRateLimitPublishEndpoint) {
       const now = nowMs();

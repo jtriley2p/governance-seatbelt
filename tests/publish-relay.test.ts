@@ -388,7 +388,7 @@ describe('managed publish relay endpoints', () => {
     expect(publishCallCount).toBe(1);
   });
 
-  it('enforces rate limit on publish lookup endpoint', async () => {
+  it('does not rate limit publish lookup endpoint', async () => {
     const handler = createRelayFetchHandler({
       config: {
         rateLimitEnabled: true,
@@ -423,8 +423,8 @@ describe('managed publish relay endpoints', () => {
     );
 
     expect(firstResponse.status).toBe(404);
-    expect(secondResponse.status).toBe(429);
-    expect(secondResponse.headers.get('retry-after')).not.toBeNull();
+    expect(secondResponse.status).toBe(404);
+    expect(secondResponse.headers.get('retry-after')).toBeNull();
   });
 
   it('deduplicates duplicate idempotency keys in a single relay instance', async () => {
