@@ -1,13 +1,12 @@
 'use client';
 
-import type { SimulationType } from '@/components/ProposalCard';
 import { ProposalSummary } from '@/components/ProposalSummary';
 import { StructuredReport } from '@/components/StructuredReport';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Toaster } from '@/components/ui/sonner';
 import { useSimulationResults } from '@/hooks/use-simulation-results';
-import { parseSimulationType } from '@/lib/write-actions';
+import { resolveProposalAction } from '@/lib/write-actions';
 import { AlertTriangleIcon, InfoIcon } from 'lucide-react';
 import { Suspense } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
@@ -123,16 +122,16 @@ function ReportSection() {
 
   const { proposalData, report } = simulationData;
   const rawSimulationType = report.structuredReport?.metadata?.simulationType;
-  const simulationType: SimulationType =
-    rawSimulationType == null ? 'new' : (parseSimulationType(rawSimulationType) ?? 'new');
   const proposalState = report.structuredReport?.metadata?.proposalState;
+  const actionResolution = resolveProposalAction(rawSimulationType, proposalState);
 
   return (
     <div className="w-full space-y-4">
       <ProposalSummary
         proposal={proposalData}
-        simulationType={simulationType}
-        proposalState={proposalState}
+        mode={actionResolution.mode}
+        availability={actionResolution.availability}
+        blockedState={actionResolution.blockedState}
       />
 
       {report.structuredReport ? (

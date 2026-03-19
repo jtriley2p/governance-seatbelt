@@ -6,8 +6,8 @@ import {
   buildExecuteArgs,
   buildExecuteArgsFromSimulationData,
   buildProposeArgs,
-  getWriteActionForSimulationType,
   parseSimulationType,
+  resolveProposalAction,
 } from '../frontend/src/lib/write-actions';
 
 describe('frontend write actions (deterministic wiring)', () => {
@@ -66,13 +66,96 @@ describe('frontend write actions (deterministic wiring)', () => {
     );
   });
 
-  it('getWriteActionForSimulationType matches Action page branching', () => {
-    expect(getWriteActionForSimulationType('new')).toBe('propose');
-    expect(getWriteActionForSimulationType('proposed')).toBe('execute');
-    expect(getWriteActionForSimulationType('executed')).toBe(null);
-    expect(getWriteActionForSimulationType(undefined)).toBe('propose');
-    expect(getWriteActionForSimulationType(null)).toBe('propose');
-    expect(getWriteActionForSimulationType('not-a-real-type')).toBe(null);
+  it('resolveProposalAction maps simulation metadata to write availability', () => {
+    expect(resolveProposalAction(undefined)).toEqual({
+      mode: 'new',
+      availability: 'propose',
+      blockedState: null,
+    });
+    expect(resolveProposalAction(null)).toEqual({
+      mode: 'new',
+      availability: 'propose',
+      blockedState: null,
+    });
+    expect(resolveProposalAction('new')).toEqual({
+      mode: 'new',
+      availability: 'propose',
+      blockedState: null,
+    });
+    expect(resolveProposalAction('executed')).toEqual({
+      mode: 'executed',
+      availability: 'none',
+      blockedState: null,
+    });
+    expect(resolveProposalAction('proposed')).toEqual({
+      mode: 'proposed',
+      availability: 'none',
+      blockedState: 'unknown',
+    });
+    expect(resolveProposalAction('proposed', 'Queued')).toEqual({
+      mode: 'proposed',
+      availability: 'execute',
+      blockedState: null,
+    });
+    expect(resolveProposalAction('proposed', 'Defeated')).toEqual({
+      mode: 'proposed',
+      availability: 'none',
+      blockedState: 'defeated',
+    });
+    expect(resolveProposalAction('proposed', 'Expired')).toEqual({
+      mode: 'proposed',
+      availability: 'none',
+      blockedState: 'expired',
+    });
+    expect(resolveProposalAction('proposed', 'Canceled')).toEqual({
+      mode: 'proposed',
+      availability: 'none',
+      blockedState: 'canceled',
+    });
+    expect(resolveProposalAction('proposed', 'Active')).toEqual({
+      mode: 'proposed',
+      availability: 'none',
+      blockedState: 'unknown',
+    });
+    expect(resolveProposalAction('proposed', 'Succeeded')).toEqual({
+      mode: 'proposed',
+      availability: 'none',
+      blockedState: 'unknown',
+    });
+    expect(resolveProposalAction('proposed', 'Pending')).toEqual({
+      mode: 'proposed',
+      availability: 'none',
+      blockedState: 'unknown',
+    });
+    expect(resolveProposalAction('proposed', 'Executed')).toEqual({
+      mode: 'proposed',
+      availability: 'none',
+      blockedState: 'unknown',
+    });
+    expect(resolveProposalAction('not-a-real-type')).toEqual({
+      mode: 'invalid',
+      availability: 'none',
+      blockedState: null,
+    });
+  });
+
+  it('only queued proposed simulations are executable', () => {
+    const nonExecutableStates = [
+      undefined,
+      'Defeated',
+      'Expired',
+      'Canceled',
+      'Active',
+      'Succeeded',
+      'Pending',
+      'Executed',
+    ];
+
+    for (const proposalState of nonExecutableStates) {
+      expect(resolveProposalAction('proposed', proposalState).availability).toBe('none');
+    }
+
+    expect(resolveProposalAction('proposed', 'Queued').availability).toBe('execute');
   });
 
   it('parseSimulationType returns null for unknown values', () => {

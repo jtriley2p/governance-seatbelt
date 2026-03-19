@@ -4,20 +4,70 @@ import { Button } from '@/components/ui/button';
 import { useHrefWithArtifact } from '@/hooks/use-artifact-navigation';
 import { useShareLink } from '@/hooks/use-share-link';
 import { useSimulationResults } from '@/hooks/use-simulation-results';
-import { parseSimulationType } from '@/lib/write-actions';
+import { resolveProposalAction } from '@/lib/write-actions';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import {
   CheckCircleIcon,
+  ClockIcon,
   FileTextIcon,
   Link2Icon,
   Loader2Icon,
   PlayIcon,
   SendIcon,
+  XCircleIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
-import type { SimulationType } from './ProposalCard';
+
+function getNavIconAndLabel(actionResolution: ReturnType<typeof resolveProposalAction>) {
+  if (actionResolution.mode === 'new') {
+    return {
+      icon: <SendIcon className="h-4 w-4" />,
+      label: 'Propose',
+    };
+  }
+
+  if (actionResolution.mode === 'executed') {
+    return {
+      icon: <CheckCircleIcon className="h-4 w-4" />,
+      label: 'Details',
+    };
+  }
+
+  if (actionResolution.availability === 'execute') {
+    return {
+      icon: <PlayIcon className="h-4 w-4" />,
+      label: 'Execute',
+    };
+  }
+
+  if (actionResolution.blockedState === 'defeated') {
+    return {
+      icon: <XCircleIcon className="h-4 w-4" />,
+      label: 'Defeated',
+    };
+  }
+
+  if (actionResolution.blockedState === 'expired') {
+    return {
+      icon: <XCircleIcon className="h-4 w-4" />,
+      label: 'Expired',
+    };
+  }
+
+  if (actionResolution.blockedState === 'canceled') {
+    return {
+      icon: <XCircleIcon className="h-4 w-4" />,
+      label: 'Canceled',
+    };
+  }
+
+  return {
+    icon: <ClockIcon className="h-4 w-4" />,
+    label: 'Unavailable',
+  };
+}
 
 function NavbarConnect() {
   return (
@@ -88,30 +138,9 @@ export function Navbar() {
   const { data: simulationData } = useSimulationResults();
 
   const rawSimulationType = simulationData?.report.structuredReport?.metadata?.simulationType;
-  const simulationType: SimulationType =
-    rawSimulationType == null ? 'new' : (parseSimulationType(rawSimulationType) ?? 'new');
-
-  const getActionLabel = () => {
-    switch (simulationType) {
-      case 'new':
-        return 'Propose';
-      case 'proposed':
-        return 'Execute';
-      case 'executed':
-        return 'Details';
-    }
-  };
-
-  const getActionIcon = () => {
-    switch (simulationType) {
-      case 'new':
-        return <SendIcon className="h-4 w-4" />;
-      case 'proposed':
-        return <PlayIcon className="h-4 w-4" />;
-      case 'executed':
-        return <CheckCircleIcon className="h-4 w-4" />;
-    }
-  };
+  const proposalState = simulationData?.report.structuredReport?.metadata?.proposalState;
+  const actionResolution = resolveProposalAction(rawSimulationType, proposalState);
+  const actionNav = getNavIconAndLabel(actionResolution);
 
   const reportIsActive =
     pathname === '/' ||
@@ -166,8 +195,8 @@ export function Navbar() {
                 Report
               </NavLink>
               <NavLink href={actionHref} active={actionIsActive}>
-                {getActionIcon()}
-                {getActionLabel()}
+                {actionNav.icon}
+                {actionNav.label}
               </NavLink>
             </div>
           </div>

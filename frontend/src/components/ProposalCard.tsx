@@ -10,14 +10,19 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import type { Proposal } from '@/hooks/use-simulation-results';
-import { CheckCircleIcon, PlayIcon, SendIcon } from 'lucide-react';
+import type {
+  ProposalActionAvailability,
+  ProposalActionMode,
+  ProposalBlockedState,
+} from '@/lib/write-actions';
+import { CheckCircleIcon, ClockIcon, PlayIcon, SendIcon, XCircleIcon } from 'lucide-react';
 import { useState } from 'react';
-
-export type SimulationType = 'new' | 'proposed' | 'executed';
 
 interface ProposalCardProps {
   proposal: Proposal;
-  simulationType: SimulationType;
+  mode: ProposalActionMode;
+  availability: ProposalActionAvailability;
+  blockedState: ProposalBlockedState;
   onAction: () => void;
   isPending: boolean;
   isPendingConfirmation: boolean;
@@ -25,9 +30,111 @@ interface ProposalCardProps {
   className?: string;
 }
 
+function getCardText(
+  mode: ProposalActionMode,
+  availability: ProposalActionAvailability,
+  blockedState: ProposalBlockedState,
+) {
+  if (mode === 'new') {
+    return {
+      title: 'Proposal Creation',
+      description: 'Transaction Parameters',
+      readyText: 'Ready to propose',
+      buttonLabel: 'Propose',
+    };
+  }
+
+  if (mode === 'executed') {
+    return {
+      title: 'Executed Proposal',
+      description: 'This proposal has already been executed',
+      readyText: 'Already executed',
+      buttonLabel: null,
+    };
+  }
+
+  if (availability === 'execute') {
+    return {
+      title: 'Proposal Execution',
+      description: 'Transaction Parameters',
+      readyText: 'Ready to execute',
+      buttonLabel: 'Execute',
+    };
+  }
+
+  if (blockedState === 'defeated') {
+    return {
+      title: 'Proposal Defeated',
+      description: 'This proposal can no longer be executed.',
+      readyText: 'Proposal defeated',
+      buttonLabel: null,
+    };
+  }
+
+  if (blockedState === 'expired') {
+    return {
+      title: 'Proposal Expired',
+      description: 'This proposal can no longer be executed.',
+      readyText: 'Proposal expired',
+      buttonLabel: null,
+    };
+  }
+
+  if (blockedState === 'canceled') {
+    return {
+      title: 'Proposal Canceled',
+      description: 'This proposal can no longer be executed.',
+      readyText: 'Proposal canceled',
+      buttonLabel: null,
+    };
+  }
+
+  if (mode === 'invalid') {
+    return {
+      title: 'Invalid Proposal Metadata',
+      description: 'This report cannot be used for execution.',
+      readyText: 'Action unavailable',
+      buttonLabel: null,
+    };
+  }
+
+  return {
+    title: 'Proposal Not Executable',
+    description: 'This proposal is not currently executable.',
+    readyText: 'Not executable',
+    buttonLabel: null,
+  };
+}
+
+function getStatusIcon(
+  mode: ProposalActionMode,
+  availability: ProposalActionAvailability,
+  blockedState: ProposalBlockedState,
+) {
+  if (mode === 'new' || availability === 'execute') {
+    return <CheckCircleIcon className="h-4 w-4 mr-2 text-green-500" />;
+  }
+
+  if (mode === 'executed') {
+    return <CheckCircleIcon className="h-4 w-4 mr-2 text-gray-400" />;
+  }
+
+  if (blockedState === 'defeated') {
+    return <XCircleIcon className="h-4 w-4 mr-2 text-red-500" />;
+  }
+
+  if (blockedState === 'expired' || blockedState === 'canceled' || mode === 'invalid') {
+    return <XCircleIcon className="h-4 w-4 mr-2 text-gray-400" />;
+  }
+
+  return <ClockIcon className="h-4 w-4 mr-2 text-gray-400" />;
+}
+
 export function ProposalCard({
   proposal,
-  simulationType,
+  mode,
+  availability,
+  blockedState,
   onAction,
   isPending,
   isPendingConfirmation,
@@ -35,8 +142,8 @@ export function ProposalCard({
   className,
 }: ProposalCardProps) {
   const [selectedCallIndex, setSelectedCallIndex] = useState(0);
-
   const hasMultipleCalls = proposal.targets.length > 1;
+  const cardText = getCardText(mode, availability, blockedState);
 
   const currentTarget = hasMultipleCalls
     ? proposal.targets[selectedCallIndex]
@@ -51,41 +158,24 @@ export function ProposalCard({
     ? proposal.calldatas[selectedCallIndex]
     : proposal.calldatas[0];
 
-  // Determine action text based on simulation type
   const getActionText = () => {
-    if (simulationType === 'executed') return 'Already executed';
     if (!isConnected) return 'Connect Wallet';
     if (isPendingConfirmation) return 'Confirming...';
     if (isPending) {
-      return simulationType === 'new' ? 'Creating...' : 'Executing...';
+      return availability === 'propose' ? 'Creating...' : 'Executing...';
     }
-    return simulationType === 'new' ? 'Propose' : 'Execute';
+    return cardText.buttonLabel;
   };
 
-  const getReadyText = () => {
-    if (simulationType === 'executed') return 'Already executed';
-    return simulationType === 'new' ? 'Ready to propose' : 'Ready to execute';
-  };
-
-  const getCardTitle = () => {
-    if (simulationType === 'executed') return 'Executed Proposal';
-    return simulationType === 'new' ? 'Proposal Creation' : 'Proposal Execution';
-  };
-
-  const getCardDescription = () => {
-    if (simulationType === 'executed') return 'This proposal has already been executed';
-    return 'Transaction Parameters';
-  };
-
-  const isDisabled =
-    isPending || isPendingConfirmation || !isConnected || simulationType === 'executed';
-  const ActionIcon = simulationType === 'new' ? SendIcon : PlayIcon;
+  const isActionable = availability === 'propose' || availability === 'execute';
+  const isDisabled = !isActionable || isPending || isPendingConfirmation || !isConnected;
+  const ActionIcon = availability === 'propose' ? SendIcon : PlayIcon;
 
   return (
     <Card className={`w-full ${className || ''} border border-muted`}>
       <CardHeader className="px-6">
-        <CardTitle>{getCardTitle()}</CardTitle>
-        <CardDescription>{getCardDescription()}</CardDescription>
+        <CardTitle>{cardText.title}</CardTitle>
+        <CardDescription>{cardText.description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 pt-0 px-6">
         {hasMultipleCalls && (
@@ -145,20 +235,20 @@ export function ProposalCard({
       </CardContent>
       <CardFooter className="flex justify-between items-center border-t py-4 px-6 mt-auto">
         <div className="flex items-center text-sm text-muted-foreground">
-          <CheckCircleIcon
-            className={`h-4 w-4 mr-2 ${simulationType === 'executed' ? 'text-gray-400' : 'text-green-500'}`}
-          />
-          {getReadyText()}
+          {getStatusIcon(mode, availability, blockedState)}
+          {cardText.readyText}
         </div>
-        <Button
-          onClick={onAction}
-          disabled={isDisabled}
-          size="lg"
-          className="ml-6 px-6 font-medium cursor-pointer gap-2"
-        >
-          {!isDisabled && <ActionIcon className="h-4 w-4" />}
-          {getActionText()}
-        </Button>
+        {cardText.buttonLabel && (
+          <Button
+            onClick={onAction}
+            disabled={isDisabled}
+            size="lg"
+            className="ml-6 px-6 font-medium cursor-pointer gap-2"
+          >
+            {!isDisabled && <ActionIcon className="h-4 w-4" />}
+            {getActionText()}
+          </Button>
+        )}
       </CardFooter>
     </Card>
   );
