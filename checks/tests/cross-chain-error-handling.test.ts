@@ -180,7 +180,7 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
       expect(crossChainResult.destinationJobResults).toBeDefined();
     });
 
-    test('should surface skipped destination jobs without aborting result assembly', async () => {
+    test('should surface skipped destination jobs without dropping seeded chain state', async () => {
       const sendMessageCalldata = encodeFunctionData({
         abi: SEND_MESSAGE_ABI,
         functionName: 'sendMessage',

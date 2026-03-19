@@ -9,6 +9,9 @@ import type {
 import { extractArbitrumL1L2JobsFromProposal } from '../bridges/arbitrum';
 import { extractOptimismL1L2JobsFromProposal } from '../bridges/optimism';
 import { extractWormholeExecutionJobsFromProposal } from '../bridges/wormhole';
+import { supportsTenderlyDestinationSimulation } from '../chains/capabilities';
+import { getTenderlySaveFlags, sendSimulation } from '../clients/tenderly-api';
+import { BLOCK_GAS_LIMIT } from '../constants';
 import {
   type DerivedStateByChain,
   type SimulationStateObjects,
@@ -16,12 +19,12 @@ import {
   mergeStateObjects,
 } from '../derived-state';
 
-export interface SimulationExecutionOptions {
+export interface TenderlySimulationExecutionOptions {
   derivedStateByChain?: DerivedStateByChain;
   initialStateByChain?: DerivedStateByChain;
 }
 
-export type CrossChainSimulationSourceResult = Pick<
+export type TenderlyCrossChainSimulationSourceResult = Pick<
   SimulationResult,
   'proposal' | 'deps' | 'latestBlock'
 > & {
@@ -42,26 +45,15 @@ export type CrossChainSimulationSourceResult = Pick<
   crossChainFailure?: boolean;
 };
 
-export type CrossChainSimulationHandledResult<T extends CrossChainSimulationSourceResult> = Omit<
-  T,
-  'destinationJobResults' | 'destinationStateByChain' | 'crossChainFailure'
-> &
+export type TenderlyCrossChainSimulationHandledResult<
+  T extends TenderlyCrossChainSimulationSourceResult,
+> = Omit<T, 'destinationJobResults' | 'destinationStateByChain' | 'crossChainFailure'> &
   Required<
     Pick<
       SimulationResult,
       'destinationJobResults' | 'destinationStateByChain' | 'crossChainFailure'
     >
   >;
-
-export interface CrossChainExecutionAdapter {
-  supportsChain(chainId: number): boolean;
-  simulateStep(
-    job: CrossChainExecutionJob,
-    call: CrossChainExecutionJob['calls'][number],
-    workingState: SimulationStateObjects | undefined,
-    stepIndex: number,
-  ): Promise<TenderlySimulation>;
-}
 
 type DestinationJobExecutionOutcome =
   | {
@@ -106,7 +98,7 @@ function extractDestinationJobs(
 
 function initializeCommittedStateByChain(
   jobs: CrossChainExecutionJob[],
-  options?: SimulationExecutionOptions,
+  options?: TenderlySimulationExecutionOptions,
 ): DerivedStateByChain {
   const committedStateByChain: DerivedStateByChain = {};
 
@@ -151,10 +143,51 @@ function buildSkippedDestinationJobResult(
   };
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+function buildDestinationSimulationPayload(
+  job: CrossChainExecutionJob,
+  call: CrossChainExecutionJob['calls'][number],
+  workingState: SimulationStateObjects | undefined,
+): TenderlyPayload {
+  const { save, saveIfFails } = getTenderlySaveFlags(true);
+
+  return {
+    network_id: job.destinationChainId.toString() as TenderlyPayload['network_id'],
+    from: job.l2FromAddress,
+    to: call.l2TargetAddress,
+    input: call.l2InputData,
+    gas: BLOCK_GAS_LIMIT,
+    gas_price: '0',
+    value: call.l2Value,
+    save_if_fails: saveIfFails,
+    save,
+    state_objects: workingState,
+  };
+}
+
+async function simulateDestinationCall(
+  job: CrossChainExecutionJob,
+  call: CrossChainExecutionJob['calls'][number],
+  workingState: SimulationStateObjects | undefined,
+  stepIndex: number,
+): Promise<TenderlySimulation> {
+  const payload = buildDestinationSimulationPayload(job, call, workingState);
+
+  console.log(
+    `[CrossChainHandler] Sending L2 Simulation Payload (Chain ${payload.network_id}, Step ${stepIndex + 1}/${job.calls.length}):`,
+    JSON.stringify(payload, null, 2),
+  );
+
+  return await sendSimulation(payload);
+}
+
 async function executeDestinationJob(
   job: CrossChainExecutionJob,
   committedState: SimulationStateObjects | undefined,
-  adapter: CrossChainExecutionAdapter,
 ): Promise<DestinationJobExecutionOutcome> {
   let workingState = mergeStateObjects(committedState, undefined);
   const stepResults: CrossChainExecutionJobResult['stepResults'] = [];
@@ -164,7 +197,7 @@ async function executeDestinationJob(
     const call = job.calls[stepIndex];
 
     try {
-      const destSim = await adapter.simulateStep(job, call, workingState, stepIndex);
+      const destSim = await simulateDestinationCall(job, call, workingState, stepIndex);
 
       if (!destSim.transaction.status) {
         const jobError = getDestinationFailureReason(destSim);
@@ -203,7 +236,7 @@ async function executeDestinationJob(
         mergeStateObjects(workingState, extractStateOverridesFromSimulation(destSim)) ??
         workingState;
     } catch (error: unknown) {
-      const jobError = `Destination job step simulation API call failed: ${(error as Error).message}`;
+      const jobError = `Destination job step simulation API call failed: ${getErrorMessage(error)}`;
       console.error(
         `[CrossChainHandler] Error during destination job step simulation API call for L2 target ${call.l2TargetAddress}:`,
         error,
@@ -243,12 +276,13 @@ async function executeDestinationJob(
   };
 }
 
-export async function runCrossChainExecutionEngine<T extends CrossChainSimulationSourceResult>(
+export async function handleCrossChainSimulations<
+  T extends TenderlyCrossChainSimulationSourceResult,
+>(
   sourceResult: T,
-  adapter: CrossChainExecutionAdapter,
-  options?: SimulationExecutionOptions,
-): Promise<CrossChainSimulationHandledResult<T>> {
-  const result: CrossChainSimulationHandledResult<T> = {
+  options?: TenderlySimulationExecutionOptions,
+): Promise<TenderlyCrossChainSimulationHandledResult<T>> {
+  const result: TenderlyCrossChainSimulationHandledResult<T> = {
     ...sourceResult,
     destinationJobResults: sourceResult.destinationJobResults ?? [],
     destinationStateByChain: sourceResult.destinationStateByChain ?? {},
@@ -293,7 +327,7 @@ export async function runCrossChainExecutionEngine<T extends CrossChainSimulatio
       `[CrossChainHandler] Executing destination job on chain ${destinationChainId}: ${targetSummary}`,
     );
 
-    if (!adapter.supportsChain(destinationChainId)) {
+    if (!supportsTenderlyDestinationSimulation(destinationChainId)) {
       const skippedResult = buildSkippedDestinationJobResult(job);
       console.warn(`[CrossChainHandler] ${skippedResult.error}`);
       destinationResults.push(skippedResult);
@@ -303,7 +337,6 @@ export async function runCrossChainExecutionEngine<T extends CrossChainSimulatio
     const executionOutcome = await executeDestinationJob(
       job,
       committedStateByChain[destinationChainId],
-      adapter,
     );
     if (executionOutcome.status === 'success' && executionOutcome.committedState) {
       committedStateByChain[destinationChainId] = executionOutcome.committedState;
