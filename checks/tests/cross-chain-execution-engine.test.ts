@@ -294,9 +294,50 @@ describe('cross-chain destination execution engine', () => {
     );
   });
 
+  test('later failed jobs on the same chain do not roll back earlier committed state', async () => {
+    const firstTarget = getAddress('0x00000000000000000000000000000000000000D1');
+    const secondTarget = getAddress('0x00000000000000000000000000000000000000D2');
+    const firstJob = makeWormholeCalldata([{ target: firstTarget, data: '0x77777777' }]);
+    const secondJob = makeWormholeCalldata([{ target: secondTarget, data: '0x88888888' }]);
+
+    enqueueSimulation(
+      makeSimulation({
+        id: 'job-1-step',
+        stateDiff: [{ address: firstTarget, key: '0x01', dirty: '0xff' }],
+      }),
+    );
+    enqueueSimulation(
+      makeSimulation({
+        id: 'job-2-step',
+        status: false,
+        errorReason: 'second job reverted',
+      }),
+    );
+
+    const result = await handleCrossChainSimulations(makeSourceResult([firstJob, secondJob]));
+
+    expect(mockedMicroFetch).toHaveBeenCalledTimes(2);
+    expect(transportCalls[1]?.state_objects).toMatchObject({
+      [firstTarget]: {
+        storage: {
+          '0x01': '0xff',
+        },
+      },
+    });
+
+    expect(result.crossChainFailure).toBe(true);
+    expect(result.destinationJobResults).toHaveLength(2);
+    expect(result.destinationJobResults[0]?.status).toBe('success');
+    expect(result.destinationJobResults[1]?.status).toBe('failure');
+    expect(result.destinationStateByChain[CELO_CHAIN_ID]?.[firstTarget]?.storage?.['0x01']).toBe(
+      '0xff',
+    );
+    expect(result.destinationStateByChain[CELO_CHAIN_ID]?.[secondTarget]).toBeUndefined();
+  });
+
   test('records API exceptions without recording a sim or committing state', async () => {
-    const target = getAddress('0x00000000000000000000000000000000000000D1');
-    const seededAddress = getAddress('0x00000000000000000000000000000000000000D2');
+    const target = getAddress('0x00000000000000000000000000000000000000E1');
+    const seededAddress = getAddress('0x00000000000000000000000000000000000000E2');
     const calldata = makeWormholeCalldata([{ target, data: '0x77777777' }]);
 
     enqueueFailure('network down');

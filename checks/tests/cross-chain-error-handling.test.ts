@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { encodeFunctionData } from 'viem';
+import { encodeFunctionData, getAddress } from 'viem';
 import { mainnet } from 'viem/chains';
 import type { CallTrace, SimulationConfigNew } from '../../types';
 import { extractArbitrumL1L2Jobs } from '../../utils/bridges/arbitrum';
@@ -186,6 +186,7 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
         functionName: 'sendMessage',
         args: ['0x4200000000000000000000000000000000000006', '0xd0e30db0', 1_000_000],
       });
+      const seededAddress = getAddress('0x00000000000000000000000000000000000000E1');
 
       const sourceResult: CrossChainSourceResult = {
         sim: {
@@ -228,7 +229,17 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
         },
       };
 
-      const crossChainResult = await handleCrossChainSimulations(sourceResult);
+      const crossChainResult = await handleCrossChainSimulations(sourceResult, {
+        initialStateByChain: {
+          7777777: {
+            [seededAddress]: {
+              storage: {
+                '0x09': '0xseed',
+              },
+            },
+          },
+        },
+      });
 
       expect(crossChainResult).toBeDefined();
       expect(crossChainResult.destinationJobResults).toBeDefined();
@@ -243,6 +254,9 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
       expect(crossChainResult.destinationJobResults?.[0]?.error).toContain(
         'not currently supported',
       );
+      expect(
+        crossChainResult.destinationStateByChain?.[7777777]?.[seededAddress]?.storage?.['0x09'],
+      ).toBe('0xseed');
     });
   });
 
