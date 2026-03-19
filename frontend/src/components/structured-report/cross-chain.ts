@@ -1,10 +1,13 @@
-import type { CrossChainMessagePreview } from '@/hooks/use-simulation-results';
+import type {
+  CrossChainJobPreview,
+  CrossChainJobStepPreview,
+} from '@/hooks/use-simulation-results';
 import { resolveChainName } from '@/lib/chain-name';
 
-export function formatCrossChainCall(message: CrossChainMessagePreview): string {
-  if (message.call?.signature) return message.call.signature;
-  if (message.call?.selector) return message.call.selector;
-  if (message.l2InputData) return message.l2InputData.slice(0, 10);
+export function formatCrossChainCall(step: CrossChainJobStepPreview): string {
+  if (step.call?.signature) return step.call.signature;
+  if (step.call?.selector) return step.call.selector;
+  if (step.l2InputData) return step.l2InputData.slice(0, 10);
   return '(unknown)';
 }
 
@@ -17,60 +20,60 @@ type CrossChainChainSummary = {
   successCount: number;
   failureCount: number;
   failures: Array<{
-    index: number;
+    sourceOrder: number;
     status: 'failure' | 'skipped';
-    call: string;
+    call: string | null;
     targetLabel?: string;
     target?: string;
     error?: string;
   }>;
 };
 
-function toFailureStatus(status: CrossChainMessagePreview['status']): 'failure' | 'skipped' {
+function toFailureStatus(status: CrossChainJobPreview['status']): 'failure' | 'skipped' {
   return status === 'failure' ? 'failure' : 'skipped';
 }
 
-export function summarizeCrossChainMessages(messages: CrossChainMessagePreview[]): {
+export function summarizeCrossChainJobs(jobs: CrossChainJobPreview[]): {
   total: number;
   successCount: number;
   failureCount: number;
   chains: CrossChainChainSummary[];
 } {
-  const byChain = new Map<number, CrossChainMessagePreview[]>();
-  for (const msg of messages) {
-    const list = byChain.get(msg.chainId) ?? [];
-    list.push(msg);
-    byChain.set(msg.chainId, list);
+  const byChain = new Map<number, CrossChainJobPreview[]>();
+  for (const job of jobs) {
+    const list = byChain.get(job.chainId) ?? [];
+    list.push(job);
+    byChain.set(job.chainId, list);
   }
 
   const chains: CrossChainChainSummary[] = Array.from(byChain.entries())
-    .map(([chainId, chainMessages]) => {
-      const chainName = resolveChainName(chainId, chainMessages[0]?.chainName);
-      const explorerBaseUrl = chainMessages[0]?.blockExplorerBaseUrl || 'https://etherscan.io';
-      const bridgeType = chainMessages[0]?.bridgeType;
-      const successCount = chainMessages.filter((m) => m.status === 'success').length;
-      const failureCount = chainMessages.length - successCount;
+    .map(([chainId, chainJobs]) => {
+      const chainName = resolveChainName(chainId, chainJobs[0]?.chainName);
+      const explorerBaseUrl = chainJobs[0]?.blockExplorerBaseUrl || 'https://etherscan.io';
+      const bridgeType = chainJobs[0]?.bridgeType;
+      const successCount = chainJobs.filter((job) => job.status === 'success').length;
+      const failureCount = chainJobs.length - successCount;
 
       return {
         chainId,
         chainName,
         explorerBaseUrl,
         bridgeType,
-        total: chainMessages.length,
+        total: chainJobs.length,
         successCount,
         failureCount,
-        failures: chainMessages
-          .map((m, index) => ({
-            index,
-            call: formatCrossChainCall(m),
-            targetLabel: m.targetLabel,
-            target: m.l2TargetAddress,
-            status: m.status,
-            error: m.error,
+        failures: chainJobs
+          .map((job) => ({
+            sourceOrder: job.sourceOrder,
+            call: job.steps[0] ? formatCrossChainCall(job.steps[0]) : null,
+            targetLabel: job.steps[0]?.targetLabel,
+            target: job.steps[0]?.l2TargetAddress,
+            status: job.status,
+            error: job.error,
           }))
-          .filter((m) => m.status !== 'success')
-          .map(({ index, status, call, targetLabel, target, error }) => ({
-            index,
+          .filter((job) => job.status !== 'success')
+          .map(({ sourceOrder, status, call, targetLabel, target, error }) => ({
+            sourceOrder,
             status: toFailureStatus(status),
             call,
             targetLabel,

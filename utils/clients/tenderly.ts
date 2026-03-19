@@ -12,7 +12,7 @@ import {
   zeroHash,
 } from 'viem';
 import type {
-  ExtractedCrossChainMessage,
+  CrossChainExecutionJobResult,
   GovernorType,
   ProposalData,
   ProposalEvent,
@@ -29,14 +29,8 @@ import type {
 } from '../../types.d';
 import { GOVERNOR_ABI } from '../abis/GovernorBravo';
 import { timelockAbi } from '../abis/Timelock';
-import {
-  parseArbitrumL1L2Messages,
-  parseArbitrumL1L2MessagesFromProposal,
-} from '../bridges/arbitrum';
-import {
-  parseOptimismL1L2Messages,
-  parseOptimismL1L2MessagesFromProposal,
-} from '../bridges/optimism';
+import { parseArbitrumL1L2MessagesFromProposal } from '../bridges/arbitrum';
+import { parseOptimismL1L2MessagesFromProposal } from '../bridges/optimism';
 import { parseWormholeMessagesFromProposal } from '../bridges/wormhole';
 import { supportsTenderlyDestinationSimulation } from '../chains/capabilities';
 import {
@@ -57,7 +51,11 @@ import {
   hashOperationBatchOz,
   hashOperationOz,
 } from '../contracts/governor';
-import { type DerivedStateByChain, mergeStateObjects } from '../derived-state';
+import {
+  type DerivedStateByChain,
+  extractStateOverridesFromSimulation,
+  mergeStateObjects,
+} from '../derived-state';
 import { parseWithSchema, z } from '../validation/zod';
 import { CacheManager } from './block-explorers/cache';
 import { BlockExplorerFactory } from './block-explorers/factory';
@@ -222,6 +220,38 @@ export interface SimulationExecutionOptions {
   derivedStateByChain?: DerivedStateByChain;
   initialStateByChain?: DerivedStateByChain;
 }
+
+type CrossChainSimulationSourceResult = Pick<
+  SimulationResult,
+  'proposal' | 'deps' | 'latestBlock'
+> & {
+  sim: {
+    transaction: {
+      status: boolean;
+      transaction_info?: {
+        call_trace?: {
+          from: string;
+          input: string;
+          calls?: unknown[];
+        };
+      };
+    };
+  };
+  destinationJobResults?: CrossChainExecutionJobResult[];
+  destinationStateByChain?: Record<number, NonNullable<TenderlyPayload['state_objects']>>;
+  crossChainFailure?: boolean;
+};
+
+type CrossChainSimulationHandledResult<T extends CrossChainSimulationSourceResult> = Omit<
+  T,
+  'destinationJobResults' | 'destinationStateByChain' | 'crossChainFailure'
+> &
+  Required<
+    Pick<
+      SimulationResult,
+      'destinationJobResults' | 'destinationStateByChain' | 'crossChainFailure'
+    >
+  >;
 
 // --- Simulation methods ---
 
@@ -867,18 +897,31 @@ async function simulateExecuted(
 
 /**
  * @notice Takes a completed source simulation result and handles parsing for
- *         cross-chain messages and executing destination simulations.
+ *         cross-chain execution jobs and executes them on destination chains.
+ *
+ * Runtime model:
+ * - a job is the destination execution unit emitted by bridge parsers
+ * - a successful one-call job usually yields one Tenderly simulation
+ * - a successful multi-call job yields one step simulation per call, each run
+ *   against the state accumulated by earlier successful steps in the same job
+ * - `accumulatedSim` is the final successful simulation artifact for the job
+ *
+ * `accumulatedSim` is not specific to derived-state flows. Derived state is one
+ * consumer of it, but reporting, checks, provenance, and debugging can all use
+ * it as the canonical final successful result for a job.
+ *
  * @param sourceResult The result of the source chain simulation.
- * @returns The potentially augmented SimulationResult including destination sim info.
+ * @returns The potentially augmented SimulationResult including destination job results.
  */
 
-export async function handleCrossChainSimulations(
-  sourceResult: SimulationResult,
+export async function handleCrossChainSimulations<T extends CrossChainSimulationSourceResult>(
+  sourceResult: T,
   options?: SimulationExecutionOptions,
-): Promise<SimulationResult> {
-  const result = {
+): Promise<CrossChainSimulationHandledResult<T>> {
+  const result: CrossChainSimulationHandledResult<T> = {
     ...sourceResult,
-    destinationSimulations: sourceResult.destinationSimulations ?? [],
+    destinationJobResults: sourceResult.destinationJobResults ?? [],
+    destinationStateByChain: sourceResult.destinationStateByChain ?? {},
     crossChainFailure: sourceResult.crossChainFailure ?? false,
   };
 
@@ -887,59 +930,32 @@ export async function handleCrossChainSimulations(
     return result;
   }
 
-  // 1. Parse source simulation for cross-chain messages
-  console.log('[CrossChainHandler] Parsing source sim for messages...');
+  // 1. Parse source simulation for cross-chain execution jobs
+  console.log('[CrossChainHandler] Parsing source sim for execution jobs...');
 
-  const getMessageKey = (message: ExtractedCrossChainMessage) =>
-    `${message.bridgeType}:${message.destinationChainId}:${message.l2TargetAddress.toLowerCase()}:${message.l2InputData.toLowerCase()}`;
-
-  // Parse from call trace
-  const arbMessages = parseArbitrumL1L2Messages(result.sim);
-  const opMessages = parseOptimismL1L2Messages(result.sim);
-  const messageMap = new Map<string, ExtractedCrossChainMessage>();
-  for (const message of [...arbMessages, ...opMessages]) {
-    messageMap.set(getMessageKey(message), message);
-  }
-
-  // Always parse proposal calldata as a backfill path. Trace parsing can miss delegatecall/proxy frames.
-  if (result.proposal?.targets?.length && result.proposal?.calldatas?.length) {
-    const l1Sender = result.deps?.timelock?.address;
-    const arbFromProposal = parseArbitrumL1L2MessagesFromProposal(
-      result.proposal.targets,
-      result.proposal.calldatas,
-      l1Sender,
-    );
-    const opFromProposal = parseOptimismL1L2MessagesFromProposal(
-      result.proposal.targets,
-      result.proposal.calldatas,
-      l1Sender,
-    );
-    const wormholeFromProposal = parseWormholeMessagesFromProposal(
-      result.proposal.targets,
-      result.proposal.calldatas,
-    );
-
-    let backfilledCount = 0;
-    for (const message of [...arbFromProposal, ...opFromProposal, ...wormholeFromProposal]) {
-      const key = getMessageKey(message);
-      if (!messageMap.has(key)) {
-        messageMap.set(key, message);
-        backfilledCount += 1;
-      }
-    }
-
-    if (backfilledCount > 0) {
-      console.log(
-        `[CrossChainHandler] Backfilled ${backfilledCount} message(s) from proposal calldata.`,
-      );
-    }
-  }
-
-  const extractedMessages = Array.from(messageMap.values());
-
-  if (extractedMessages.length === 0) {
-    console.log('[CrossChainHandler] No cross-chain messages detected.');
+  if (!result.proposal?.targets?.length || !result.proposal?.calldatas?.length) {
+    console.log('[CrossChainHandler] No cross-chain execution jobs detected.');
     return result; // Return early with original source data
+  }
+
+  const l1Sender = result.deps?.timelock?.address;
+  const extractedJobs = [
+    ...parseArbitrumL1L2MessagesFromProposal(
+      result.proposal.targets,
+      result.proposal.calldatas,
+      l1Sender,
+    ),
+    ...parseOptimismL1L2MessagesFromProposal(
+      result.proposal.targets,
+      result.proposal.calldatas,
+      l1Sender,
+    ),
+    ...parseWormholeMessagesFromProposal(result.proposal.targets, result.proposal.calldatas),
+  ].sort((a, b) => a.sourceOrder - b.sourceOrder);
+
+  if (extractedJobs.length === 0) {
+    console.log('[CrossChainHandler] No cross-chain execution jobs detected.');
+    return result;
   }
 
   const getDestinationFailureReason = (sim: TenderlySimulation): string => {
@@ -957,102 +973,144 @@ export async function handleCrossChainSimulations(
     return 'Destination simulation failed (no detailed error returned by Tenderly).';
   };
 
-  // 2. If messages found, simulate them on destination chains
+  const committedStateByChain: DerivedStateByChain = {};
+  const destinationResults: CrossChainExecutionJobResult[] = [];
+
+  for (const chainId of new Set(extractedJobs.map((job) => job.destinationChainId))) {
+    const committed = mergeStateObjects(
+      options?.initialStateByChain?.[chainId],
+      options?.derivedStateByChain?.[chainId],
+    );
+    if (committed) {
+      committedStateByChain[chainId] = committed;
+    }
+  }
+
+  // 2. If jobs found, simulate them on destination chains
   console.log(
-    `[CrossChainHandler] Detected ${extractedMessages.length} messages. Simulating destinations...`,
+    `[CrossChainHandler] Detected ${extractedJobs.length} execution jobs. Simulating destinations...`,
   );
 
-  const destinationResults = await Promise.all(
-    extractedMessages.map(async (message) => {
-      const destinationChainId = Number(message.destinationChainId);
-      console.log(`[CrossChainHandler] Simulating L2 message to: ${message.l2TargetAddress}`);
+  for (const job of extractedJobs) {
+    const destinationChainId = job.destinationChainId;
+    const targetSummary = job.calls.map((call) => call.l2TargetAddress).join(', ');
+    console.log(
+      `[CrossChainHandler] Simulating job on chain ${destinationChainId}: ${targetSummary}`,
+    );
 
-      if (!supportsTenderlyDestinationSimulation(destinationChainId)) {
-        const reason = `Skipping destination sim: chain ${destinationChainId} is not currently supported in this Tenderly workflow.`;
-        console.warn(`[CrossChainHandler] ${reason}`);
-        return {
-          chainId: destinationChainId,
-          bridgeType: message.bridgeType,
-          status: 'skipped' as const,
-          error: reason,
-          l2Params: message,
-        };
-      }
+    if (!supportsTenderlyDestinationSimulation(destinationChainId)) {
+      const reason = `Skipping destination sim: chain ${destinationChainId} is not currently supported in this Tenderly workflow.`;
+      console.warn(`[CrossChainHandler] ${reason}`);
+      destinationResults.push({
+        chainId: destinationChainId,
+        bridgeType: job.bridgeType,
+        job,
+        status: 'skipped',
+        stepResults: [],
+        error: reason,
+      });
+      continue;
+    }
+
+    let workingState = mergeStateObjects(committedStateByChain[destinationChainId], undefined);
+    const stepResults: CrossChainExecutionJobResult['stepResults'] = [];
+    let accumulatedSim: TenderlySimulation | undefined;
+    let jobError: string | undefined;
+
+    for (let stepIndex = 0; stepIndex < job.calls.length; stepIndex += 1) {
+      const call = job.calls[stepIndex];
 
       try {
         const { save: saveSimulation, saveIfFails: saveSimulationIfFails } =
           getTenderlySaveFlags(true);
         const destinationPayload: TenderlyPayload = {
           network_id: destinationChainId.toString() as TenderlyPayload['network_id'],
-          from: message.l2FromAddress ?? DEFAULT_SIMULATION_ADDRESS,
-          to: message.l2TargetAddress,
-          input: message.l2InputData,
+          from: job.l2FromAddress,
+          to: call.l2TargetAddress,
+          input: call.l2InputData,
           gas: BLOCK_GAS_LIMIT,
           gas_price: '0',
-          value: message.l2Value,
+          value: call.l2Value,
           save_if_fails: saveSimulationIfFails,
           save: saveSimulation,
+          state_objects: workingState,
         };
 
-        destinationPayload.state_objects = mergeStateObjects(
-          options?.initialStateByChain?.[destinationChainId],
-          destinationPayload.state_objects,
-        );
-
-        destinationPayload.state_objects = mergeStateObjects(
-          destinationPayload.state_objects,
-          options?.derivedStateByChain?.[destinationChainId],
-        );
-
-        // Log the payload before sending
         console.log(
-          `[CrossChainHandler] Sending L2 Simulation Payload (Chain ${destinationPayload.network_id}):`,
+          `[CrossChainHandler] Sending L2 Simulation Payload (Chain ${destinationPayload.network_id}, Step ${stepIndex + 1}/${job.calls.length}):`,
           JSON.stringify(destinationPayload, null, 2),
         );
 
         const destSim = await sendSimulation(destinationPayload);
 
-        if (destSim.transaction.status) {
-          console.log(
-            `[CrossChainHandler] Destination sim SUCCESS for L2 target: ${message.l2TargetAddress}`,
+        if (!destSim.transaction.status) {
+          jobError = getDestinationFailureReason(destSim);
+          console.error(
+            `[CrossChainHandler] Destination sim FAILED for L2 target: ${call.l2TargetAddress}`,
           );
-          return {
-            chainId: destinationChainId,
-            bridgeType: message.bridgeType,
-            status: 'success' as const,
+          stepResults.push({
+            stepIndex,
+            call,
+            status: 'failure',
             sim: destSim,
-            l2Params: message,
-          };
+            error: jobError,
+          });
+          break;
         }
-        console.error(
-          `[CrossChainHandler] Destination sim FAILED for L2 target: ${message.l2TargetAddress}`,
-        );
-        const errorMsg = getDestinationFailureReason(destSim);
-        return {
-          chainId: destinationChainId,
-          bridgeType: message.bridgeType,
-          status: 'failure' as const,
-          error: errorMsg,
+
+        accumulatedSim = destSim;
+        stepResults.push({
+          stepIndex,
+          call,
+          status: 'success',
           sim: destSim,
-          l2Params: message,
-        };
+        });
+        workingState =
+          mergeStateObjects(workingState, extractStateOverridesFromSimulation(destSim)) ??
+          workingState;
       } catch (error: unknown) {
+        jobError = `Simulation API call failed: ${(error as Error).message}`;
         console.error(
-          `[CrossChainHandler] Error during destination simulation API call for L2 target ${message.l2TargetAddress}:`,
+          `[CrossChainHandler] Error during destination simulation API call for L2 target ${call.l2TargetAddress}:`,
           error,
         );
-        return {
-          chainId: destinationChainId,
-          bridgeType: message.bridgeType,
-          status: 'failure' as const,
-          error: `Simulation API call failed: ${(error as Error).message}`,
-          l2Params: message,
-        };
+        stepResults.push({
+          stepIndex,
+          call,
+          status: 'failure',
+          error: jobError,
+        });
+        break;
       }
-    }),
-  );
+    }
 
-  result.destinationSimulations = destinationResults;
+    if (jobError) {
+      destinationResults.push({
+        chainId: destinationChainId,
+        bridgeType: job.bridgeType,
+        job,
+        status: 'failure',
+        stepResults,
+        error: jobError,
+      });
+      continue;
+    }
+
+    if (workingState) {
+      committedStateByChain[destinationChainId] = workingState;
+    }
+    destinationResults.push({
+      chainId: destinationChainId,
+      bridgeType: job.bridgeType,
+      job,
+      status: 'success',
+      stepResults,
+      accumulatedSim,
+    });
+  }
+
+  result.destinationJobResults = destinationResults;
+  result.destinationStateByChain = committedStateByChain;
   result.crossChainFailure = destinationResults.some((res) => res.status === 'failure');
 
   return result;

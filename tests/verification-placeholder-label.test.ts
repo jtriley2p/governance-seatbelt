@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { getAddress } from 'viem';
+import { createMockSimulation } from '../checks/tests/test-utils';
 import type { ProposalData, ProposalEvent, TenderlySimulation } from '../types';
 
 function seedEnv(): void {
@@ -72,7 +73,7 @@ describe('Verification checks - placeholder labeling', () => {
       const proposal = makeProposal([placeholder, realContract]);
       const res = await checkTargetsVerifiedOnBlockExplorer.checkProposal(
         proposal,
-        {} as unknown as TenderlySimulation,
+        createMockSimulation([]),
         deps,
       );
 

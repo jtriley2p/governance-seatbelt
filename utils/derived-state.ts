@@ -86,8 +86,9 @@ export function mergeStateObjects(
 }
 
 /**
- * Extract final storage writes from a Tenderly simulation and convert them
- * into state_objects overrides that can seed a dependent simulation.
+ * Extract final storage, balance, and deployed runtime bytecode from a Tenderly
+ * simulation and convert them into state_objects overrides that can seed a
+ * dependent simulation.
  */
 export function extractStateOverridesFromSimulation(
   sim: TenderlySimulation,
@@ -102,6 +103,7 @@ export function extractStateOverridesFromSimulation(
     overrides[address] = {
       ...state,
       ...(contract.balance ? { balance: contract.balance } : {}),
+      ...(contract.deployed_bytecode ? { code: contract.deployed_bytecode } : {}),
     };
   }
 
@@ -128,7 +130,7 @@ export function extractStateOverridesFromSimulation(
  * Build per-chain state overrides from a completed simulation (source + destination).
  */
 export function buildDerivedStateByChain(
-  result: Pick<SimulationResult, 'sim' | 'destinationSimulations'>,
+  result: Pick<SimulationResult, 'sim' | 'destinationStateByChain'>,
 ): DerivedStateByChain {
   const byChain: DerivedStateByChain = {};
 
@@ -137,14 +139,11 @@ export function buildDerivedStateByChain(
     byChain[1] = sourceOverrides;
   }
 
-  for (const destination of result.destinationSimulations ?? []) {
-    if (!destination.sim || destination.status !== 'success') continue;
-
-    const chainOverrides = extractStateOverridesFromSimulation(destination.sim);
-    if (Object.keys(chainOverrides).length === 0) continue;
-
-    byChain[destination.chainId] =
-      mergeStateObjects(byChain[destination.chainId], chainOverrides) ?? chainOverrides;
+  for (const [chainIdStr, stateObjects] of Object.entries(result.destinationStateByChain ?? {})) {
+    const chainId = Number(chainIdStr);
+    const normalized = mergeStateObjects(stateObjects, undefined);
+    if (!normalized || Object.keys(normalized).length === 0) continue;
+    byChain[chainId] = normalized;
   }
 
   return byChain;
@@ -157,7 +156,7 @@ export function buildDerivedStateByChain(
  * - otherwise passed
  */
 export function evaluateDependencyOutcome(
-  predecessorResult: Pick<SimulationResult, 'sim' | 'crossChainFailure' | 'destinationSimulations'>,
+  predecessorResult: Pick<SimulationResult, 'sim' | 'crossChainFailure' | 'destinationJobResults'>,
   predecessorChecks: AllCheckResults,
   predecessorDestinationChecks: Record<number, AllCheckResults>,
 ): DependencyOutcome {
@@ -219,10 +218,10 @@ export function evaluateDependencyOutcome(
 
   const destinationByChain = new Map<
     number,
-    Array<NonNullable<SimulationResult['destinationSimulations']>[number]>
+    Array<NonNullable<SimulationResult['destinationJobResults']>[number]>
   >();
 
-  for (const destination of predecessorResult.destinationSimulations ?? []) {
+  for (const destination of predecessorResult.destinationJobResults ?? []) {
     const existing = destinationByChain.get(destination.chainId) ?? [];
     existing.push(destination);
     destinationByChain.set(destination.chainId, existing);
@@ -236,7 +235,9 @@ export function evaluateDependencyOutcome(
       };
     }
 
-    const notFullyValidated = destinationSims.some((sim) => sim.status !== 'success' || !sim.sim);
+    const notFullyValidated = destinationSims.some(
+      (sim) => sim.status !== 'success' || !sim.accumulatedSim,
+    );
     if (notFullyValidated) {
       return {
         status: 'inconclusive',
@@ -272,9 +273,10 @@ export function evaluateDependencyOutcome(
 }
 
 export function buildDerivedBaselineChains(
-  result: Pick<SimulationResult, 'sim' | 'destinationSimulations'>,
+  result: Pick<SimulationResult, 'sim' | 'destinationJobResults'>,
 ): DerivedBaselineChain[] {
   const baselines: DerivedBaselineChain[] = [];
+  const destinationByChain = new Map<number, DerivedBaselineChain>();
 
   baselines.push({
     chainId: 1,
@@ -282,15 +284,16 @@ export function buildDerivedBaselineChains(
     blockNumber: result.sim.simulation.block_number.toString(),
   });
 
-  for (const destination of result.destinationSimulations ?? []) {
-    if (!destination.sim) continue;
-    baselines.push({
+  for (const destination of result.destinationJobResults ?? []) {
+    if (destination.status !== 'success' || !destination.accumulatedSim) continue;
+    destinationByChain.set(destination.chainId, {
       chainId: destination.chainId,
-      simulationId: destination.sim.simulation.id,
-      blockNumber: destination.sim.simulation.block_number.toString(),
+      simulationId: destination.accumulatedSim.simulation.id,
+      blockNumber: destination.accumulatedSim.simulation.block_number.toString(),
     });
   }
 
+  baselines.push(...Array.from(destinationByChain.values()).sort((a, b) => a.chainId - b.chainId));
   return baselines;
 }
 

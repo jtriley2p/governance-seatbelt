@@ -13,7 +13,7 @@ import remarkToc from 'remark-toc';
 import { unified } from 'unified';
 import { visit } from 'unist-util-visit';
 import type { Visitor } from 'unist-util-visit';
-import { type Abi, getAddress, toFunctionSelector } from 'viem';
+import { type Abi, type Hex, getAddress, toFunctionSelector } from 'viem';
 import type {
   AllCheckResults,
   CoverageData,
@@ -119,10 +119,10 @@ async function decodeContractCall(
   target: string,
   calldata: string,
   chainId: number,
-): Promise<{ selector: string; signature?: string } | null> {
+): Promise<{ selector: Hex; signature?: string } | null> {
   if (!calldata || calldata.length < 10) return null;
 
-  const selector = calldata.slice(0, 10).toLowerCase();
+  const selector = calldata.slice(0, 10).toLowerCase() as Hex;
   const knownSignature = KNOWN_FUNCTION_SELECTORS[selector];
   if (knownSignature) return { selector, signature: knownSignature };
 
@@ -174,22 +174,35 @@ function getSimulationContractLabel(
 }
 
 async function buildCrossChainPreview(
-  destinationSimulations: NonNullable<SimulationResult['destinationSimulations']>,
+  destinationJobResults: NonNullable<SimulationResult['destinationJobResults']>,
   destinationChecks?: Record<number, AllCheckResults>,
 ): Promise<StructuredSimulationReport['crossChain']> {
-  const messages = await Promise.all(
-    destinationSimulations.map(async (dest) => {
+  const jobs = await Promise.all(
+    destinationJobResults.map(async (dest) => {
       const chainId = dest.chainId;
-
       const blockExplorerBaseUrl = getBlockExplorerBaseUrlForChain(chainId);
+      const steps = await Promise.all(
+        dest.job.calls.map(async (call, stepIndex) => {
+          const step = dest.stepResults[stepIndex];
+          const decoded = await decodeContractCall(call.l2TargetAddress, call.l2InputData, chainId);
 
-      const l2TargetAddress = dest.l2Params?.l2TargetAddress;
-      const l2InputData = dest.l2Params?.l2InputData;
-
-      const call =
-        l2TargetAddress && l2InputData
-          ? await decodeContractCall(l2TargetAddress, l2InputData, chainId)
-          : undefined;
+          return {
+            stepIndex,
+            status: step?.status ?? 'failure',
+            error: step?.error,
+            l2TargetAddress: call.l2TargetAddress,
+            l2Value: call.l2Value,
+            l2InputData: call.l2InputData,
+            targetLabel: getSimulationContractLabel(
+              step?.sim ?? dest.accumulatedSim,
+              call.l2TargetAddress,
+            ),
+            call: decoded
+              ? { selector: decoded.selector, signature: decoded.signature }
+              : undefined,
+          };
+        }),
+      );
 
       return {
         chainId,
@@ -198,14 +211,9 @@ async function buildCrossChainPreview(
         bridgeType: dest.bridgeType,
         status: dest.status,
         error: dest.error,
-        l2FromAddress: dest.l2Params?.l2FromAddress,
-        l2TargetAddress,
-        l2Value: dest.l2Params?.l2Value,
-        l2InputData,
-        targetLabel: getSimulationContractLabel(dest.sim, l2TargetAddress),
-        call: call
-          ? { selector: call.selector as `0x${string}`, signature: call.signature }
-          : undefined,
+        l2FromAddress: dest.job.l2FromAddress,
+        sourceOrder: dest.job.sourceOrder,
+        steps,
       };
     }),
   );
@@ -229,7 +237,7 @@ async function buildCrossChainPreview(
           .sort((a, b) => a.chainId - b.chainId)
       : undefined;
 
-  return { messages, destinationChains: chains };
+  return { jobs, destinationChains: chains };
 }
 
 // --- Repository and Tenderly utilities ---
@@ -910,7 +918,7 @@ export function writeSimulationResultsJson(params: WriteSimulationResultsJsonPar
     markdownReport,
     governorAddress,
     outputPath,
-    destinationSimulations,
+    destinationJobResults,
     destinationChecks,
     executor,
     proposalCreatedBlock,
@@ -985,9 +993,9 @@ export function writeSimulationResultsJson(params: WriteSimulationResultsJsonPar
     );
     console.log(`Simulation results JSON written to: ${outputPath}`);
 
-    // TODO: Potentially add destinationSimulations data if needed
-    if (destinationSimulations && destinationSimulations.length > 0) {
-      console.log('[Frontend Data] Destination Sims: ', destinationSimulations.length);
+    // TODO: Potentially add destinationJobResults data if needed
+    if (destinationJobResults && destinationJobResults.length > 0) {
+      console.log('[Frontend Data] Destination job results: ', destinationJobResults.length);
     }
   } catch (error) {
     console.error('Error writing simulation results JSON:', error);
@@ -1002,7 +1010,7 @@ export function writeSimulationResultsJson(params: WriteSimulationResultsJsonPar
  * @param checks The checks results.
  * @param outputDir The directory where the file should be saved. It will be created if it doesn't exist.
  * @param filename The name of the file. All report formats will have the same filename with different extensions.
- * @param destinationSimulations Optional destination simulations
+ * @param destinationJobResults Optional destination execution job results
  */
 export async function generateAndSaveReports(params: GenerateReportsParams) {
   const {
@@ -1012,7 +1020,7 @@ export async function generateAndSaveReports(params: GenerateReportsParams) {
     checks,
     outputDir,
     governorAddress,
-    destinationSimulations,
+    destinationJobResults,
     destinationChecks,
     executor,
     proposalCreatedBlock,
@@ -1040,7 +1048,7 @@ export async function generateAndSaveReports(params: GenerateReportsParams) {
     blocks,
     proposal,
     checks,
-    destinationSimulations,
+    destinationJobResults,
     destinationChecks,
     coverage,
     chainId,
@@ -1117,10 +1125,10 @@ export async function generateAndSaveReports(params: GenerateReportsParams) {
   }
 
   // Add cross-chain preview data (Issue #101)
-  if (destinationSimulations && destinationSimulations.length > 0) {
+  if (destinationJobResults && destinationJobResults.length > 0) {
     try {
       structuredReport.crossChain = await buildCrossChainPreview(
-        destinationSimulations,
+        destinationJobResults,
         destinationChecks,
       );
     } catch (error) {
@@ -1170,7 +1178,7 @@ export async function generateAndSaveReports(params: GenerateReportsParams) {
     markdownReport,
     governorAddress,
     outputPath: simulationResultsPath,
-    destinationSimulations,
+    destinationJobResults,
     destinationChecks,
     executor,
     proposalCreatedBlock,
@@ -1198,14 +1206,14 @@ function writeCoverageJson(coverage: CoverageData, outputDir: string, proposalId
  * @param blocks the relevant blocks for the proposal.
  * @param proposal The proposal details.
  * @param checks The checks results.
- * @param destinationSimulations Optional destination simulations
+ * @param destinationJobResults Optional destination execution job results
  */
 async function toMarkdownProposalReport(
   governorType: GovernorType,
   blocks: SimulationBlocks,
   proposal: ProposalEvent,
   checks: AllCheckResults,
-  destinationSimulations?: SimulationResult['destinationSimulations'],
+  destinationJobResults?: SimulationResult['destinationJobResults'],
   destinationChecks?: Record<number, AllCheckResults>,
   coverage?: CoverageData,
   chainId?: number,
@@ -1224,7 +1232,7 @@ async function toMarkdownProposalReport(
   const execSummary = await formatExecutiveSummary(
     proposal,
     checks,
-    destinationSimulations,
+    destinationJobResults,
     destinationChecks,
   );
 
@@ -1271,8 +1279,8 @@ ${Object.keys(checks)
 
 ## Cross-Chain Simulation Results
 ${
-  destinationSimulations && destinationSimulations.length > 0
-    ? `\n${await formatCrossChainResults(destinationSimulations, destinationChecks)}`
+  destinationJobResults && destinationJobResults.length > 0
+    ? `\n${await formatCrossChainResults(destinationJobResults, destinationChecks)}`
     : '' // Render nothing if no destination sims
 }
 `;
@@ -1310,7 +1318,7 @@ function getOverallStatusFromChecks(checks: AllCheckResults): {
 async function formatExecutiveSummary(
   proposal: ProposalEvent,
   checks: AllCheckResults,
-  destinationSimulations?: SimulationResult['destinationSimulations'],
+  destinationJobResults?: SimulationResult['destinationJobResults'],
   destinationChecks?: Record<number, AllCheckResults>,
 ): Promise<string> {
   const { status, skipped, warningCount, errorCount } = getOverallStatusFromChecks(checks);
@@ -1334,8 +1342,8 @@ async function formatExecutiveSummary(
 
   const actionSummary = generateProposalSummary(proposal, checks, undefined, destinationChecks);
 
-  const crossChainSummary = destinationSimulations?.length
-    ? await formatCrossChainExecutiveSummary(destinationSimulations)
+  const crossChainSummary = destinationJobResults?.length
+    ? await formatCrossChainExecutiveSummary(destinationJobResults)
     : null;
 
   return [
@@ -1346,15 +1354,15 @@ async function formatExecutiveSummary(
 }
 
 async function formatCrossChainExecutiveSummary(
-  destinationSimulations: NonNullable<SimulationResult['destinationSimulations']>,
+  destinationJobResults: NonNullable<SimulationResult['destinationJobResults']>,
 ): Promise<string> {
-  const byChain = destinationSimulations.reduce(
+  const byChain = destinationJobResults.reduce(
     (acc, sim) => {
       if (!acc[sim.chainId]) acc[sim.chainId] = [];
       acc[sim.chainId].push(sim);
       return acc;
     },
-    {} as Record<number, NonNullable<SimulationResult['destinationSimulations']>>,
+    {} as Record<number, NonNullable<SimulationResult['destinationJobResults']>>,
   );
 
   const chainSummaries = await Promise.all(
@@ -1370,18 +1378,17 @@ async function formatCrossChainExecutiveSummary(
 
       const uniqueCalls = new Set<string>();
       for (const sim of sims) {
-        const target = sim.l2Params?.l2TargetAddress;
-        const input = sim.l2Params?.l2InputData;
-        if (!target || !input) continue;
-        const decoded = await decodeContractCall(target, input, chainId);
-        uniqueCalls.add(decoded?.signature || decoded?.selector || '(unknown)');
+        for (const call of sim.job.calls) {
+          const decoded = await decodeContractCall(call.l2TargetAddress, call.l2InputData, chainId);
+          uniqueCalls.add(decoded?.signature || decoded?.selector || '(unknown)');
+        }
       }
 
       const callsText =
         uniqueCalls.size > 0 ? ` • ${Array.from(uniqueCalls).slice(0, 3).join(', ')}` : '';
 
       const skippedText = skipped > 0 ? `, ${skipped} skipped` : '';
-      return `${statusIcon} ${chainName} (${chainId}) ${succeeded}/${total} succeeded${skippedText}${callsText}`;
+      return `${statusIcon} ${chainName} (${chainId}) ${succeeded}/${total} jobs succeeded${skippedText}${callsText}`;
     }),
   );
 
@@ -1389,16 +1396,16 @@ async function formatCrossChainExecutiveSummary(
 }
 
 /**
- * Format cross-chain simulation results, grouping by chain ID
+ * Format cross-chain execution job results, grouping by chain ID
  */
 async function formatCrossChainResults(
-  destinationSimulations: SimulationResult['destinationSimulations'],
+  destinationJobResults: SimulationResult['destinationJobResults'],
   destinationChecks?: Record<number, AllCheckResults>,
 ): Promise<string> {
-  if (!destinationSimulations) return '';
+  if (!destinationJobResults) return '';
 
-  // Group simulations by chain ID
-  const simulationsByChain = destinationSimulations.reduce(
+  // Group job results by chain ID
+  const jobResultsByChain = destinationJobResults.reduce(
     (acc, sim) => {
       const chainId = sim.chainId;
       if (!acc[chainId]) {
@@ -1407,12 +1414,12 @@ async function formatCrossChainResults(
       acc[chainId].push(sim);
       return acc;
     },
-    {} as Record<number, typeof destinationSimulations>,
+    {} as Record<number, typeof destinationJobResults>,
   );
 
   // Format each chain's section
   const chainSections = await Promise.all(
-    Object.entries(simulationsByChain).map(async ([chainId, sims]) => {
+    Object.entries(jobResultsByChain).map(async ([chainId, sims]) => {
       if (!sims || sims.length === 0) return '';
 
       const chainName = getChainName(Number(chainId));
@@ -1425,27 +1432,33 @@ async function formatCrossChainResults(
       const l1Messages = (
         await Promise.all(
           sims.map(async (sim, index) => {
-            const l2Target = sim.l2Params?.l2TargetAddress;
-            const l2InputData = sim.l2Params?.l2InputData;
-
-            if (!l2Target) return `  - Message ${index + 1}: No target address`;
-
             const statusIcon =
               sim.status === 'success' ? '✅' : sim.status === 'skipped' ? '⚠️' : '❌';
-            const label = getSimulationContractLabel(sim.sim, l2Target);
-            const targetText = label
-              ? `Target: ${label} ${toAddressLink(l2Target, blockExplorerUrl)}`
-              : `Target: ${toAddressLink(l2Target, blockExplorerUrl)}`;
+            const steps = await Promise.all(
+              sim.job.calls.map(async (call, stepIndex) => {
+                const label = getSimulationContractLabel(
+                  sim.stepResults[stepIndex]?.sim ?? sim.accumulatedSim,
+                  call.l2TargetAddress,
+                );
+                const targetText = label
+                  ? `Target: ${label} ${toAddressLink(call.l2TargetAddress, blockExplorerUrl)}`
+                  : `Target: ${toAddressLink(call.l2TargetAddress, blockExplorerUrl)}`;
+                const decoded = await decodeContractCall(
+                  call.l2TargetAddress,
+                  call.l2InputData,
+                  Number(chainId),
+                );
+                const callText = decoded
+                  ? `Call: \`${decoded.signature || decoded.selector}\``
+                  : 'Call: (unknown)';
+                return `    - Step ${stepIndex + 1}: ${targetText} • ${callText}`;
+              }),
+            );
 
-            let callText = 'Call: (unknown)';
-            if (l2InputData) {
-              const decoded = await decodeContractCall(l2Target, l2InputData, Number(chainId));
-              if (decoded) {
-                callText = `Call: \`${decoded.signature || decoded.selector}\``;
-              }
-            }
-
-            return `  - Message ${index + 1} ${statusIcon}: ${targetText} • ${callText}`;
+            return [
+              `  - Job ${index + 1} ${statusIcon} (source action ${sim.job.sourceOrder + 1})`,
+              ...steps,
+            ].join('\n');
           }),
         )
       ).join('\n');
@@ -1484,15 +1497,17 @@ async function formatCrossChainResults(
       if (allSuccessful) {
         const allEventsArrays = await Promise.all(
           sims
-            .filter((sim) => sim.sim)
+            .filter((sim) => sim.status === 'success')
             .map(async (sim, simIndex) => {
-              const logs = sim.sim?.transaction.transaction_info.logs || [];
+              const stepLogs = sim.stepResults
+                .filter((step) => step.status === 'success' && step.sim)
+                .flatMap((step) => step.sim?.transaction.transaction_info.logs || []);
 
-              const logPromises = logs.map(async (log) => {
+              const logPromises = stepLogs.map(async (log) => {
                 if (!log.name) return null;
 
                 // Fix case-sensitivity bug: normalize addresses before comparison
-                const contract = sim.sim?.contracts.find(
+                const contract = sim.accumulatedSim?.contracts.find(
                   (c) => getAddress(c.address) === getAddress(log.raw.address),
                 );
 

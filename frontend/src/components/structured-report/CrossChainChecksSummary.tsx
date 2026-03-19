@@ -1,23 +1,20 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
-import type { CrossChainMessagePreview } from '@/hooks/use-simulation-results';
+import type { CrossChainJobPreview } from '@/hooks/use-simulation-results';
 import { AlertTriangleIcon, CheckCircleIcon, ExternalLinkIcon } from 'lucide-react';
 import { useMemo } from 'react';
 import { ChainLogo } from './ChainLogo';
-import { summarizeCrossChainMessages } from './cross-chain';
+import { summarizeCrossChainJobs } from './cross-chain';
 import { buildAddressLinkForExplorer } from './explorer';
 
 interface CrossChainChecksSummaryProps {
-  messages: CrossChainMessagePreview[];
+  jobs: CrossChainJobPreview[];
   onNavigateToChain?: (chainId: number) => void;
 }
 
-export function CrossChainChecksSummary({
-  messages,
-  onNavigateToChain,
-}: CrossChainChecksSummaryProps) {
-  const summary = useMemo(() => summarizeCrossChainMessages(messages), [messages]);
+export function CrossChainChecksSummary({ jobs, onNavigateToChain }: CrossChainChecksSummaryProps) {
+  const summary = useMemo(() => summarizeCrossChainJobs(jobs), [jobs]);
   const hasFailures = summary.failureCount > 0;
 
   return (
@@ -30,9 +27,9 @@ export function CrossChainChecksSummary({
             <CheckCircleIcon className="h-5 w-5 text-green-500 mt-0.5" />
           )}
           <div>
-            <div className="font-semibold">Cross-chain messages</div>
+            <div className="font-semibold">Cross-chain jobs</div>
             <div className="text-xs text-muted-foreground">
-              L2 message execution can fail independently of the main-chain checks.
+              L2 execution can fail independently of the main-chain checks.
             </div>
           </div>
         </div>
@@ -110,31 +107,33 @@ export function CrossChainChecksSummary({
 
             {chain.failures.length ? (
               <div className="px-3 pb-3 space-y-1 text-xs text-muted-foreground border-t border-border/30">
-                {chain.failures.map((m) => (
+                {chain.failures.map((job) => (
                   <div
-                    key={`${chain.chainId}-${m.index}`}
+                    key={`${chain.chainId}-${job.sourceOrder}`}
                     className="flex items-center gap-2 flex-wrap"
                   >
                     <span className="text-red-600 font-medium">
-                      Message {m.index + 1} {m.status === 'skipped' ? 'skipped' : 'failed'}:
+                      Job {job.sourceOrder + 1} {job.status === 'skipped' ? 'skipped' : 'failed'}:
                     </span>
-                    <code className="font-mono bg-muted-foreground/10 px-1 py-0.5 rounded">
-                      {m.call}
-                    </code>
-                    {m.targetLabel ? <span>{m.targetLabel}</span> : null}
-                    {m.target ? (
+                    {job.call ? (
+                      <code className="font-mono bg-muted-foreground/10 px-1 py-0.5 rounded">
+                        {job.call}
+                      </code>
+                    ) : null}
+                    {job.targetLabel ? <span>{job.targetLabel}</span> : null}
+                    {job.target ? (
                       <a
-                        href={buildAddressLinkForExplorer(m.target, chain.explorerBaseUrl)}
+                        href={buildAddressLinkForExplorer(job.target, chain.explorerBaseUrl)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="font-mono bg-muted-foreground/10 px-1 py-0.5 rounded hover:underline inline-flex items-center"
-                        title={m.target}
+                        title={job.target}
                       >
-                        {m.target.slice(0, 6)}...{m.target.slice(-4)}
+                        {job.target.slice(0, 6)}...{job.target.slice(-4)}
                         <ExternalLinkIcon className="h-3 w-3 ml-1" />
                       </a>
                     ) : null}
-                    {m.error ? <span className="text-red-600">{m.error}</span> : null}
+                    {job.error ? <span className="text-red-600">{job.error}</span> : null}
                   </div>
                 ))}
               </div>

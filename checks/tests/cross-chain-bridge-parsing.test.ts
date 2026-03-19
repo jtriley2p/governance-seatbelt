@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { encodeFunctionData, parseAbi } from 'viem';
-import type { CallTrace } from '../../types';
+import { arbitrum, base, optimism } from 'viem/chains';
+import type { CallTrace, CrossChainExecutionJob } from '../../types';
 import {
   parseArbitrumL1L2Messages,
   parseArbitrumL1L2MessagesFromProposal,
@@ -10,6 +11,10 @@ import {
   parseOptimismL1L2MessagesFromProposal,
 } from '../../utils/bridges/optimism';
 import { createRealisticSimulation } from './test-utils';
+
+function firstCall(job: CrossChainExecutionJob) {
+  return job.calls[0];
+}
 
 describe('Cross-Chain Bridge Parsing Integration Tests', () => {
   describe('Arbitrum Bridge Parsing - Real World Scenarios', () => {
@@ -36,10 +41,12 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         bridgeType: 'ArbitrumL1L2',
-        destinationChainId: '42161',
-        l2TargetAddress: '0x912CE59144191C1204E64559FE8253a0e49E6548',
+        destinationChainId: arbitrum.id,
         l2FromAddress: '0x2BAD8182C09F50c8318d769245beA52C32Be46CD',
       });
+      expect(firstCall(messages[0]).l2TargetAddress).toBe(
+        '0x912CE59144191C1204E64559FE8253a0e49E6548',
+      );
     });
 
     test('should handle multiple Arbitrum calls with different functions', () => {
@@ -63,8 +70,12 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
       const messages = parseArbitrumL1L2Messages(multiCallSimulation);
 
       expect(messages).toHaveLength(2);
-      expect(messages[0].l2TargetAddress).toBe('0x912CE59144191C1204E64559FE8253a0e49E6548');
-      expect(messages[1].l2TargetAddress).toBe('0x912CE59144191C1204E64559FE8253a0e49E6548');
+      expect(firstCall(messages[0]).l2TargetAddress).toBe(
+        '0x912CE59144191C1204E64559FE8253a0e49E6548',
+      );
+      expect(firstCall(messages[1]).l2TargetAddress).toBe(
+        '0x912CE59144191C1204E64559FE8253a0e49E6548',
+      );
     });
 
     test('should handle edge cases in Arbitrum parsing', () => {
@@ -121,14 +132,18 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
 
       expect(messages).toHaveLength(2);
 
-      const opMessage = messages.find((m) => m.destinationChainId === '10');
-      const baseMessage = messages.find((m) => m.destinationChainId === '8453');
+      const opMessage = messages.find((m) => m.destinationChainId === optimism.id);
+      const baseMessage = messages.find((m) => m.destinationChainId === base.id);
 
       expect(opMessage).toBeDefined();
       expect(baseMessage).toBeDefined();
 
-      expect(opMessage?.l2TargetAddress).toBe('0x4200000000000000000000000000000000000006');
-      expect(baseMessage?.l2TargetAddress).toBe('0x4200000000000000000000000000000000000006');
+      expect(opMessage && firstCall(opMessage).l2TargetAddress).toBe(
+        '0x4200000000000000000000000000000000000006',
+      );
+      expect(baseMessage && firstCall(baseMessage).l2TargetAddress).toBe(
+        '0x4200000000000000000000000000000000000006',
+      );
     });
 
     test('should parse depositTransaction portal calls', () => {
@@ -162,11 +177,13 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         bridgeType: 'OptimismL1L2',
-        destinationChainId: '1868',
-        l2TargetAddress: '0x42aE7Ec7ff020412639d443E245D936429Fbe717',
+        destinationChainId: 1868,
         l2FromAddress: '0x2BAD8182C09F50c8318d769245beA52C32Be46CD',
       });
-      expect(messages[0].l2InputData).toBe(setOwnerData);
+      expect(firstCall(messages[0]).l2TargetAddress).toBe(
+        '0x42aE7Ec7ff020412639d443E245D936429Fbe717',
+      );
+      expect(firstCall(messages[0]).l2InputData).toBe(setOwnerData);
     });
 
     test('should handle complex nested Optimism calls', () => {
@@ -191,7 +208,7 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
       const messages = parseOptimismL1L2Messages(nestedSimulation);
 
       expect(messages).toHaveLength(1);
-      expect(messages[0].destinationChainId).toBe('10');
+      expect(messages[0].destinationChainId).toBe(optimism.id);
     });
 
     test('should handle Optimism parsing edge cases', () => {
@@ -249,11 +266,11 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
 
       const message = messages[0];
       expect(message.bridgeType).toBe('ArbitrumL1L2');
-      expect(message.destinationChainId).toBe('42161');
-      expect(message.l2TargetAddress).toBeDefined();
+      expect(message.destinationChainId).toBe(arbitrum.id);
+      expect(firstCall(message).l2TargetAddress).toBeDefined();
       expect(message.l2FromAddress).toBeDefined();
-      expect(message.l2InputData).toBeDefined();
-      expect(message.l2Value).toBeDefined();
+      expect(firstCall(message).l2InputData).toBeDefined();
+      expect(firstCall(message).l2Value).toBeDefined();
     });
 
     test('should validate Optimism message structure', () => {
@@ -274,11 +291,11 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
 
       const message = messages[0];
       expect(message.bridgeType).toBe('OptimismL1L2');
-      expect(message.destinationChainId).toBe('10');
-      expect(message.l2TargetAddress).toBe('0x4200000000000000000000000000000000000006');
+      expect(message.destinationChainId).toBe(optimism.id);
+      expect(firstCall(message).l2TargetAddress).toBe('0x4200000000000000000000000000000000000006');
       expect(message.l2FromAddress).toBe('0x1a9C8182C09F50C8318d769245beA52c32BE35BC');
-      expect(message.l2InputData).toBe('0xd0e30db0');
-      expect(message.l2Value).toBe('0');
+      expect(firstCall(message).l2InputData).toBe('0xd0e30db0');
+      expect(firstCall(message).l2Value).toBe('0');
     });
   });
 
@@ -336,9 +353,11 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         bridgeType: 'ArbitrumL1L2',
-        destinationChainId: '42161',
-        l2TargetAddress: '0x912CE59144191C1204E64559FE8253a0e49E6548',
+        destinationChainId: arbitrum.id,
       });
+      expect(firstCall(messages[0]).l2TargetAddress).toBe(
+        '0x912CE59144191C1204E64559FE8253a0e49E6548',
+      );
     });
 
     test('parseArbitrumL1L2MessagesFromProposal ignores non-inbox targets', () => {
@@ -359,7 +378,7 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         bridgeType: 'OptimismL1L2',
-        destinationChainId: '10',
+        destinationChainId: optimism.id,
       });
     });
 
@@ -382,7 +401,7 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         bridgeType: 'OptimismL1L2',
-        destinationChainId: '480',
+        destinationChainId: 480,
       });
     });
 
@@ -413,11 +432,13 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         bridgeType: 'OptimismL1L2',
-        destinationChainId: '1868',
-        l2TargetAddress: '0x42aE7Ec7ff020412639d443E245D936429Fbe717',
+        destinationChainId: 1868,
         l2FromAddress: '0x2BAD8182C09F50c8318d769245beA52C32Be46CD',
       });
-      expect(messages[0].l2InputData).toBe(setOwnerData);
+      expect(firstCall(messages[0]).l2TargetAddress).toBe(
+        '0x42aE7Ec7ff020412639d443E245D936429Fbe717',
+      );
+      expect(firstCall(messages[0]).l2InputData).toBe(setOwnerData);
     });
   });
 });

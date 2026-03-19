@@ -2,18 +2,56 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseAbi } from 'viem';
+import { type Address, type Hex, parseAbi, zeroAddress, zeroHash } from 'viem';
 import type {
   AllCheckResults,
   ProposalEvent,
   SimulationBlock,
   SimulationResult,
-  TenderlySimulation,
 } from '../types';
+import { createMockSimulation } from '../checks/tests/test-utils';
 import { clearFunctionSignatureRegistryCache } from '../utils/clients/function-signature-registry';
 
 describe('cross-chain selector fallback decode', () => {
-  function buildFixture(targetAddress = '0x00000000000000000000000000000000000000ab') {
+  function makeTenderlyContract(
+    address: string,
+    contractName: string,
+  ): ReturnType<typeof createMockSimulation>['contracts'][number] {
+    return {
+      id: `${address}-id`,
+      contract_id: `${address}-contract-id`,
+      balance: '0',
+      network_id: '1',
+      public: true,
+      verified_by: 'test',
+      verification_date: null,
+      address,
+      contract_name: contractName,
+      ens_domain: null,
+      type: 'contract',
+      evm_version: 'paris',
+      compiler_version: '0.8.24',
+      optimizations_used: false,
+      optimization_runs: 0,
+      libraries: null,
+      data: {
+        main_contract: 0,
+        contract_info: [],
+        abi: [],
+        raw_abi: null,
+      },
+      creation_block: 0,
+      creation_tx: zeroHash,
+      creator_address: zeroAddress,
+      created_at: new Date('2023-01-01T00:00:00Z'),
+      number_of_watches: null,
+      language: 'solidity',
+      in_project: false,
+      number_of_files: 1,
+    };
+  }
+
+  function buildFixture(targetAddress: Address = '0x00000000000000000000000000000000000000ab') {
     const proposal: ProposalEvent = {
       id: 181n,
       proposalId: 181n,
@@ -44,33 +82,48 @@ describe('cross-chain selector fallback decode', () => {
       },
     };
 
-    const l2TargetAddress = targetAddress;
-    const destinationSimulation: NonNullable<SimulationResult['destinationSimulations']>[number] = {
+    const l2TargetAddress: Address = targetAddress;
+    const l2FromAddress: Address = '0x0000000000000000000000000000000000000001';
+    const l2InputData: Hex =
+      '0x13af40350000000000000000000000001111111111111111111111111111111111111111';
+    const stepSim = createMockSimulation([]);
+    stepSim.contracts = [makeTenderlyContract(l2TargetAddress, 'MockTarget')];
+    stepSim.transaction.transaction_info.logs = [];
+
+    const accumulatedSim = createMockSimulation([]);
+    accumulatedSim.contracts = [makeTenderlyContract(l2TargetAddress, 'MockTarget')];
+    accumulatedSim.transaction.transaction_info.logs = [];
+
+    const destinationSimulation: NonNullable<SimulationResult['destinationJobResults']>[number] = {
       chainId: 196,
       bridgeType: 'OptimismL1L2',
       status: 'success' as const,
-      sim: {
-        contracts: [
+      job: {
+        bridgeType: 'OptimismL1L2' as const,
+        l2FromAddress,
+        destinationChainId: 196,
+        sourceOrder: 0,
+        calls: [
           {
-            address: l2TargetAddress,
-            contract_name: 'MockTarget',
+            l2TargetAddress,
+            l2InputData,
+            l2Value: '0',
           },
         ],
-        transaction: {
-          transaction_info: {
-            logs: [],
-          },
-        },
-      } as unknown as TenderlySimulation,
-      l2Params: {
-        bridgeType: 'OptimismL1L2' as const,
-        destinationChainId: '196',
-        l2TargetAddress: l2TargetAddress as `0x${string}`,
-        l2InputData:
-          '0x13af40350000000000000000000000001111111111111111111111111111111111111111' as `0x${string}`,
-        l2Value: '0',
-        l2FromAddress: '0x0000000000000000000000000000000000000001' as `0x${string}`,
       },
+      stepResults: [
+        {
+          stepIndex: 0,
+          call: {
+            l2TargetAddress,
+            l2InputData,
+            l2Value: '0',
+          },
+          status: 'success' as const,
+          sim: stepSim,
+        },
+      ],
+      accumulatedSim,
     };
 
     return { proposal, blocks, checks, destinationSimulation };
@@ -130,7 +183,7 @@ describe('cross-chain selector fallback decode', () => {
         checks,
         outputDir,
         governorAddress: '0x9876543210fedcba9876543210fedcba98765432',
-        destinationSimulations: [destinationSimulation],
+        destinationJobResults: [destinationSimulation],
       });
 
       const structuredReportPath = join(outputDir, '181.json');
@@ -138,12 +191,12 @@ describe('cross-chain selector fallback decode', () => {
 
       const structuredReport = JSON.parse(readFileSync(structuredReportPath, 'utf8')) as {
         crossChain?: {
-          messages?: Array<{ call?: { signature?: string } }>;
+          jobs?: Array<{ steps?: Array<{ call?: { signature?: string } }> }>;
         };
       };
       const markdown = readFileSync(markdownPath, 'utf8');
 
-      const signature = structuredReport.crossChain?.messages?.[0]?.call?.signature;
+      const signature = structuredReport.crossChain?.jobs?.[0]?.steps?.[0]?.call?.signature;
       expect(signature).toBe('setOwner(address)');
       expect(markdown).toContain('Call: `setOwner(address)`');
       expect(markdown).not.toContain('Call: `0x13af4035`');
@@ -195,7 +248,7 @@ describe('cross-chain selector fallback decode', () => {
         checks,
         outputDir,
         governorAddress: '0x9876543210fedcba9876543210fedcba98765432',
-        destinationSimulations: [destinationSimulation],
+        destinationJobResults: [destinationSimulation],
       });
 
       const structuredReportPath = join(outputDir, '181.json');
@@ -203,12 +256,14 @@ describe('cross-chain selector fallback decode', () => {
 
       const structuredReport = JSON.parse(readFileSync(structuredReportPath, 'utf8')) as {
         crossChain?: {
-          messages?: Array<{ call?: { signature?: string } }>;
+          jobs?: Array<{ steps?: Array<{ call?: { signature?: string } }> }>;
         };
       };
       const markdown = readFileSync(markdownPath, 'utf8');
 
-      expect(structuredReport.crossChain?.messages?.[0]?.call?.signature).toBe('setOwner(address)');
+      expect(structuredReport.crossChain?.jobs?.[0]?.steps?.[0]?.call?.signature).toBe(
+        'setOwner(address)',
+      );
       expect(markdown).toContain('Call: `setOwner(address)`');
       expect(fourByteFetchCalls).toBe(0);
     } finally {

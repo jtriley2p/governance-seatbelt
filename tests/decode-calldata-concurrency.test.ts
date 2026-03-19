@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { checkDecodeCalldata } from '../checks/check-decode-calldata';
+import { createMockSimulation } from '../checks/tests/test-utils';
 import type { ProposalData, ProposalEvent, TenderlySimulation } from '../types';
 import { BlockExplorerFactory } from '../utils/clients/block-explorers/factory';
 
@@ -36,14 +37,7 @@ describe('checkDecodeCalldata concurrency', () => {
       calldatas,
     };
 
-    const sim = {
-      transaction: {
-        transaction_info: {
-          call_trace: { calls },
-        },
-      },
-      contracts: [],
-    } as unknown as TenderlySimulation;
+    const sim = createMockSimulation(calls);
 
     const deps = {
       chainConfig: { chainId: 1 },

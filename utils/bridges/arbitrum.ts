@@ -8,7 +8,7 @@ import {
   toHex,
 } from 'viem';
 import type { CallTrace, TenderlySimulation } from '../../types.d';
-import type { ExtractedCrossChainMessage } from '../../types.d';
+import type { CrossChainExecutionJob } from '../../types.d';
 // Assuming ABI is available, similar to sims/arb-grant.sim.ts
 import ArbitrumDelayedInboxAbi from '../abis/ArbitrumDelayedInboxAbi.json' assert { type: 'json' };
 
@@ -85,18 +85,16 @@ function findArbitrumInboxCalls(call: CallTrace): CallTrace[] {
 }
 
 /**
- * Parses a source chain simulation trace to find Arbitrum L1 -> L2 messages
- * initiated via the ArbitrumDelayedInbox contract's createRetryableTicket function.
- * Groups messages by their L2 target address to avoid duplicate simulations.
+ * Parses a source chain simulation trace to find Arbitrum L1 -> L2 bridge
+ * messages and converts each one into a destination execution job.
+ * Groups jobs by their L2 target address to avoid duplicate simulations.
  *
  * @param sourceSim The Tenderly simulation result from the source chain.
- * @returns An array of ExtractedCrossChainMessage objects, grouped by L2 target.
+ * @returns An array of destination execution jobs, grouped by L2 target.
  */
-export function parseArbitrumL1L2Messages(
-  sourceSim: TenderlySimulation,
-): ExtractedCrossChainMessage[] {
-  // Map to store messages by target address and calldata hash
-  const messagesByTargetAndCalldata = new Map<string, ExtractedCrossChainMessage>();
+export function parseArbitrumL1L2Messages(sourceSim: TenderlySimulation): CrossChainExecutionJob[] {
+  // Map to store jobs by target address and calldata hash
+  const jobsByTargetAndCalldata = new Map<string, CrossChainExecutionJob>();
   const unknownSelectorCounts = new Map<string, number>();
 
   // Handle null or undefined transaction info gracefully
@@ -156,18 +154,17 @@ export function parseArbitrumL1L2Messages(
           const l2Alias = calculateL2Alias(l1Sender);
 
           // Create the message
-          const message: ExtractedCrossChainMessage = {
+          const message: CrossChainExecutionJob = {
             bridgeType: 'ArbitrumL1L2',
-            destinationChainId: ARBITRUM_CHAIN_ID,
-            l2TargetAddress: l2TargetAddress,
-            l2InputData: l2InputData,
-            l2Value: l2Value.toString(),
+            destinationChainId: Number(ARBITRUM_CHAIN_ID),
             l2FromAddress: l2Alias,
+            sourceOrder: jobsByTargetAndCalldata.size,
+            calls: [{ l2TargetAddress, l2InputData, l2Value: l2Value.toString() }],
           };
 
           // Use both target address and calldata hash as key
           const key = `${l2TargetAddress}-${l2InputData}`;
-          messagesByTargetAndCalldata.set(key, message);
+          jobsByTargetAndCalldata.set(key, message);
           break;
         }
         case 'sendL1FundedContractTransaction':
@@ -185,17 +182,16 @@ export function parseArbitrumL1L2Messages(
           const l1Sender = getAddress(call.from);
           const l2Alias = calculateL2Alias(l1Sender);
 
-          const message: ExtractedCrossChainMessage = {
+          const message: CrossChainExecutionJob = {
             bridgeType: 'ArbitrumL1L2',
-            destinationChainId: ARBITRUM_CHAIN_ID,
-            l2TargetAddress: l2TargetAddress,
-            l2InputData: l2InputData,
-            l2Value: '0', // These functions don't have L2 value
+            destinationChainId: Number(ARBITRUM_CHAIN_ID),
             l2FromAddress: l2Alias,
+            sourceOrder: jobsByTargetAndCalldata.size,
+            calls: [{ l2TargetAddress, l2InputData, l2Value: '0' }],
           };
 
           const key = `${l2TargetAddress}-${l2InputData}`;
-          messagesByTargetAndCalldata.set(key, message);
+          jobsByTargetAndCalldata.set(key, message);
           break;
         }
         case 'sendContractTransaction':
@@ -215,17 +211,16 @@ export function parseArbitrumL1L2Messages(
           const l1Sender = getAddress(call.from);
           const l2Alias = calculateL2Alias(l1Sender);
 
-          const message: ExtractedCrossChainMessage = {
+          const message: CrossChainExecutionJob = {
             bridgeType: 'ArbitrumL1L2',
-            destinationChainId: ARBITRUM_CHAIN_ID,
-            l2TargetAddress: l2TargetAddress,
-            l2InputData: l2InputData,
-            l2Value: l2Value.toString(),
+            destinationChainId: Number(ARBITRUM_CHAIN_ID),
             l2FromAddress: l2Alias,
+            sourceOrder: jobsByTargetAndCalldata.size,
+            calls: [{ l2TargetAddress, l2InputData, l2Value: l2Value.toString() }],
           };
 
           const key = `${l2TargetAddress}-${l2InputData}`;
-          messagesByTargetAndCalldata.set(key, message);
+          jobsByTargetAndCalldata.set(key, message);
           break;
         }
         case 'sendL2Message':
@@ -257,17 +252,16 @@ export function parseArbitrumL1L2Messages(
             const messageArgs = decodedMessage.args as readonly [Address, Hex, bigint];
             const l2TargetAddress = messageArgs[0];
 
-            const message: ExtractedCrossChainMessage = {
+            const message: CrossChainExecutionJob = {
               bridgeType: 'ArbitrumL1L2',
-              destinationChainId: ARBITRUM_CHAIN_ID,
-              l2TargetAddress: l2TargetAddress,
-              l2InputData: messageArgs[1],
-              l2Value: '0',
+              destinationChainId: Number(ARBITRUM_CHAIN_ID),
               l2FromAddress: l2Alias,
+              sourceOrder: jobsByTargetAndCalldata.size,
+              calls: [{ l2TargetAddress, l2InputData: messageArgs[1], l2Value: '0' }],
             };
 
             const key = `${l2TargetAddress}-${messageArgs[1]}`;
-            messagesByTargetAndCalldata.set(key, message);
+            jobsByTargetAndCalldata.set(key, message);
           } catch (error) {
             console.error('[Arbitrum Parser] Error decoding L2 message data:', error);
           }
@@ -295,32 +289,33 @@ export function parseArbitrumL1L2Messages(
     );
   }
 
-  const extractedMessages = Array.from(messagesByTargetAndCalldata.values());
+  const extractedJobs = Array.from(jobsByTargetAndCalldata.values());
 
-  if (extractedMessages.length > 0) {
-    console.log(`[Arbitrum Parser] Extracted ${extractedMessages.length} unique L1->L2 messages.`);
+  if (extractedJobs.length > 0) {
+    console.log(`[Arbitrum Parser] Extracted ${extractedJobs.length} unique L1->L2 jobs.`);
   }
 
-  return extractedMessages;
+  return extractedJobs;
 }
 
 /**
- * Extracts Arbitrum L1->L2 messages from a proposal's targets and calldatas.
+ * Extracts Arbitrum L1->L2 bridge messages from a proposal's targets and
+ * calldatas, then converts each one into a destination execution job.
  * Used when the simulation call trace does not yield decodeable inbox calls (e.g. trace
  * returns raw/internal calldata). Each (targets[i], calldatas[i]) that targets the
- * Delayed Inbox is decoded and converted to an ExtractedCrossChainMessage.
+ * Delayed Inbox is decoded into one execution job.
  *
  * @param targets Proposal target addresses (L1).
  * @param calldatas Proposal calldatas (ABI-encoded for each target).
  * @param l1Sender Address treated as the L1 sender for L2 alias (e.g. timelock). Optional.
- * @returns ExtractedCrossChainMessage[] for each inbox call found.
+ * @returns One execution job for each inbox call found.
  */
 export function parseArbitrumL1L2MessagesFromProposal(
   targets: readonly string[],
   calldatas: readonly string[],
   l1Sender?: Address,
-): ExtractedCrossChainMessage[] {
-  const messages: ExtractedCrossChainMessage[] = [];
+): CrossChainExecutionJob[] {
+  const jobs: CrossChainExecutionJob[] = [];
   const inboxLower = ARBITRUM_DELAYED_INBOX.toLowerCase();
   const from = l1Sender
     ? getAddress(l1Sender)
@@ -354,13 +349,14 @@ export function parseArbitrumL1L2MessagesFromProposal(
             bigint,
             Hex,
           ];
-          messages.push({
+          jobs.push({
             bridgeType: 'ArbitrumL1L2',
-            destinationChainId: ARBITRUM_CHAIN_ID,
-            l2TargetAddress: args[0],
-            l2InputData: args[7],
-            l2Value: args[1].toString(),
             l2FromAddress: l2Alias,
+            destinationChainId: Number(ARBITRUM_CHAIN_ID),
+            sourceOrder: i,
+            calls: [
+              { l2TargetAddress: args[0], l2InputData: args[7], l2Value: args[1].toString() },
+            ],
           });
           break;
         }
@@ -368,13 +364,12 @@ export function parseArbitrumL1L2MessagesFromProposal(
         case 'sendL1FundedUnsignedTransaction':
         case 'sendL1FundedUnsignedTransactionToFork': {
           const args = decoded.args as readonly [bigint, bigint, Address, Hex];
-          messages.push({
+          jobs.push({
             bridgeType: 'ArbitrumL1L2',
-            destinationChainId: ARBITRUM_CHAIN_ID,
-            l2TargetAddress: args[2],
-            l2InputData: args[3],
-            l2Value: '0',
             l2FromAddress: l2Alias,
+            destinationChainId: Number(ARBITRUM_CHAIN_ID),
+            sourceOrder: i,
+            calls: [{ l2TargetAddress: args[2], l2InputData: args[3], l2Value: '0' }],
           });
           break;
         }
@@ -382,13 +377,14 @@ export function parseArbitrumL1L2MessagesFromProposal(
         case 'sendUnsignedTransaction':
         case 'sendUnsignedTransactionToFork': {
           const args = decoded.args as readonly [bigint, bigint, Address, bigint, Hex];
-          messages.push({
+          jobs.push({
             bridgeType: 'ArbitrumL1L2',
-            destinationChainId: ARBITRUM_CHAIN_ID,
-            l2TargetAddress: args[2],
-            l2InputData: args[4],
-            l2Value: args[3].toString(),
             l2FromAddress: l2Alias,
+            destinationChainId: Number(ARBITRUM_CHAIN_ID),
+            sourceOrder: i,
+            calls: [
+              { l2TargetAddress: args[2], l2InputData: args[4], l2Value: args[3].toString() },
+            ],
           });
           break;
         }
@@ -400,10 +396,10 @@ export function parseArbitrumL1L2MessagesFromProposal(
     }
   }
 
-  if (messages.length > 0) {
+  if (jobs.length > 0) {
     console.log(
-      `[Arbitrum Parser] Extracted ${messages.length} L1->L2 message(s) from proposal targets/calldatas.`,
+      `[Arbitrum Parser] Extracted ${jobs.length} L1->L2 job(s) from proposal targets/calldatas.`,
     );
   }
-  return messages;
+  return jobs;
 }

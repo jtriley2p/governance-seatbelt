@@ -3,6 +3,7 @@ import { encodeFunctionData, parseAbiItem } from 'viem';
 import type { ProposalData, ProposalEvent, TenderlySimulation } from '../../types';
 import { BlockExplorerFactory } from '../../utils/clients/block-explorers/factory';
 import { checkDecodeCalldata } from '../check-decode-calldata';
+import { createMockSimulation } from './test-utils';
 
 const TIMELOCK = '0x1111111111111111111111111111111111111111';
 const TARGET = '0x2222222222222222222222222222222222222222';
@@ -30,24 +31,14 @@ describe('checkDecodeCalldata', () => {
       values: [0n],
     } as unknown as ProposalEvent;
 
-    const sim = {
-      contracts: [],
-      transaction: {
-        status: true,
-        transaction_info: {
-          call_trace: {
-            calls: [
-              {
-                from: OTHER, // not timelock, strict match should fail
-                to: TARGET,
-                input: sendMessageCall,
-                value: '0',
-              },
-            ],
-          },
-        },
+    const sim = createMockSimulation([
+      {
+        from: OTHER, // not timelock, strict match should fail
+        to: TARGET,
+        input: sendMessageCall,
+        value: '0',
       },
-    } as unknown as TenderlySimulation;
+    ]);
 
     const originalDecode = BlockExplorerFactory.decodeFunctionWithAbi;
     BlockExplorerFactory.decodeFunctionWithAbi = async () => null;
@@ -90,17 +81,7 @@ describe('checkDecodeCalldata', () => {
       values: [0n],
     } as unknown as ProposalEvent;
 
-    const sim = {
-      contracts: [],
-      transaction: {
-        status: true,
-        transaction_info: {
-          call_trace: {
-            calls: [],
-          },
-        },
-      },
-    } as unknown as TenderlySimulation;
+    const sim = createMockSimulation([]);
 
     const originalDecode = BlockExplorerFactory.decodeFunctionWithAbi;
     BlockExplorerFactory.decodeFunctionWithAbi = async () => null;

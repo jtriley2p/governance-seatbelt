@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { encodeFunctionData, getAddress, parseAbi } from 'viem';
+import { celo } from 'viem/chains';
 import { parseWormholeMessagesFromProposal } from '../utils/bridges/wormhole';
 
 const WORMHOLE_SENDER_ABI = parseAbi([
@@ -37,24 +38,16 @@ describe('wormhole proposal parser', () => {
       [calldata],
     );
 
-    expect(messages).toHaveLength(3);
-    expect(messages.map((message) => message.destinationChainId)).toEqual([
-      '42220',
-      '42220',
-      '42220',
-    ]);
-    expect(messages.map((message) => message.bridgeType)).toEqual([
-      'WormholeL1L2',
-      'WormholeL1L2',
-      'WormholeL1L2',
-    ]);
-    expect(messages.map((message) => message.l2TargetAddress)).toEqual(celoTargets);
-    expect(messages.map((message) => message.l2InputData)).toEqual([...celoCalldatas]);
-    expect(messages.map((message) => message.l2FromAddress)).toEqual([
+    expect(messages).toHaveLength(1);
+    expect(messages[0].destinationChainId).toBe(celo.id);
+    expect(messages[0].bridgeType).toBe('WormholeL1L2');
+    expect(messages[0].l2FromAddress).toBe(
       getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071'),
-      getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071'),
-      getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071'),
-    ]);
+    );
+    expect(messages[0].sourceOrder).toBe(0);
+    expect(messages[0].calls.map((call) => call.l2TargetAddress)).toEqual(celoTargets);
+    expect(messages[0].calls.map((call) => call.l2InputData)).toEqual([...celoCalldatas]);
+    expect(messages[0].calls.map((call) => call.l2Value)).toEqual(['0', '0', '0']);
   });
 
   test('does not parse wormhole messages when proposal target is not known wormhole sender', () => {

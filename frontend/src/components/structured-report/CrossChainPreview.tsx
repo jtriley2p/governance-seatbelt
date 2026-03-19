@@ -1,7 +1,7 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
-import type { CrossChainMessagePreview } from '@/hooks/use-simulation-results';
+import type { CrossChainJobPreview } from '@/hooks/use-simulation-results';
 import { resolveChainName } from '@/lib/chain-name';
 import { ExternalLinkIcon } from 'lucide-react';
 import { useMemo } from 'react';
@@ -9,27 +9,27 @@ import { ChainLogo } from './ChainLogo';
 import { formatCrossChainCall } from './cross-chain';
 import { buildAddressLinkForExplorer } from './explorer';
 
-export function CrossChainPreview({ messages }: { messages: CrossChainMessagePreview[] }) {
+export function CrossChainPreview({ jobs }: { jobs: CrossChainJobPreview[] }) {
   const groups = useMemo(() => {
-    const byChain = new Map<number, CrossChainMessagePreview[]>();
-    for (const msg of messages) {
-      const list = byChain.get(msg.chainId) ?? [];
-      list.push(msg);
-      byChain.set(msg.chainId, list);
+    const byChain = new Map<number, CrossChainJobPreview[]>();
+    for (const job of jobs) {
+      const list = byChain.get(job.chainId) ?? [];
+      list.push(job);
+      byChain.set(job.chainId, list);
     }
     return Array.from(byChain.entries()).sort((a, b) => {
       const aName = resolveChainName(a[0], a[1][0]?.chainName);
       const bName = resolveChainName(b[0], b[1][0]?.chainName);
       return aName.localeCompare(bName);
     });
-  }, [messages]);
+  }, [jobs]);
 
   return (
     <div className="space-y-3">
-      {groups.map(([chainId, chainMessages]) => {
-        const chainName = resolveChainName(chainId, chainMessages[0]?.chainName);
-        const explorerBaseUrl = chainMessages[0]?.blockExplorerBaseUrl || 'https://etherscan.io';
-        const bridgeType = chainMessages[0]?.bridgeType;
+      {groups.map(([chainId, chainJobs]) => {
+        const chainName = resolveChainName(chainId, chainJobs[0]?.chainName);
+        const explorerBaseUrl = chainJobs[0]?.blockExplorerBaseUrl || 'https://etherscan.io';
+        const bridgeType = chainJobs[0]?.bridgeType;
 
         return (
           <div key={chainId}>
@@ -46,16 +46,21 @@ export function CrossChainPreview({ messages }: { messages: CrossChainMessagePre
             </div>
 
             <div className="space-y-2">
-              {chainMessages.map((message) => {
-                const messageKey = `${message.chainId}-${message.bridgeType}-${message.l2FromAddress ?? 'unknown'}-${message.l2TargetAddress ?? 'unknown'}-${message.l2InputData ?? 'unknown'}-${message.status}`;
-                const target = message.l2TargetAddress;
-                const targetLabel = message.targetLabel;
-                const call = formatCrossChainCall(message);
+              {chainJobs.map((job) => {
+                const firstStep = job.steps[0];
+                const jobKey = `${job.chainId}-${job.bridgeType}-${job.sourceOrder}-${job.l2FromAddress}-${job.status}`;
+                const target = firstStep?.l2TargetAddress;
+                const targetLabel = firstStep?.targetLabel;
+                const call = firstStep ? formatCrossChainCall(firstStep) : '(empty job)';
 
                 const statusBadge =
-                  message.status === 'success' ? (
+                  job.status === 'success' ? (
                     <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[10px] h-5 px-1.5">
                       OK
+                    </Badge>
+                  ) : job.status === 'skipped' ? (
+                    <Badge variant="outline" className="text-[10px] h-5 px-1.5">
+                      Skipped
                     </Badge>
                   ) : (
                     <Badge variant="destructive" className="text-[10px] h-5 px-1.5">
@@ -64,12 +69,10 @@ export function CrossChainPreview({ messages }: { messages: CrossChainMessagePre
                   );
 
                 return (
-                  <div
-                    key={messageKey}
-                    className="border border-border/40 rounded bg-muted/20 p-2.5"
-                  >
+                  <div key={jobKey} className="border border-border/40 rounded bg-muted/20 p-2.5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 text-xs">
+                        <span className="text-muted-foreground">Job {job.sourceOrder + 1}</span>
                         {targetLabel ? <span className="font-medium">{targetLabel}</span> : null}
                         {target ? (
                           <a
@@ -95,8 +98,12 @@ export function CrossChainPreview({ messages }: { messages: CrossChainMessagePre
                       {call}
                     </code>
 
-                    {message.error ? (
-                      <div className="text-[10px] text-red-600 mt-1">{message.error}</div>
+                    <div className="text-[10px] text-muted-foreground mt-1">
+                      {job.steps.length} step{job.steps.length === 1 ? '' : 's'}
+                    </div>
+
+                    {job.error ? (
+                      <div className="text-[10px] text-red-600 mt-1">{job.error}</div>
                     ) : null}
                   </div>
                 );

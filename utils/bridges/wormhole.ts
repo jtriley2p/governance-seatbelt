@@ -1,5 +1,5 @@
 import { decodeFunctionData, getAddress, isHex, parseAbi, slice, toFunctionSelector } from 'viem';
-import type { ExtractedCrossChainMessage } from '../../types.d';
+import type { CrossChainExecutionCall, CrossChainExecutionJob } from '../../types.d';
 
 const WORMHOLE_SEND_MESSAGE_ABI = parseAbi([
   'function sendMessage(address[] targets, uint256[] values, bytes[] datas, address wormhole, uint16 chainId)',
@@ -14,8 +14,8 @@ const KNOWN_WORMHOLE_SENDER_TARGETS = new Set([
   getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a').toLowerCase(),
 ]);
 
-const WORMHOLE_CHAIN_ID_TO_EVM_CHAIN_ID: Record<number, string> = {
-  14: '42220', // Celo
+const WORMHOLE_CHAIN_ID_TO_EVM_CHAIN_ID: Record<number, number> = {
+  14: 42220, // Celo
 };
 
 const WORMHOLE_CHAIN_ID_TO_L2_EXECUTOR: Record<number, string> = {
@@ -32,18 +32,12 @@ function hasMatchingLengths(
 }
 
 type WormholeDestinationContext = {
-  destinationChainId: string;
+  destinationChainId: number;
   l2FromAddress: `0x${string}`;
 };
 
-type WormholeBatchCall = {
-  l2TargetAddress: `0x${string}`;
-  l2InputData: `0x${string}`;
-  l2Value: string;
-};
-
 type WormholeBatch = WormholeDestinationContext & {
-  calls: WormholeBatchCall[];
+  calls: CrossChainExecutionCall[];
 };
 
 function normalizeWormholeProposalTarget(target: string): string | null {
@@ -85,8 +79,8 @@ function toWormholeBatchCalls(
   wormholeTargets: readonly unknown[],
   wormholeValues: readonly unknown[],
   wormholeDatas: readonly unknown[],
-): WormholeBatchCall[] {
-  const calls: WormholeBatchCall[] = [];
+): CrossChainExecutionCall[] {
+  const calls: CrossChainExecutionCall[] = [];
 
   for (let index = 0; index < wormholeTargets.length; index += 1) {
     const target = wormholeTargets[index];
@@ -146,8 +140,8 @@ function tryDecodeWormholeBatch(data: string): WormholeBatch | null {
 export function parseWormholeMessagesFromProposal(
   targets: readonly string[],
   calldatas: readonly string[],
-): ExtractedCrossChainMessage[] {
-  const messages: ExtractedCrossChainMessage[] = [];
+): CrossChainExecutionJob[] {
+  const jobs: CrossChainExecutionJob[] = [];
 
   for (let i = 0; i < Math.min(targets.length, calldatas.length); i += 1) {
     const target = targets[i];
@@ -157,23 +151,20 @@ export function parseWormholeMessagesFromProposal(
     const batch = tryDecodeWormholeBatch(data);
     if (!batch) continue;
 
-    for (const call of batch.calls) {
-      messages.push({
-        bridgeType: 'WormholeL1L2',
-        destinationChainId: batch.destinationChainId,
-        l2TargetAddress: call.l2TargetAddress,
-        l2InputData: call.l2InputData,
-        l2Value: call.l2Value,
-        l2FromAddress: batch.l2FromAddress,
-      });
-    }
+    jobs.push({
+      bridgeType: 'WormholeL1L2',
+      destinationChainId: batch.destinationChainId,
+      l2FromAddress: batch.l2FromAddress,
+      sourceOrder: i,
+      calls: batch.calls,
+    });
   }
 
-  if (messages.length > 0) {
+  if (jobs.length > 0) {
     console.log(
-      `[Wormhole Parser] Extracted ${messages.length} L1->L2 message(s) from proposal targets/calldatas.`,
+      `[Wormhole Parser] Extracted ${jobs.length} L1->L2 execution job(s) from proposal targets/calldatas.`,
     );
   }
 
-  return messages;
+  return jobs;
 }

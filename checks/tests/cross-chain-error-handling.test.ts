@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import type {
-  CallTrace,
-  SimulationConfigNew,
-  SimulationResult,
-  TenderlySimulation,
-} from '../../types';
+import { encodeFunctionData } from 'viem';
+import { mainnet } from 'viem/chains';
+import type { CallTrace, SimulationConfigNew, TenderlySimulation } from '../../types';
 import { parseArbitrumL1L2Messages } from '../../utils/bridges/arbitrum';
-import { parseOptimismL1L2Messages } from '../../utils/bridges/optimism';
+import { parseOptimismL1L2Messages, SEND_MESSAGE_ABI } from '../../utils/bridges/optimism';
+import { getChainConfig } from '../../utils/clients/client';
 import { simulateNew } from '../../utils/clients/tenderly';
 import { handleCrossChainSimulations } from '../../utils/clients/tenderly';
 import { createMockSimulation } from './test-utils';
+
+type CrossChainSourceResult = Parameters<typeof handleCrossChainSimulations>[0];
 
 describe('Cross-Chain Error Handling and Recovery Tests', () => {
   describe('Bridge Parsing Error Recovery', () => {
@@ -114,8 +114,8 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
         expect(crossChainResult).toBeDefined();
         expect(crossChainResult.sim).toBeDefined();
         expect(crossChainResult.proposal).toBeDefined();
-        expect(crossChainResult.destinationSimulations).toBeDefined();
-        expect(Array.isArray(crossChainResult.destinationSimulations)).toBe(true);
+        expect(crossChainResult.destinationJobResults).toBeDefined();
+        expect(Array.isArray(crossChainResult.destinationJobResults)).toBe(true);
       } catch (error) {
         // If simulation fails completely, that's also acceptable
         expect(error).toBeDefined();
@@ -124,11 +124,13 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
 
     test('should handle network timeouts during cross-chain simulation', async () => {
       // Create a minimal source result that would trigger cross-chain handling
-      const minimalSourceResult = {
+      const minimalSourceResult: CrossChainSourceResult = {
         sim: {
           transaction: {
             transaction_info: {
               call_trace: {
+                from: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC',
+                input: '0x',
                 calls: [
                   {
                     to: '0x4Dbd4fc535Ac27206064B68FfCf827b0A60BAB3f',
@@ -145,6 +147,7 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
         },
         proposal: {
           id: 999n,
+          proposalId: 999n,
           proposer: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC',
           targets: ['0x4Dbd4fc535Ac27206064B68FfCf827b0A60BAB3f'],
           values: [0n],
@@ -154,56 +157,93 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
           endBlock: 2000n,
           description: 'Test proposal',
         },
-        deps: {},
+        deps: {
+          governor: null,
+          timelock: { address: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC' },
+          publicClient: null,
+          chainConfig: getChainConfig(mainnet.id),
+          targets: ['0x4Dbd4fc535Ac27206064B68FfCf827b0A60BAB3f'],
+          touchedContracts: [],
+        },
         latestBlock: {
           number: 1500n,
           timestamp: 1600000000n,
         },
       };
 
-      const crossChainResult = await handleCrossChainSimulations(
-        minimalSourceResult as unknown as SimulationResult,
-      );
+      const crossChainResult = await handleCrossChainSimulations(minimalSourceResult);
 
       // Should handle potential network issues gracefully
       expect(crossChainResult).toBeDefined();
       expect(crossChainResult.sim).toBeDefined();
       expect(crossChainResult.proposal).toBeDefined();
-      expect(crossChainResult.destinationSimulations).toBeDefined();
+      expect(crossChainResult.destinationJobResults).toBeDefined();
     });
 
-    test('should handle partial cross-chain failures', async () => {
-      const { config } = await import('../../sims/optimism-bridge-test.sim.ts');
+    test('should surface skipped destination jobs without aborting result assembly', async () => {
+      const sendMessageCalldata = encodeFunctionData({
+        abi: SEND_MESSAGE_ABI,
+        functionName: 'sendMessage',
+        args: ['0x4200000000000000000000000000000000000006', '0xd0e30db0', 1_000_000],
+      });
 
-      const sourceResult = await simulateNew(config);
+      const sourceResult: CrossChainSourceResult = {
+        sim: {
+          transaction: {
+            status: true,
+            transaction_info: {
+              call_trace: {
+                from: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC',
+                input: '0x',
+                calls: [],
+              },
+            },
+          },
+        },
+        proposal: {
+          id: 999n,
+          proposalId: 999n,
+          proposer: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC',
+          targets: ['0xdC40a14d9abd6F410226f1E6de71aE03441ca506'],
+          values: [0n],
+          signatures: [''],
+          calldatas: [sendMessageCalldata],
+          startBlock: 1000n,
+          endBlock: 2000n,
+          description: 'Test skipped destination job',
+        },
+        deps: {
+          governor: null,
+          timelock: {
+            address: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC',
+          },
+          publicClient: null,
+          chainConfig: getChainConfig(mainnet.id),
+          targets: ['0xdC40a14d9abd6F410226f1E6de71aE03441ca506'],
+          touchedContracts: [],
+        },
+        latestBlock: {
+          number: 1500n,
+          timestamp: 1600000000n,
+        },
+      };
+
       const crossChainResult = await handleCrossChainSimulations(sourceResult);
 
-      // Even if some destination simulations fail, should still have results
       expect(crossChainResult).toBeDefined();
-      expect(crossChainResult.destinationSimulations).toBeDefined();
-
-      // Check failure tracking
-      expect(crossChainResult.crossChainFailure).toBeDefined();
-      expect(typeof crossChainResult.crossChainFailure).toBe('boolean');
-
-      // If there are destination simulations, validate their structure
-      if (
-        crossChainResult.destinationSimulations &&
-        crossChainResult.destinationSimulations.length > 0
-      ) {
-        for (const destSim of crossChainResult.destinationSimulations) {
-          expect(destSim.chainId).toBeDefined();
-          expect(destSim.bridgeType).toBeDefined();
-          expect(destSim.status).toBeDefined();
-
-          // Even failed simulations should have basic structure
-          if (destSim.sim) {
-            expect(destSim.sim.transaction).toBeDefined();
-            expect(destSim.sim.transaction.status).toBeDefined();
-          }
-        }
-      }
-    }, 90000); // Increased timeout for external API calls
+      expect(crossChainResult.destinationJobResults).toBeDefined();
+      expect(crossChainResult.crossChainFailure).toBe(false);
+      expect(crossChainResult.destinationJobResults).toHaveLength(1);
+      expect(crossChainResult.destinationJobResults?.[0]).toMatchObject({
+        chainId: 7777777,
+        bridgeType: 'OptimismL1L2',
+        status: 'skipped',
+      });
+      expect(crossChainResult.destinationJobResults?.[0]?.job.calls).toHaveLength(1);
+      expect(crossChainResult.destinationJobResults?.[0]?.error).toContain(
+        'not currently supported',
+      );
+    });
   });
 
   describe('Invalid Configuration Handling', () => {
@@ -251,7 +291,7 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
 
         // Should handle empty proposals gracefully
         expect(crossChainResult).toBeDefined();
-        expect(crossChainResult.destinationSimulations).toEqual([]);
+        expect(crossChainResult.destinationJobResults).toEqual([]);
       } catch (error) {
         // Empty proposals may fail validation
         expect(error).toBeDefined();
@@ -302,16 +342,7 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
         ];
       }
 
-      const deepSimulation = {
-        transaction: {
-          transaction_info: {
-            call_trace: {
-              calls: createDeepCalls(100), // Deep nesting
-            },
-          },
-          status: true,
-        },
-      } as unknown as TenderlySimulation;
+      const deepSimulation = createMockSimulation(createDeepCalls(100)); // Deep nesting
 
       // Should handle deep nesting without stack overflow
       expect(() => {
@@ -335,16 +366,7 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
         });
       }
 
-      const wideSimulation = {
-        transaction: {
-          transaction_info: {
-            call_trace: {
-              calls: wideCalls,
-            },
-          },
-          status: true,
-        },
-      } as unknown as TenderlySimulation;
+      const wideSimulation = createMockSimulation(wideCalls);
 
       // Should handle wide traces efficiently
       const start = performance.now();
@@ -360,41 +382,29 @@ describe('Cross-Chain Error Handling and Recovery Tests', () => {
 
   describe('Recovery and Continuation', () => {
     test('should continue processing after encountering errors', () => {
-      const mixedSimulation = {
-        transaction: {
-          transaction_info: {
-            call_trace: {
-              calls: [
-                // Valid Arbitrum call
-                {
-                  to: '0x4Dbd4fc535Ac27206064B68FfCf827b0A60BAB3f',
-                  from: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC',
-                  input:
-                    '0x679b6ded000000000000000000000000912ce59144191c1204e64559fe8253a0e49e654800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a46fc7c680000000000000000000000000002bad8182c09f50c8318d769245bea52c32be46cd0000000000000000000000002bad8182c09f50c8318d769245bea52c32be46cd0000000000000000000000000000000000000000000000000000000000030d40000000000000000000000000000000000000000000000000000000003b9aca0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000044a9059cbb00000000000000000000000066ccbf509cd28c2fc0f40b4469d6b6aa1fc0fed300000000000000000000000000000000000000000000152d02c7e14af680000000000000000000000000000000000000000000000000000000000000',
-                  calls: [],
-                },
-                // Invalid call with corrupted data
-                {
-                  to: '0x4Dbd4fc535Ac27206064B68FfCf827b0A60BAB3f',
-                  from: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC',
-                  input: '0x679b6ded_corrupted_data',
-                  calls: [],
-                },
-                // Another valid call
-                {
-                  to: '0x25ace71c97B33Cc4729CF772ae268934F7ab5fA1',
-                  from: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC',
-                  input:
-                    '0x3dbb202b0000000000000000000000004200000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000000004d0e30db000000000000000000000000000000000000000000000000000000000',
-                  value: '0',
-                  calls: [],
-                },
-              ],
-            },
-          },
-          status: true,
+      const mixedSimulation = createMockSimulation([
+        {
+          to: '0x4Dbd4fc535Ac27206064B68FfCf827b0A60BAB3f',
+          from: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC',
+          input:
+            '0x679b6ded000000000000000000000000912ce59144191c1204e64559fe8253a0e49e654800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a46fc7c680000000000000000000000000002bad8182c09f50c8318d769245bea52c32be46cd0000000000000000000000002bad8182c09f50c8318d769245bea52c32be46cd0000000000000000000000000000000000000000000000000000000000030d40000000000000000000000000000000000000000000000000000000003b9aca0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000044a9059cbb00000000000000000000000066ccbf509cd28c2fc0f40b4469d6b6aa1fc0fed300000000000000000000000000000000000000000000152d02c7e14af680000000000000000000000000000000000000000000000000000000000000',
+          calls: [],
         },
-      } as unknown as TenderlySimulation;
+        {
+          to: '0x4Dbd4fc535Ac27206064B68FfCf827b0A60BAB3f',
+          from: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC',
+          input: '0x679b6ded_corrupted_data',
+          calls: [],
+        },
+        {
+          to: '0x25ace71c97B33Cc4729CF772ae268934F7ab5fA1',
+          from: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC',
+          input:
+            '0x3dbb202b0000000000000000000000004200000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000000004d0e30db000000000000000000000000000000000000000000000000000000000',
+          value: '0',
+          calls: [],
+        },
+      ]);
 
       // Should parse valid calls and skip invalid ones
       const arbMessages = parseArbitrumL1L2Messages(mixedSimulation);

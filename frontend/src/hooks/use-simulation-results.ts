@@ -142,23 +142,40 @@ export interface CrossChainDecodedCall {
   args?: unknown[];
 }
 
-export interface CrossChainMessagePreview {
+/**
+ * Reporting/view model for one executed step inside a cross-chain job.
+ * Derived from execution results for display only; not used by the runtime engine.
+ */
+export interface CrossChainJobStepPreview {
+  stepIndex: number;
+  status: 'success' | 'failure';
+  error?: string;
+  l2TargetAddress: Address;
+  l2Value: string;
+  l2InputData: `0x${string}`;
+  targetLabel?: string;
+  /** Optional decoded calldata metadata for display. */
+  call?: CrossChainDecodedCall;
+}
+
+/**
+ * Reporting/view model for one cross-chain job, including its ordered steps.
+ * Used by reporting and UI as the canonical preview shape.
+ */
+export interface CrossChainJobPreview {
   chainId: number;
   chainName: string;
   blockExplorerBaseUrl: string;
   bridgeType: string;
-  status: 'success' | 'failure';
+  status: 'success' | 'failure' | 'skipped';
   error?: string;
-  l2FromAddress?: Address;
-  l2TargetAddress?: Address;
-  l2Value?: string;
-  l2InputData?: `0x${string}`;
-  targetLabel?: string;
-  call?: CrossChainDecodedCall;
+  l2FromAddress: Address;
+  sourceOrder: number;
+  steps: CrossChainJobStepPreview[];
 }
 
 export interface CrossChainPreview {
-  messages: CrossChainMessagePreview[];
+  jobs: CrossChainJobPreview[];
 }
 
 export interface ChainSimulationReport {

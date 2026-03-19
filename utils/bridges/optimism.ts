@@ -9,7 +9,7 @@ import {
   toHex,
 } from 'viem';
 import type { CallTrace, TenderlySimulation } from '../../types.d';
-import type { ExtractedCrossChainMessage } from '../../types.d';
+import type { CrossChainExecutionJob } from '../../types.d';
 
 // L1CrossDomainMessenger addresses for supported OP Stack chains
 const OPTIMISM_MESSENGERS: Record<string, Address> = {
@@ -31,7 +31,7 @@ const OPTIMISM_PORTALS: Record<string, Address> = {
 };
 
 // ABI for L1CrossDomainMessenger sendMessage function
-const SEND_MESSAGE_ABI = parseAbi([
+export const SEND_MESSAGE_ABI = parseAbi([
   'function sendMessage(address _target, bytes _message, uint32 _minGasLimit)',
 ]);
 
@@ -282,12 +282,13 @@ function calculateL2Alias(l1Address: Address): Address {
 }
 
 function buildMessageFromDecodedPayload(input: {
-  destinationChainId: string;
+  destinationChainId: number;
   targetAddress: Address;
   messageData: Hex;
   l2Value: string;
   l2FromAddress: Address;
-}): ExtractedCrossChainMessage | null {
+  sourceOrder: number;
+}): CrossChainExecutionJob | null {
   if (input.messageData.length > VALIDATION_CONSTANTS.MAX_MESSAGE_LENGTH * 2) {
     console.log(
       `[Optimism Parser] Message too large: ${input.messageData.length / 2} bytes (max: ${VALIDATION_CONSTANTS.MAX_MESSAGE_LENGTH})`,
@@ -299,12 +300,7 @@ function buildMessageFromDecodedPayload(input: {
   let l2InputData = input.messageData;
   let l2FromAddress = input.l2FromAddress;
 
-  // TEMP: For Unichain testing, use an address that likely has ETH balance.
-  if (input.destinationChainId === '130') {
-    l2FromAddress = '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D' as Address;
-  }
-
-  const expectedForwarder = L2_CROSS_CHAIN_ACCOUNTS[input.destinationChainId];
+  const expectedForwarder = L2_CROSS_CHAIN_ACCOUNTS[input.destinationChainId.toString()];
   const shouldAttemptForwardDecode =
     input.messageData.length >= 10 &&
     slice(input.messageData, 0, 4) === CROSS_CHAIN_FORWARD_SELECTOR &&
@@ -331,10 +327,9 @@ function buildMessageFromDecodedPayload(input: {
   return {
     bridgeType: 'OptimismL1L2',
     destinationChainId: input.destinationChainId,
-    l2TargetAddress,
-    l2InputData,
-    l2Value: input.l2Value,
     l2FromAddress,
+    sourceOrder: input.sourceOrder,
+    calls: [{ l2TargetAddress, l2InputData, l2Value: input.l2Value }],
   };
 }
 
@@ -342,10 +337,8 @@ function buildMessageFromDecodedPayload(input: {
  * Parses a source chain simulation trace to find OP-style L1 -> L2 messages
  * initiated via L1CrossDomainMessenger.sendMessage or OptimismPortal.depositTransaction.
  */
-export function parseOptimismL1L2Messages(
-  sourceSim: TenderlySimulation,
-): ExtractedCrossChainMessage[] {
-  const messagesByKey = new Map<string, ExtractedCrossChainMessage>();
+export function parseOptimismL1L2Messages(sourceSim: TenderlySimulation): CrossChainExecutionJob[] {
+  const jobsByKey = new Map<string, CrossChainExecutionJob>();
 
   if (!sourceSim?.transaction?.transaction_info?.call_trace) {
     return [];
@@ -408,20 +401,22 @@ export function parseOptimismL1L2Messages(
 
       const { fromAddress, targetAddress, messageData, minGasLimit } = decoded;
       const message = buildMessageFromDecodedPayload({
-        destinationChainId,
+        destinationChainId: Number(destinationChainId),
         targetAddress,
         messageData,
         l2Value: (call.value || '0').toString(),
         l2FromAddress: fromAddress,
+        sourceOrder: jobsByKey.size,
       });
 
       if (!message) continue;
 
-      const key = `${message.l2TargetAddress}-${message.l2InputData}-${destinationChainId}`;
-      messagesByKey.set(key, message);
+      const [{ l2TargetAddress, l2InputData }] = message.calls;
+      const key = `${l2TargetAddress}-${l2InputData}-${destinationChainId}`;
+      jobsByKey.set(key, message);
 
       console.log(
-        `[Optimism Parser] Found message to ${message.l2TargetAddress} on chain ${destinationChainId} (gas: ${minGasLimit})`,
+        `[Optimism Parser] Found job to ${l2TargetAddress} on chain ${destinationChainId} (gas: ${minGasLimit})`,
       );
     } catch (error) {
       console.log(
@@ -487,32 +482,34 @@ export function parseOptimismL1L2Messages(
       if (decodedDeposit.isCreation) continue;
 
       const message = buildMessageFromDecodedPayload({
-        destinationChainId,
+        destinationChainId: Number(destinationChainId),
         targetAddress: decodedDeposit.targetAddress,
         messageData: decodedDeposit.messageData,
         l2Value: decodedDeposit.value.toString(),
         l2FromAddress: calculateL2Alias(decodedDeposit.fromAddress),
+        sourceOrder: jobsByKey.size,
       });
 
       if (!message) continue;
 
-      const key = `${message.l2TargetAddress}-${message.l2InputData}-${destinationChainId}`;
-      messagesByKey.set(key, message);
+      const [{ l2TargetAddress, l2InputData }] = message.calls;
+      const key = `${l2TargetAddress}-${l2InputData}-${destinationChainId}`;
+      jobsByKey.set(key, message);
 
       console.log(
-        `[Optimism Parser] Found portal deposit message to ${message.l2TargetAddress} on chain ${destinationChainId}`,
+        `[Optimism Parser] Found portal deposit job to ${l2TargetAddress} on chain ${destinationChainId}`,
       );
     } catch {
       // Best-effort decode only; ignore malformed calldata and keep scanning.
     }
   }
 
-  const extractedMessages = Array.from(messagesByKey.values());
-  if (extractedMessages.length > 0) {
-    console.log(`[Optimism Parser] Extracted ${extractedMessages.length} unique L1->L2 messages.`);
+  const extractedJobs = Array.from(jobsByKey.values());
+  if (extractedJobs.length > 0) {
+    console.log(`[Optimism Parser] Extracted ${extractedJobs.length} unique L1->L2 jobs.`);
   }
 
-  return extractedMessages;
+  return extractedJobs;
 }
 
 /**
@@ -523,8 +520,8 @@ export function parseOptimismL1L2MessagesFromProposal(
   targets: readonly string[],
   calldatas: readonly string[],
   l1Sender?: Address,
-): ExtractedCrossChainMessage[] {
-  const messages: ExtractedCrossChainMessage[] = [];
+): CrossChainExecutionJob[] {
+  const jobs: CrossChainExecutionJob[] = [];
   const messengerAddresses = new Set(
     Object.values(OPTIMISM_MESSENGERS).map((address) => address.toLowerCase()),
   );
@@ -563,15 +560,16 @@ export function parseOptimismL1L2MessagesFromProposal(
 
         const [targetAddress, messageData] = args;
         const message = buildMessageFromDecodedPayload({
-          destinationChainId,
+          destinationChainId: Number(destinationChainId),
           targetAddress,
           messageData: messageData as Hex,
           l2Value: '0',
           l2FromAddress: normalizedSender ?? defaultL2From,
+          sourceOrder: i,
         });
 
         if (message) {
-          messages.push(message);
+          jobs.push(message);
         }
       } catch {
         // Best-effort decode only; ignore malformed calldata and keep scanning.
@@ -604,15 +602,16 @@ export function parseOptimismL1L2MessagesFromProposal(
 
         const aliasedSender = normalizedSender ? calculateL2Alias(normalizedSender) : defaultL2From;
         const message = buildMessageFromDecodedPayload({
-          destinationChainId,
+          destinationChainId: Number(destinationChainId),
           targetAddress,
           messageData: messageData as Hex,
           l2Value: value.toString(),
           l2FromAddress: aliasedSender,
+          sourceOrder: i,
         });
 
         if (message) {
-          messages.push(message);
+          jobs.push(message);
         }
       } catch {
         // Best-effort decode only; ignore malformed calldata and keep scanning.
@@ -620,11 +619,11 @@ export function parseOptimismL1L2MessagesFromProposal(
     }
   }
 
-  if (messages.length > 0) {
+  if (jobs.length > 0) {
     console.log(
-      `[Optimism Parser] Extracted ${messages.length} L1->L2 message(s) from proposal targets/calldatas.`,
+      `[Optimism Parser] Extracted ${jobs.length} L1->L2 job(s) from proposal targets/calldatas.`,
     );
   }
 
-  return messages;
+  return jobs;
 }

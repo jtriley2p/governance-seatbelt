@@ -11,6 +11,7 @@ import type {
 import { resolveChainName } from '@/lib/chain-name';
 import { ExternalLinkIcon, InfoIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { mainnet } from 'viem/chains';
 import { CallGroupedView } from './CallGroupedView';
 import { DecisionHeader } from './DecisionHeader';
 import { ChainLogo } from './structured-report/ChainLogo';
@@ -53,7 +54,7 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
     return map;
   }, [report.coverage?.checks]);
 
-  const mainChainId = report.metadata.chainId ?? 1;
+  const mainChainId = report.metadata.chainId ?? mainnet.id;
   const chainReports = report.chainReports?.length
     ? report.chainReports
     : [
@@ -88,12 +89,12 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
 
   const crossChainNamesByChainId = useMemo(() => {
     const names = new Map<number, string>();
-    for (const message of report.crossChain?.messages ?? []) {
-      const resolved = resolveChainName(message.chainId, message.chainName);
-      names.set(message.chainId, resolved);
+    for (const job of report.crossChain?.jobs ?? []) {
+      const resolved = resolveChainName(job.chainId, job.chainName);
+      names.set(job.chainId, resolved);
     }
     return names;
-  }, [report.crossChain?.messages]);
+  }, [report.crossChain?.jobs]);
 
   const noCheckChainStatuses = useMemo(() => {
     const coveredChainIds = new Set(sortedChainReports.map((chainReport) => chainReport.chainId));
@@ -157,7 +158,7 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
 
         <TabsContent value="overview" className="mt-4 space-y-6">
           {/* Primary: Execution Summary - Coverage + Cross-Chain in a prominent grid */}
-          {(report.coverage?.checks?.length || report.crossChain?.messages?.length) && (
+          {(report.coverage?.checks?.length || report.crossChain?.jobs?.length) && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
               {report.coverage && report.coverage.checks.length > 0 && (
                 <section className="rounded-lg border-2 border-border bg-card p-4 sm:p-5 self-start h-fit">
@@ -180,12 +181,12 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
                 </section>
               )}
 
-              {report.crossChain?.messages?.length ? (
+              {report.crossChain?.jobs?.length ? (
                 <section className="rounded-lg border-2 border-border bg-card p-4 sm:p-5">
                   <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-                    Cross-Chain Messages
+                    Cross-Chain Jobs
                   </h3>
-                  <CrossChainPreview messages={report.crossChain.messages} />
+                  <CrossChainPreview jobs={report.crossChain.jobs} />
                 </section>
               ) : null}
             </div>
@@ -326,9 +327,9 @@ export function StructuredReport({ report, proposal }: StructuredReportProps) {
         </TabsContent>
 
         <TabsContent value="checks" className="mt-4 space-y-4">
-          {report.crossChain?.messages?.length ? (
+          {report.crossChain?.jobs?.length ? (
             <CrossChainChecksSummary
-              messages={report.crossChain.messages}
+              jobs={report.crossChain.jobs}
               onNavigateToChain={(chainId) => {
                 const el = document.getElementById(`chain-checks-${chainId}`);
                 el?.scrollIntoView({ behavior: 'smooth', block: 'start' });

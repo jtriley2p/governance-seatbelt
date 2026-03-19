@@ -3,7 +3,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type {
-  CrossChainMessagePreview,
+  CrossChainJobPreview,
   Proposal,
   SimulationCheck,
   StructuredSimulationReport,
@@ -19,6 +19,7 @@ import {
   parseAbiItem,
   toFunctionSelector,
 } from 'viem';
+import { arbitrum, base, mainnet, optimism } from 'viem/chains';
 import { ChainLogo } from './structured-report/ChainLogo';
 
 type RiskTag = 'Upgrade' | 'Admin/Role' | 'Token Approval' | 'Token Transfer' | 'ETH Value';
@@ -40,10 +41,10 @@ const hoverCopyClasses =
 
 function getTrustWalletChainSlug(chainId: number | undefined) {
   if (!chainId) return null;
-  if (chainId === 1) return 'ethereum';
-  if (chainId === 42161) return 'arbitrum';
-  if (chainId === 10) return 'optimism';
-  if (chainId === 8453) return 'base';
+  if (chainId === mainnet.id) return 'ethereum';
+  if (chainId === arbitrum.id) return 'arbitrum';
+  if (chainId === optimism.id) return 'optimism';
+  if (chainId === base.id) return 'base';
   return null;
 }
 
@@ -646,9 +647,9 @@ export function CallGroupedView({
   const labels = report.metadata.addressLabels;
 
   // Summary stats
-  const crossChainMessages = report.crossChain?.messages ?? [];
+  const crossChainJobs = report.crossChain?.jobs ?? [];
   const totalMainnetCalls = calls.length;
-  const totalCrossChainCalls = crossChainMessages.length;
+  const totalCrossChainCalls = crossChainJobs.length;
   const totalCalls = totalMainnetCalls + totalCrossChainCalls;
   const totalEthValue = calls.reduce((sum, c) => sum + c.value, 0n);
   const allTags = calls.flatMap((c) => c.tags);
@@ -662,8 +663,8 @@ export function CallGroupedView({
   const uniqueTargets = Object.keys(byTarget).length;
 
   // Cross-chain stats
-  const crossChainChains = new Set(crossChainMessages.map((m) => m.chainId));
-  const crossChainFailures = crossChainMessages.filter((m) => m.status === 'failure').length;
+  const crossChainChains = new Set(crossChainJobs.map((job) => job.chainId));
+  const crossChainFailures = crossChainJobs.filter((job) => job.status === 'failure').length;
 
   if (totalCalls === 0) {
     return (
@@ -916,24 +917,23 @@ export function CallGroupedView({
       })}
 
       {/* Cross-chain calls */}
-      <CrossChainCallsSection messages={report.crossChain?.messages ?? []} labels={labels} />
+      <CrossChainCallsSection jobs={report.crossChain?.jobs ?? []} labels={labels} />
     </div>
   );
 }
 
 function CrossChainCallsSection({
-  messages,
+  jobs,
   labels,
 }: {
-  messages: CrossChainMessagePreview[];
+  jobs: CrossChainJobPreview[];
   labels?: StructuredSimulationReport['metadata']['addressLabels'];
 }) {
-  if (messages.length === 0) return null;
+  if (jobs.length === 0) return null;
 
-  // Group by chain
-  const byChain = messages.reduce<Record<number, CrossChainMessagePreview[]>>((acc, msg) => {
-    if (!acc[msg.chainId]) acc[msg.chainId] = [];
-    acc[msg.chainId].push(msg);
+  const byChain = jobs.reduce<Record<number, CrossChainJobPreview[]>>((acc, job) => {
+    if (!acc[job.chainId]) acc[job.chainId] = [];
+    acc[job.chainId].push(job);
     return acc;
   }, {});
 
@@ -947,25 +947,12 @@ function CrossChainCallsSection({
 
   return (
     <>
-      {sortedChainEntries.map(([chainIdStr, chainMessages]) => {
+      {sortedChainEntries.map(([chainIdStr, chainJobs]) => {
         const chainId = Number(chainIdStr);
-        const chainName = resolveChainName(chainId, chainMessages[0]?.chainName);
-        const explorerBaseUrl = chainMessages[0]?.blockExplorerBaseUrl || 'https://etherscan.io';
-        const bridgeType = chainMessages[0]?.bridgeType;
-
-        // Group by target within this chain
-        const byTarget = chainMessages.reduce<Record<string, CrossChainMessagePreview[]>>(
-          (acc, msg) => {
-            const key = (msg.l2TargetAddress ?? 'unknown').toLowerCase();
-            if (!acc[key]) acc[key] = [];
-            acc[key].push(msg);
-            return acc;
-          },
-          {},
-        );
-
-        const totalMessages = chainMessages.length;
-        const failedCount = chainMessages.filter((m) => m.status === 'failure').length;
+        const chainName = resolveChainName(chainId, chainJobs[0]?.chainName);
+        const explorerBaseUrl = chainJobs[0]?.blockExplorerBaseUrl || 'https://etherscan.io';
+        const bridgeType = chainJobs[0]?.bridgeType;
+        const failedCount = chainJobs.filter((job) => job.status !== 'success').length;
 
         return (
           <div key={chainId} className="space-y-3">
@@ -984,7 +971,7 @@ function CrossChainCallsSection({
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>
-                  {totalMessages} message{totalMessages === 1 ? '' : 's'}
+                  {chainJobs.length} job{chainJobs.length === 1 ? '' : 's'}
                 </span>
                 {failedCount > 0 && (
                   <Badge variant="destructive" className="text-[10px] px-1.5">
@@ -994,19 +981,19 @@ function CrossChainCallsSection({
               </div>
             </div>
 
-            {/* Targets within this chain */}
-            {Object.entries(byTarget).map(([targetKey, targetMessages]) => {
-              const target = targetMessages[0]?.l2TargetAddress ?? targetKey;
-              const targetLabel = targetMessages[0]?.targetLabel;
+            {chainJobs.map((job) => {
+              const firstStep = job.steps[0];
+              const target = firstStep?.l2TargetAddress;
+              const targetLabel = firstStep?.targetLabel;
 
               return (
                 <div
-                  key={`${chainId}-${targetKey}`}
+                  key={`${chainId}-${job.sourceOrder}`}
                   className="border border-muted rounded-lg p-3 bg-card space-y-2"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      {target !== 'unknown' ? (
+                      {target ? (
                         <AddressValue
                           address={target}
                           baseUrl={explorerBaseUrl}
@@ -1017,19 +1004,38 @@ function CrossChainCallsSection({
                       ) : (
                         <span className="text-sm text-muted-foreground">Unknown target</span>
                       )}
-                      {targetLabel && !getAddressLabelFor(target, labels) && (
+                      {target && targetLabel && !getAddressLabelFor(target, labels) && (
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                           {targetLabel}
                         </Badge>
                       )}
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                        Job {job.sourceOrder + 1}
+                      </Badge>
+                      {job.status === 'skipped' && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                          Skipped
+                        </Badge>
+                      )}
+                      {job.status === 'failure' && (
+                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                          Failed
+                        </Badge>
+                      )}
                     </div>
                     <div className="text-[11px] text-muted-foreground whitespace-nowrap">
-                      {targetMessages.length} call{targetMessages.length === 1 ? '' : 's'}
+                      {job.steps.length} step{job.steps.length === 1 ? '' : 's'}
                     </div>
                   </div>
 
+                  {job.error && (
+                    <div className="p-2 bg-red-100 border border-red-200 rounded text-red-800 text-[11px]">
+                      {job.error}
+                    </div>
+                  )}
+
                   <div className="space-y-2">
-                    {targetMessages.map((msg, index) => {
+                    {job.steps.map((msg, index) => {
                       const fnName =
                         msg.call?.signature?.split('(')[0] ||
                         (msg.l2InputData ? `0x${msg.l2InputData.slice(2, 10)}` : 'Call');
@@ -1038,7 +1044,7 @@ function CrossChainCallsSection({
 
                       return (
                         <details
-                          key={`${chainId}-${targetKey}-${index}`}
+                          key={`${chainId}-${job.sourceOrder}-${index}`}
                           className={`group border rounded ${isFailed ? 'border-red-200 bg-red-50/50' : 'border-muted/60'}`}
                         >
                           <summary className="cursor-pointer select-none px-2.5 py-1.5 flex items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
@@ -1062,11 +1068,11 @@ function CrossChainCallsSection({
                           </summary>
 
                           <div className="px-3 pb-3 pt-1 space-y-1.5 text-xs">
-                            {msg.l2FromAddress && (
+                            {job.l2FromAddress && (
                               <div className="flex items-center gap-3">
                                 <span className="text-muted-foreground w-14 shrink-0">From</span>
                                 <AddressValue
-                                  address={msg.l2FromAddress}
+                                  address={job.l2FromAddress}
                                   baseUrl={explorerBaseUrl}
                                   labels={labels}
                                   chainId={chainId}
@@ -1091,7 +1097,7 @@ function CrossChainCallsSection({
 
                                   return (
                                     <div
-                                      key={`${chainId}-${targetKey}-${index}-arg-${argIndex}`}
+                                      key={`${chainId}-${job.sourceOrder}-${index}-arg-${argIndex}`}
                                       className="flex items-center gap-3"
                                     >
                                       <span className="text-muted-foreground w-14 shrink-0 truncate">
