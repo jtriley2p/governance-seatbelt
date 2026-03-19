@@ -6,9 +6,9 @@ import { WORMHOLE_SEND_MESSAGE_ABI } from '../../utils/bridges/wormhole';
 import { getChainConfig } from '../../utils/clients/client';
 import { createMockSimulation } from './test-utils';
 
-const mockedMicroFetch = mock(
-  async (_url: string, init?: { data?: Record<string, unknown> }): Promise<TenderlySimulation> => {
-    transportCalls.push(init?.data);
+const mockedSendSimulation = mock(
+  async (payload: Record<string, unknown>): Promise<TenderlySimulation> => {
+    transportCalls.push(payload);
     const next = transportQueue.shift();
 
     if (!next) {
@@ -23,8 +23,15 @@ const mockedMicroFetch = mock(
   },
 );
 
-mock.module('micro-ftch', () => ({
-  default: mockedMicroFetch,
+mock.module('../../utils/clients/tenderly-api', () => ({
+  getLatestBlock: async () => {
+    throw new Error('Unexpected getLatestBlock call');
+  },
+  getTenderlySaveFlags: () => ({ save: true, saveIfFails: true }),
+  sendEncodeRequest: async () => {
+    throw new Error('Unexpected sendEncodeRequest call');
+  },
+  sendSimulation: mockedSendSimulation,
 }));
 
 const WORMHOLE_PROPOSAL_TARGET = '0xf5F4496219F31CDCBa6130B5402873624585615a' as const;
@@ -54,7 +61,7 @@ beforeEach(async () => {
 afterEach(() => {
   transportCalls.length = 0;
   transportQueue.length = 0;
-  mockedMicroFetch.mockClear();
+  mockedSendSimulation.mockClear();
 });
 
 function enqueueSimulation(sim: TenderlySimulation) {
@@ -182,7 +189,7 @@ describe('cross-chain destination execution engine', () => {
 
     const result = await handleCrossChainSimulations(makeSourceResult([calldata]));
 
-    expect(mockedMicroFetch).toHaveBeenCalledTimes(2);
+    expect(mockedSendSimulation).toHaveBeenCalledTimes(2);
     expect(transportCalls[1]?.state_objects).toMatchObject({
       [firstTarget]: {
         storage: {
@@ -230,7 +237,7 @@ describe('cross-chain destination execution engine', () => {
 
     const result = await handleCrossChainSimulations(makeSourceResult([calldata]));
 
-    expect(mockedMicroFetch).toHaveBeenCalledTimes(2);
+    expect(mockedSendSimulation).toHaveBeenCalledTimes(2);
     expect(transportCalls[1]?.state_objects).toMatchObject({
       [firstTarget]: {
         storage: {
@@ -272,7 +279,7 @@ describe('cross-chain destination execution engine', () => {
 
     const result = await handleCrossChainSimulations(makeSourceResult([firstJob, secondJob]));
 
-    expect(mockedMicroFetch).toHaveBeenCalledTimes(2);
+    expect(mockedSendSimulation).toHaveBeenCalledTimes(2);
     expect(transportCalls[1]?.state_objects).toMatchObject({
       [firstTarget]: {
         storage: {
@@ -316,7 +323,7 @@ describe('cross-chain destination execution engine', () => {
 
     const result = await handleCrossChainSimulations(makeSourceResult([firstJob, secondJob]));
 
-    expect(mockedMicroFetch).toHaveBeenCalledTimes(2);
+    expect(mockedSendSimulation).toHaveBeenCalledTimes(2);
     expect(transportCalls[1]?.state_objects).toMatchObject({
       [firstTarget]: {
         storage: {
