@@ -19,6 +19,15 @@ const SET_OWNER_ABI = parseAbi(['function setOwner(address _owner)']);
 const V2_FACTORY_ABI = parseAbi(['function setFeeTo(address)', 'function setFeeToSetter(address)']);
 const OWNED_ABI = parseAbi(['function transferOwnership(address newOwner)']);
 
+export const REPRESENTATIVE_WORMHOLE_ROLLOUT_LANE_KEYS = [
+  'bnb',
+  'polygon',
+  'avalanche',
+  'monad',
+] as const satisfies ReadonlyArray<
+  Extract<TestOnlyWormholeLaneKey, 'bnb' | 'polygon' | 'avalanche' | 'monad'>
+>;
+
 export type LiveWormholeLaneValidationTargets = {
   v2Factory: `0x${string}`;
   v3Factory?: `0x${string}`;
@@ -69,13 +78,11 @@ function buildWormholeProposalCall(
   };
 }
 
-export function buildTestOnlyWormholeLaneSetupConfig(
+function buildRepresentativeWormholeSetupAction(
   laneKey: TestOnlyWormholeLaneKey,
   artifacts: TestOnlyLaneArtifacts = TEST_ONLY_WORMHOLE_LANE_ARTIFACTS[laneKey],
-): SimulationConfigNew {
-  const lane = TEST_ONLY_WORMHOLE_LANES[laneKey];
-
-  const call = buildWormholeProposalCall(
+) {
+  return buildWormholeProposalCall(
     laneKey,
     [artifacts.v3Factory, artifacts.v2Factory, artifacts.v4PoolManager],
     [
@@ -96,32 +103,12 @@ export function buildTestOnlyWormholeLaneSetupConfig(
       }),
     ],
   );
-
-  return {
-    type: 'new',
-    daoName: 'Uniswap',
-    governorAddress: getAddress('0x408ED6354d4973f66138C91495F2f2FCbd8724C3'),
-    governorType: 'bravo',
-    targets: [call.target],
-    values: [call.value],
-    signatures: [call.signature],
-    calldatas: [call.calldata],
-    stateObjectsByChain: buildTestOnlyWormholeLaneState(
-      lane.chainId,
-      lane.l2FromAddress,
-      [artifacts.v3Factory, artifacts.v2Factory, artifacts.v4PoolManager],
-      artifacts.crossChainAccount,
-    ),
-    description: `# ${lane.name} Wormhole setup (test only)\n\nThis representative test-only lane sim uses the live ${lane.name} Wormhole authority as the destination sender and hands ownership of fresh fake V2/V3/V4 targets to a fresh fake CrossChainAccount. It exists to prove the lane-specific execution-job flow before a dependent follow-up run.`,
-  };
 }
 
-export function buildTestOnlyWormholeLaneFollowupConfig(
+function buildRepresentativeWormholeFollowupAction(
   laneKey: TestOnlyWormholeLaneKey,
   artifacts: TestOnlyLaneArtifacts = TEST_ONLY_WORMHOLE_LANE_ARTIFACTS[laneKey],
-): SimulationConfigNew {
-  const lane = TEST_ONLY_WORMHOLE_LANES[laneKey];
-
+) {
   const v3Forward = encodeFunctionData({
     abi: FORWARD_ABI,
     functionName: 'forward',
@@ -148,27 +135,71 @@ export function buildTestOnlyWormholeLaneFollowupConfig(
     ],
   });
 
-  const call = buildWormholeProposalCall(
+  return buildWormholeProposalCall(
     laneKey,
     [artifacts.crossChainAccount, artifacts.crossChainAccount],
     [v3Forward, v2Forward],
   );
+}
+
+function buildRepresentativeWormholeRolloutState(): NonNullable<
+  SimulationConfigNew['stateObjectsByChain']
+> {
+  const stateObjectsByChain: NonNullable<SimulationConfigNew['stateObjectsByChain']> = {};
+
+  for (const laneKey of REPRESENTATIVE_WORMHOLE_ROLLOUT_LANE_KEYS) {
+    const lane = TEST_ONLY_WORMHOLE_LANES[laneKey];
+    const artifacts = TEST_ONLY_WORMHOLE_LANE_ARTIFACTS[laneKey];
+    stateObjectsByChain[lane.chainId] = buildTestOnlyWormholeLaneState(
+      lane.chainId,
+      lane.l2FromAddress,
+      [artifacts.v3Factory, artifacts.v2Factory, artifacts.v4PoolManager],
+      artifacts.crossChainAccount,
+    )[lane.chainId]!;
+  }
+
+  return stateObjectsByChain;
+}
+
+function buildRepresentativeLaneSummary(): string {
+  return REPRESENTATIVE_WORMHOLE_ROLLOUT_LANE_KEYS.map(
+    (laneKey) => TEST_ONLY_WORMHOLE_LANES[laneKey].name,
+  ).join(', ');
+}
+
+function buildRepresentativeWormholeRolloutActions(kind: 'setup' | 'followup') {
+  return REPRESENTATIVE_WORMHOLE_ROLLOUT_LANE_KEYS.map((laneKey) =>
+    kind === 'setup'
+      ? buildRepresentativeWormholeSetupAction(laneKey)
+      : buildRepresentativeWormholeFollowupAction(laneKey),
+  );
+}
+
+function buildRepresentativeWormholeRolloutConfig(kind: 'setup' | 'followup'): SimulationConfigNew {
+  const actions = buildRepresentativeWormholeRolloutActions(kind);
+  const description =
+    kind === 'setup'
+      ? `# Representative Wormhole rollout setup (test only)\n\nThis representative multi-lane setup proposal uses the live Wormhole authorities for ${buildRepresentativeLaneSummary()} as the destination senders and hands ownership of fresh fake V2/V3/V4 targets to fresh fake CrossChainAccounts. It exists to model the kind of consolidated rollout proposal governance would likely use across multiple lanes.`
+      : `# Representative Wormhole rollout follow-up (test only)\n\nThis representative multi-lane follow-up proposal mirrors the derived dependency pattern from the Celo 94 -> 95 story. A plain run should fail because the fresh fake targets are still owned by the live Wormhole authorities, while the fake CrossChainAccounts are not yet the owners. Running this proposal derived from the matching setup proposal should pass after the ownership handoff for ${buildRepresentativeLaneSummary()}.`;
 
   return {
     type: 'new',
     daoName: 'Uniswap',
     governorAddress: getAddress('0x408ED6354d4973f66138C91495F2f2FCbd8724C3'),
     governorType: 'bravo',
-    targets: [call.target],
-    values: [call.value],
-    signatures: [call.signature],
-    calldatas: [call.calldata],
-    stateObjectsByChain: buildTestOnlyWormholeLaneState(
-      lane.chainId,
-      lane.l2FromAddress,
-      [artifacts.v3Factory, artifacts.v2Factory, artifacts.v4PoolManager],
-      artifacts.crossChainAccount,
-    ),
-    description: `# ${lane.name} Wormhole follow-up (test only)\n\nThis representative test-only lane sim mirrors the derived follow-up pattern from the Celo 94 -> 95 story. A plain run should fail because the fake targets are still owned by the live ${lane.name} Wormhole authority, while the CrossChainAccount forwarder is not yet the owner. Running this sim derived from the matching setup sim should pass after ownership handoff.`,
+    targets: actions.map((action) => action.target),
+    values: actions.map((action) => action.value),
+    signatures: actions.map((action) => action.signature),
+    calldatas: actions.map((action) => action.calldata),
+    stateObjectsByChain: buildRepresentativeWormholeRolloutState(),
+    description,
   };
+}
+
+export function buildTestOnlyWormholeRolloutSetupConfig(): SimulationConfigNew {
+  return buildRepresentativeWormholeRolloutConfig('setup');
+}
+
+export function buildTestOnlyWormholeRolloutFollowupConfig(): SimulationConfigNew {
+  return buildRepresentativeWormholeRolloutConfig('followup');
 }

@@ -1455,10 +1455,12 @@ async function formatCrossChainResults(
               }),
             );
 
-            return [
-              `  - Job ${index + 1} ${statusIcon} (source action ${sim.job.sourceOrder + 1})`,
-              ...steps,
-            ].join('\n');
+            const executionLine =
+              sims.length > 1
+                ? `  - Execution ${index + 1} ${statusIcon} (source action ${sim.job.sourceOrder + 1})`
+                : `  - ${statusIcon} (source action ${sim.job.sourceOrder + 1})`;
+
+            return [executionLine, ...steps].join('\n');
           }),
         )
       ).join('\n');

@@ -2,8 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { parseAbi } from 'viem';
 import {
   LIVE_WORMHOLE_LANE_VALIDATION_TARGETS,
-  buildTestOnlyWormholeLaneFollowupConfig,
-  buildTestOnlyWormholeLaneSetupConfig,
+  REPRESENTATIVE_WORMHOLE_ROLLOUT_LANE_KEYS,
+  buildTestOnlyWormholeRolloutFollowupConfig,
+  buildTestOnlyWormholeRolloutSetupConfig,
 } from '../../tests/fixtures/test-only-wormhole-lane-configs';
 import {
   TEST_ONLY_WORMHOLE_LANES,
@@ -104,52 +105,113 @@ describe('Wormhole lane live authority validation', () => {
   );
 });
 
-describe('Wormhole representative lane flows', () => {
-  const supportedLanes: Array<{ laneKey: LaneKey; chainName: string }> = [
-    { laneKey: 'bnb', chainName: 'BNB' },
-    { laneKey: 'polygon', chainName: 'Polygon' },
-    { laneKey: 'avalanche', chainName: 'Avalanche' },
-    { laneKey: 'monad', chainName: 'Monad' },
-  ];
+describe('Representative Wormhole rollout validation', () => {
+  const laneKeys = [...REPRESENTATIVE_WORMHOLE_ROLLOUT_LANE_KEYS];
 
-  test.each(supportedLanes)(
-    'proves setup pass, standalone failure, and derived success for $chainName',
-    async ({ laneKey }) => {
-      const lane = TEST_ONLY_WORMHOLE_LANES[laneKey];
+  let setupResultPromise: Promise<SimulationResult> | undefined;
+  let standaloneFollowupResultPromise: Promise<SimulationResult> | undefined;
+  let derivedFollowupResultPromise: Promise<SimulationResult> | undefined;
 
-      const setupResult = await runRepresentativeLaneSimulation(
-        buildTestOnlyWormholeLaneSetupConfig(laneKey),
-      );
-      const setupJob = (setupResult.destinationJobResults ?? []).find(
-        (job) => job.chainId === lane.chainId,
-      );
-      expect(setupJob?.status).toBe('success');
+  function getSetupResult() {
+    setupResultPromise ??= runRepresentativeLaneSimulation(
+      buildTestOnlyWormholeRolloutSetupConfig(),
+    );
+    return setupResultPromise;
+  }
 
+  function getStandaloneFollowupResult() {
+    standaloneFollowupResultPromise ??= runRepresentativeLaneSimulation(
+      buildTestOnlyWormholeRolloutFollowupConfig(),
+    );
+    return standaloneFollowupResultPromise;
+  }
+
+  function getDerivedFollowupResult() {
+    derivedFollowupResultPromise ??= (async () => {
+      const setupResult = await getSetupResult();
       const derivedStateByChain = buildDerivedStateByChain(setupResult);
-      expect(derivedStateByChain[lane.chainId]).toBeDefined();
+      return await runRepresentativeLaneSimulation(
+        buildTestOnlyWormholeRolloutFollowupConfig(),
+        derivedStateByChain,
+      );
+    })();
+
+    return derivedFollowupResultPromise;
+  }
+
+  test(
+    'setup rollout succeeds on every representative lane',
+    async () => {
+      const setupResult = await getSetupResult();
+
+      expect(setupResult.destinationJobResults).toHaveLength(laneKeys.length);
+
+      for (const laneKey of laneKeys) {
+        const lane = TEST_ONLY_WORMHOLE_LANES[laneKey];
+        const setupJob = (setupResult.destinationJobResults ?? []).find(
+          (job) => job.chainId === lane.chainId,
+        );
+        expect(setupJob?.status).toBe('success');
+      }
+    },
+    EXTERNAL_API_TIMEOUT_MS,
+  );
+
+  test(
+    'setup rollout produces derived baselines for mainnet and every representative lane',
+    async () => {
+      const setupResult = await getSetupResult();
+      const derivedStateByChain = buildDerivedStateByChain(setupResult);
+
+      for (const laneKey of laneKeys) {
+        const lane = TEST_ONLY_WORMHOLE_LANES[laneKey];
+        expect(derivedStateByChain[lane.chainId]).toBeDefined();
+      }
 
       const baselineChains = buildDerivedBaselineChains(setupResult).map(
         (baseline) => baseline.chainId,
       );
       expect(baselineChains).toContain(1);
-      expect(baselineChains).toContain(lane.chainId);
 
-      const standaloneFollowupResult = await runRepresentativeLaneSimulation(
-        buildTestOnlyWormholeLaneFollowupConfig(laneKey),
-      );
-      const standaloneJob = (standaloneFollowupResult.destinationJobResults ?? []).find(
-        (job) => job.chainId === lane.chainId,
-      );
-      expect(standaloneJob?.status).toBe('failure');
+      for (const laneKey of laneKeys) {
+        expect(baselineChains).toContain(TEST_ONLY_WORMHOLE_LANES[laneKey].chainId);
+      }
+    },
+    EXTERNAL_API_TIMEOUT_MS,
+  );
 
-      const derivedFollowupResult = await runRepresentativeLaneSimulation(
-        buildTestOnlyWormholeLaneFollowupConfig(laneKey),
-        derivedStateByChain,
-      );
-      const derivedJob = (derivedFollowupResult.destinationJobResults ?? []).find(
-        (job) => job.chainId === lane.chainId,
-      );
-      expect(derivedJob?.status).toBe('success');
+  test(
+    'standalone follow-up rollout fails on every representative lane',
+    async () => {
+      const standaloneFollowupResult = await getStandaloneFollowupResult();
+
+      expect(standaloneFollowupResult.destinationJobResults).toHaveLength(laneKeys.length);
+
+      for (const laneKey of laneKeys) {
+        const lane = TEST_ONLY_WORMHOLE_LANES[laneKey];
+        const standaloneJob = (standaloneFollowupResult.destinationJobResults ?? []).find(
+          (job) => job.chainId === lane.chainId,
+        );
+        expect(standaloneJob?.status).toBe('failure');
+      }
+    },
+    EXTERNAL_API_TIMEOUT_MS,
+  );
+
+  test(
+    'derived follow-up rollout succeeds on every representative lane',
+    async () => {
+      const derivedFollowupResult = await getDerivedFollowupResult();
+
+      expect(derivedFollowupResult.destinationJobResults).toHaveLength(laneKeys.length);
+
+      for (const laneKey of laneKeys) {
+        const lane = TEST_ONLY_WORMHOLE_LANES[laneKey];
+        const derivedJob = (derivedFollowupResult.destinationJobResults ?? []).find(
+          (job) => job.chainId === lane.chainId,
+        );
+        expect(derivedJob?.status).toBe('success');
+      }
     },
     EXTERNAL_API_TIMEOUT_MS,
   );

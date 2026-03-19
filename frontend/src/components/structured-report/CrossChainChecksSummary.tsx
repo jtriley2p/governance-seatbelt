@@ -113,7 +113,8 @@ export function CrossChainChecksSummary({ jobs, onNavigateToChain }: CrossChainC
                     className="flex items-center gap-2 flex-wrap"
                   >
                     <span className="text-red-600 font-medium">
-                      Job {job.sourceOrder + 1} {job.status === 'skipped' ? 'skipped' : 'failed'}:
+                      {chain.total > 1 ? `Execution ${job.executionIndex + 1} ` : ''}
+                      {job.status === 'skipped' ? 'skipped' : 'failed'}:
                     </span>
                     {job.call ? (
                       <code className="font-mono bg-muted-foreground/10 px-1 py-0.5 rounded">
