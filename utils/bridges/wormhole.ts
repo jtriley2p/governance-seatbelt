@@ -1,4 +1,5 @@
 import { decodeFunctionData, getAddress, isHex, parseAbi, slice, toFunctionSelector } from 'viem';
+import { avalanche, bsc, celo, monad, polygon } from 'viem/chains';
 import type { CrossChainExecutionCall, CrossChainExecutionJob } from '../../types.d';
 
 export const WORMHOLE_SEND_MESSAGE_ABI = parseAbi([
@@ -14,13 +15,34 @@ const KNOWN_WORMHOLE_SENDER_TARGETS = new Set([
   getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a').toLowerCase(),
 ]);
 
-const WORMHOLE_CHAIN_ID_TO_EVM_CHAIN_ID: Record<number, number> = {
-  14: 42220, // Celo
+type WormholeLaneMetadata = {
+  destinationChainId: number;
+  l2FromAddress: `0x${string}`;
 };
 
-const WORMHOLE_CHAIN_ID_TO_L2_EXECUTOR: Record<number, string> = {
-  // Celo wormhole-owned Uniswap contracts are administered by this executor.
-  14: '0x0Eb863541278308c3A64F8E908BC646e27BFD071',
+const WORMHOLE_CHAIN_ID_TO_LANE_METADATA: Record<number, WormholeLaneMetadata> = {
+  // Live Uniswap governance authority values are sourced from the current destination-chain
+  // factory/pool-manager owner fields as of 2026-03-19.
+  4: {
+    destinationChainId: bsc.id,
+    l2FromAddress: getAddress('0x341c1511141022cf8eE20824Ae0fFA3491F1302b'),
+  },
+  5: {
+    destinationChainId: polygon.id,
+    l2FromAddress: getAddress('0x8a1B966aC46F42275860f905dbC75EfBfDC12374'),
+  },
+  6: {
+    destinationChainId: avalanche.id,
+    l2FromAddress: getAddress('0xeb0BCF27D1Fb4b25e708fBB815c421Aeb51eA9fc'),
+  },
+  14: {
+    destinationChainId: celo.id,
+    l2FromAddress: getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071'),
+  },
+  48: {
+    destinationChainId: monad.id,
+    l2FromAddress: getAddress('0xe783de89a7f0408687f051e3e6d0beb62719ebad'),
+  },
 };
 
 function hasMatchingLengths(
@@ -63,15 +85,13 @@ function isKnownWormholeProposalCall(target: string, data: string): boolean {
 
 function resolveWormholeDestinationContext(
   wormholeChainId: number,
-  wormholeAddress: string,
 ): WormholeDestinationContext | null {
-  const destinationChainId = WORMHOLE_CHAIN_ID_TO_EVM_CHAIN_ID[wormholeChainId];
-  if (!destinationChainId) return null;
+  const metadata = WORMHOLE_CHAIN_ID_TO_LANE_METADATA[wormholeChainId];
+  if (!metadata) return null;
 
-  const l2Executor = WORMHOLE_CHAIN_ID_TO_L2_EXECUTOR[wormholeChainId];
   return {
-    destinationChainId,
-    l2FromAddress: getAddress(l2Executor ?? wormholeAddress),
+    destinationChainId: metadata.destinationChainId,
+    l2FromAddress: metadata.l2FromAddress,
   };
 }
 
@@ -112,14 +132,13 @@ function tryDecodeWormholeBatch(data: string): WormholeBatch | null {
 
     if (decoded.functionName !== 'sendMessage') return null;
 
-    const [wormholeTargets, wormholeValues, wormholeDatas, wormholeAddress, wormholeChainId] =
-      decoded.args;
+    const [wormholeTargets, wormholeValues, wormholeDatas, , wormholeChainId] = decoded.args;
 
     if (!hasMatchingLengths(wormholeTargets, wormholeValues, wormholeDatas)) {
       return null;
     }
 
-    const context = resolveWormholeDestinationContext(Number(wormholeChainId), wormholeAddress);
+    const context = resolveWormholeDestinationContext(Number(wormholeChainId));
     if (!context) return null;
 
     return {
@@ -135,7 +154,7 @@ function tryDecodeWormholeBatch(data: string): WormholeBatch | null {
 /**
  * Extract wormhole destination calls from proposal calldata.
  *
- * Current coverage: Celo wormhole chain id 14 -> EVM chain id 42220.
+ * Current coverage: BNB (4), Polygon (5), Avalanche (6), Celo (14), and Monad (48).
  */
 export function extractWormholeExecutionJobsFromProposal(
   targets: readonly string[],

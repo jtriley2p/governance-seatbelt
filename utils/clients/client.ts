@@ -2,12 +2,16 @@ import { http, createPublicClient } from 'viem';
 import type { PublicClient, Transport } from 'viem';
 import {
   arbitrum,
+  avalanche,
   base,
   bob,
+  bsc,
   celo,
   ink,
   mainnet,
+  monad,
   optimism,
+  polygon,
   soneium,
   unichain,
   worldchain,
@@ -74,7 +78,11 @@ const INK_RPC_URL =
     : 'https://rpc-gel.inkonchain.com');
 const SONEIUM_RPC_URL = process.env.SONEIUM_RPC_URL || soneium.rpcUrls.default.http[0];
 const BOB_RPC_URL = process.env.BOB_RPC_URL || 'https://bob.drpc.org';
+const BSC_RPC_URL = process.env.BSC_RPC_URL || 'https://bsc-dataseed1.bnbchain.org';
 const CELO_RPC_URL = process.env.CELO_RPC_URL || celo.rpcUrls.default.http[0];
+const POLYGON_RPC_URL = process.env.POLYGON_RPC_URL || 'https://polygon-bor-rpc.publicnode.com';
+const AVALANCHE_RPC_URL = process.env.AVALANCHE_RPC_URL || avalanche.rpcUrls.default.http[0];
+const MONAD_RPC_URL = process.env.MONAD_RPC_URL || monad.rpcUrls.default.http[0];
 const WORLDCHAIN_RPC_URL = process.env.WORLDCHAIN_RPC_URL || worldchain.rpcUrls.default.http[0];
 const ZORA_RPC_URL = process.env.ZORA_RPC_URL || zora.rpcUrls.default.http[0];
 const XLAYER_RPC_URL = process.env.XLAYER_RPC_URL || xLayer.rpcUrls.default.http[0];
@@ -90,7 +98,11 @@ type ChainById = {
   [ink.id]: typeof ink;
   [soneium.id]: typeof soneium;
   [bob.id]: typeof bob;
+  [bsc.id]: typeof bsc;
   [celo.id]: typeof celo;
+  [polygon.id]: typeof polygon;
+  [avalanche.id]: typeof avalanche;
+  [monad.id]: typeof monad;
   [worldchain.id]: typeof worldchain;
   [zora.id]: typeof zora;
   [xLayer.id]: typeof xLayer;
@@ -105,7 +117,11 @@ const CHAIN_BY_ID: ChainById = {
   [ink.id]: ink,
   [soneium.id]: soneium,
   [bob.id]: bob,
+  [bsc.id]: bsc,
   [celo.id]: celo,
+  [polygon.id]: polygon,
+  [avalanche.id]: avalanche,
+  [monad.id]: monad,
   [worldchain.id]: worldchain,
   [zora.id]: zora,
   [xLayer.id]: xLayer,
@@ -211,6 +227,18 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     },
     rpcUrl: BOB_RPC_URL,
   },
+  [bsc.id]: {
+    chainId: bsc.id,
+    blockExplorer: {
+      baseUrl: bsc.blockExplorers?.default.url || 'https://bscscan.com',
+    },
+    verification: {
+      backend: VerificationBackend.EtherscanV2,
+      apiUrl: ETHERSCAN_V2_API_URL,
+      apiKey: process.env.ETHERSCAN_API_KEY,
+    },
+    rpcUrl: BSC_RPC_URL,
+  },
   [celo.id]: {
     chainId: celo.id,
     blockExplorer: {
@@ -222,6 +250,41 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
       apiKey: process.env.ETHERSCAN_API_KEY,
     },
     rpcUrl: CELO_RPC_URL,
+  },
+  [polygon.id]: {
+    chainId: polygon.id,
+    blockExplorer: {
+      baseUrl: polygon.blockExplorers?.default.url || 'https://polygonscan.com',
+    },
+    verification: {
+      backend: VerificationBackend.EtherscanV2,
+      apiUrl: ETHERSCAN_V2_API_URL,
+      apiKey: process.env.ETHERSCAN_API_KEY,
+    },
+    rpcUrl: POLYGON_RPC_URL,
+  },
+  [avalanche.id]: {
+    chainId: avalanche.id,
+    blockExplorer: {
+      baseUrl: avalanche.blockExplorers?.default.url || 'https://snowtrace.io',
+    },
+    verification: {
+      backend: VerificationBackend.EtherscanV2,
+      apiUrl: ETHERSCAN_V2_API_URL,
+      apiKey: process.env.ETHERSCAN_API_KEY,
+    },
+    rpcUrl: AVALANCHE_RPC_URL,
+  },
+  [monad.id]: {
+    chainId: monad.id,
+    blockExplorer: {
+      baseUrl: monad.blockExplorers?.default.url || 'https://monadvision.com',
+    },
+    verification: {
+      backend: VerificationBackend.SourcifyOnly,
+      degradedReason: 'Monad explorer verification API is not supported yet; using Sourcify only.',
+    },
+    rpcUrl: MONAD_RPC_URL,
   },
   [worldchain.id]: {
     chainId: worldchain.id,
@@ -341,9 +404,25 @@ const clients = {
     chain: bob,
     transport: http(CHAIN_CONFIGS[bob.id].rpcUrl),
   }),
+  [bsc.id]: createPublicClient({
+    chain: bsc,
+    transport: http(CHAIN_CONFIGS[bsc.id].rpcUrl),
+  }),
   [celo.id]: createPublicClient({
     chain: celo,
     transport: http(CHAIN_CONFIGS[celo.id].rpcUrl),
+  }),
+  [polygon.id]: createPublicClient({
+    chain: polygon,
+    transport: http(CHAIN_CONFIGS[polygon.id].rpcUrl),
+  }),
+  [avalanche.id]: createPublicClient({
+    chain: avalanche,
+    transport: http(CHAIN_CONFIGS[avalanche.id].rpcUrl),
+  }),
+  [monad.id]: createPublicClient({
+    chain: monad,
+    transport: http(CHAIN_CONFIGS[monad.id].rpcUrl),
   }),
   [worldchain.id]: createPublicClient({
     chain: worldchain,
