@@ -18,6 +18,22 @@ describe('ContractVerificationList link routing', () => {
     expect(html).not.toContain(`href="https://etherscan.io/address/${address}"`);
   });
 
+  it('parses backticked markdown links for explorer-routed rows', () => {
+    const address = '0x3333333333333333333333333333333333333333';
+    const details = `[\`${address}\`](https://celoscan.io/address/${address}): EOA (may have code later, verification not applicable)`;
+
+    const html = renderToStaticMarkup(
+      createElement(ContractVerificationList, {
+        details,
+        blockExplorerBaseUrl: 'https://celoscan.io',
+      }),
+    );
+
+    expect(html).toContain(`href="https://celoscan.io/address/${address}"`);
+    expect(html).toContain('EOA');
+    expect(html).not.toContain('https://etherscan.io/address/');
+  });
+
   it('uses chain explorer links from check details for non-mainnet chains', () => {
     const address = '0x2222222222222222222222222222222222222222';
     const details = `[${address}](https://soneium.blockscout.com/address/${address}): Contract (verified via verification backend API)`;

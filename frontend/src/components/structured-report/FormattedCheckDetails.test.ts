@@ -65,4 +65,31 @@ describe('FormattedCheckDetails target row rendering', () => {
     expect(countOccurrences(html, 'Contract (with DELEGATECALL)')).toBe(1);
     expect(html).not.toContain('advisory for trusted bridge/proxy surface');
   });
+
+  it('renders backticked verification links as target rows instead of raw markdown', () => {
+    const address = '0x1000000000000000000000000000000000009450';
+    const details = `- [\`${address}\`](https://celoscan.io/address/${address}): EOA (may have code later, verification not applicable)`;
+
+    const html = renderToStaticMarkup(
+      createElement(FormattedCheckDetails, {
+        check: {
+          title: 'Check all targets are verified on Sourcify or block explorer',
+          status: 'warning',
+          details,
+        },
+        metadata: {
+          proposalId: '123',
+          proposer: '0x0000000000000000000000000000000000000001',
+          blockExplorerBaseUrl: 'https://celoscan.io',
+        },
+      }),
+    );
+
+    expect(html).toContain(address);
+    expect(
+      countOccurrences(html, 'flex items-center justify-between gap-2 p-2 bg-muted/30 rounded-md'),
+    ).toBe(1);
+    expect(html).toContain('EOA (may have code later)');
+    expect(html).not.toContain(`[\`${address}\`](https://celoscan.io/address/${address})`);
+  });
 });
