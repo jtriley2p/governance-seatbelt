@@ -1,10 +1,11 @@
 'use client';
 
+import { ProposalActionIcon } from '@/components/ProposalActionIcon';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useHrefWithArtifact } from '@/hooks/use-artifact-navigation';
 import type { Proposal } from '@/hooks/use-simulation-results';
-import { getProposalActionUi, renderProposalActionIcon } from '@/lib/proposal-action-ui';
+import { getProposalActionUi } from '@/lib/proposal-action-ui';
 import type { ProposalActionResolution } from '@/lib/write-actions';
 import { ArrowRightIcon } from 'lucide-react';
 import Link from 'next/link';
@@ -43,7 +44,7 @@ export function ProposalSummary({ proposal, action, className }: ProposalSummary
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <div className="p-2 rounded-full bg-background shrink-0">
-              {renderProposalActionIcon(summary.iconName, summary.iconClassName)}
+              <ProposalActionIcon iconName={summary.iconName} className={summary.iconClassName} />
             </div>
             <div className="min-w-0">
               <p className="font-medium text-sm">{summary.title}</p>

@@ -1,5 +1,6 @@
 'use client';
 
+import { ProposalActionIcon } from '@/components/ProposalActionIcon';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -10,11 +11,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import type { Proposal } from '@/hooks/use-simulation-results';
-import {
-  getProposalActionButtonUi,
-  getProposalActionUi,
-  renderProposalActionIcon,
-} from '@/lib/proposal-action-ui';
+import { getProposalCardUi } from '@/lib/proposal-action-ui';
 import type { ProposalActionResolution } from '@/lib/write-actions';
 import { useState } from 'react';
 
@@ -39,8 +36,6 @@ export function ProposalCard({
 }: ProposalCardProps) {
   const [selectedCallIndex, setSelectedCallIndex] = useState(0);
   const hasMultipleCalls = proposal.targets.length > 1;
-  const card = getProposalActionUi(action).card;
-
   const currentTarget = hasMultipleCalls
     ? proposal.targets[selectedCallIndex]
     : proposal.targets[0];
@@ -53,7 +48,7 @@ export function ProposalCard({
   const currentCalldata = hasMultipleCalls
     ? proposal.calldatas[selectedCallIndex]
     : proposal.calldatas[0];
-  const button = getProposalActionButtonUi(action, {
+  const card = getProposalCardUi(action, {
     isConnected,
     isPending,
     isPendingConfirmation,
@@ -123,18 +118,20 @@ export function ProposalCard({
       </CardContent>
       <CardFooter className="flex justify-between items-center border-t py-4 px-6 mt-auto">
         <div className="flex items-center text-sm text-muted-foreground">
-          {renderProposalActionIcon(card.statusIconName, card.statusIconClassName)}
+          <ProposalActionIcon iconName={card.statusIconName} className={card.statusIconClassName} />
           {card.readyText}
         </div>
-        {button.showButton && (
+        {card.showButton && (
           <Button
             onClick={onAction}
-            disabled={button.isDisabled}
+            disabled={card.isButtonDisabled}
             size="lg"
             className="ml-6 px-6 font-medium cursor-pointer gap-2"
           >
-            {button.buttonIconName && renderProposalActionIcon(button.buttonIconName, 'h-4 w-4')}
-            {button.buttonLabel}
+            {card.buttonIconName && (
+              <ProposalActionIcon iconName={card.buttonIconName} className="h-4 w-4" />
+            )}
+            {card.buttonLabel}
           </Button>
         )}
       </CardFooter>

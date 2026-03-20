@@ -1,10 +1,11 @@
 'use client';
 
+import { ProposalActionIcon } from '@/components/ProposalActionIcon';
 import { Button } from '@/components/ui/button';
 import { useHrefWithArtifact } from '@/hooks/use-artifact-navigation';
 import { useShareLink } from '@/hooks/use-share-link';
 import { useSimulationResults } from '@/hooks/use-simulation-results';
-import { getProposalActionUi, renderProposalActionIcon } from '@/lib/proposal-action-ui';
+import { getProposalActionUi } from '@/lib/proposal-action-ui';
 import { resolveProposalAction } from '@/lib/write-actions';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { FileTextIcon, Link2Icon, Loader2Icon } from 'lucide-react';
@@ -138,7 +139,7 @@ export function Navbar() {
                 Report
               </NavLink>
               <NavLink href={actionHref} active={actionIsActive}>
-                {renderProposalActionIcon(actionNav.iconName, 'h-4 w-4')}
+                <ProposalActionIcon iconName={actionNav.iconName} className="h-4 w-4" />
                 {actionNav.label}
               </NavLink>
             </div>

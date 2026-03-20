@@ -1,7 +1,5 @@
-import type { ProposalActionBlockedReason, ProposalActionResolution } from '@/lib/write-actions';
-import { CheckCircleIcon, ClockIcon, PlayIcon, SendIcon, XCircleIcon } from 'lucide-react';
-
-export type ProposalActionIconName = 'send' | 'play' | 'check' | 'x' | 'clock';
+import type { ProposalActionIconName } from './proposal-action-icons';
+import type { ProposalActionBlockedReason, ProposalActionResolution } from './write-actions';
 
 export type NavActionUi = {
   iconName: ProposalActionIconName;
@@ -16,13 +14,20 @@ export type SummaryActionUi = {
   buttonText: string | null;
 };
 
-export type CardActionUi = {
+type BaseCardActionUi = {
   title: string;
   description: string;
   readyText: string;
-  buttonLabel: string | null;
+  actionLabel: string | null;
   statusIconName: ProposalActionIconName;
   statusIconClassName: string;
+};
+
+export type ProposalCardUi = Omit<BaseCardActionUi, 'actionLabel'> & {
+  buttonLabel: string | null;
+  buttonIconName: ProposalActionIconName | null;
+  isButtonDisabled: boolean;
+  showButton: boolean;
 };
 
 export type PageActionUi = {
@@ -36,15 +41,8 @@ export type PageActionUi = {
 export type ProposalActionUi = {
   nav: NavActionUi;
   summary: SummaryActionUi;
-  card: CardActionUi;
+  card: BaseCardActionUi;
   page: PageActionUi;
-};
-
-export type ProposalActionButtonUi = {
-  buttonLabel: string | null;
-  buttonIconName: ProposalActionIconName | null;
-  isDisabled: boolean;
-  showButton: boolean;
 };
 
 type ProposalActionUiKey =
@@ -54,20 +52,12 @@ type ProposalActionUiKey =
   | 'invalid'
   | ProposalActionBlockedReason;
 
-const ICONS = {
-  send: SendIcon,
-  play: PlayIcon,
-  check: CheckCircleIcon,
-  x: XCircleIcon,
-  clock: ClockIcon,
-} as const;
+type ProposalActionButtonState = Pick<
+  ProposalCardUi,
+  'buttonLabel' | 'buttonIconName' | 'isButtonDisabled' | 'showButton'
+>;
 
-export function renderProposalActionIcon(iconName: ProposalActionIconName, className: string) {
-  const Icon = ICONS[iconName];
-  return <Icon className={className} />;
-}
-
-export const PROPOSAL_ACTION_UI: Record<ProposalActionUiKey, ProposalActionUi> = {
+const PROPOSAL_ACTION_UI: Record<ProposalActionUiKey, ProposalActionUi> = {
   propose: {
     nav: { iconName: 'send', label: 'Propose' },
     summary: {
@@ -81,7 +71,7 @@ export const PROPOSAL_ACTION_UI: Record<ProposalActionUiKey, ProposalActionUi> =
       title: 'Proposal Creation',
       description: 'Transaction Parameters',
       readyText: 'Ready to propose',
-      buttonLabel: 'Propose',
+      actionLabel: 'Propose',
       statusIconName: 'check',
       statusIconClassName: 'h-4 w-4 mr-2 text-green-500',
     },
@@ -106,7 +96,7 @@ export const PROPOSAL_ACTION_UI: Record<ProposalActionUiKey, ProposalActionUi> =
       title: 'Proposal Execution',
       description: 'Transaction Parameters',
       readyText: 'Ready to execute',
-      buttonLabel: 'Execute',
+      actionLabel: 'Execute',
       statusIconName: 'check',
       statusIconClassName: 'h-4 w-4 mr-2 text-green-500',
     },
@@ -131,7 +121,7 @@ export const PROPOSAL_ACTION_UI: Record<ProposalActionUiKey, ProposalActionUi> =
       title: 'Executed Proposal',
       description: 'This proposal has already been executed',
       readyText: 'Already executed',
-      buttonLabel: null,
+      actionLabel: null,
       statusIconName: 'check',
       statusIconClassName: 'h-4 w-4 mr-2 text-gray-400',
     },
@@ -156,7 +146,7 @@ export const PROPOSAL_ACTION_UI: Record<ProposalActionUiKey, ProposalActionUi> =
       title: 'Proposal Defeated',
       description: 'This proposal can no longer be executed.',
       readyText: 'Proposal defeated',
-      buttonLabel: null,
+      actionLabel: null,
       statusIconName: 'x',
       statusIconClassName: 'h-4 w-4 mr-2 text-red-500',
     },
@@ -181,7 +171,7 @@ export const PROPOSAL_ACTION_UI: Record<ProposalActionUiKey, ProposalActionUi> =
       title: 'Proposal Expired',
       description: 'This proposal can no longer be executed.',
       readyText: 'Proposal expired',
-      buttonLabel: null,
+      actionLabel: null,
       statusIconName: 'x',
       statusIconClassName: 'h-4 w-4 mr-2 text-gray-400',
     },
@@ -206,7 +196,7 @@ export const PROPOSAL_ACTION_UI: Record<ProposalActionUiKey, ProposalActionUi> =
       title: 'Proposal Canceled',
       description: 'This proposal can no longer be executed.',
       readyText: 'Proposal canceled',
-      buttonLabel: null,
+      actionLabel: null,
       statusIconName: 'x',
       statusIconClassName: 'h-4 w-4 mr-2 text-gray-400',
     },
@@ -231,7 +221,7 @@ export const PROPOSAL_ACTION_UI: Record<ProposalActionUiKey, ProposalActionUi> =
       title: 'Proposal Not Executable',
       description: 'This proposal is not currently executable.',
       readyText: 'Not executable',
-      buttonLabel: null,
+      actionLabel: null,
       statusIconName: 'clock',
       statusIconClassName: 'h-4 w-4 mr-2 text-gray-400',
     },
@@ -256,7 +246,7 @@ export const PROPOSAL_ACTION_UI: Record<ProposalActionUiKey, ProposalActionUi> =
       title: 'Invalid Proposal Metadata',
       description: 'This report cannot be used for execution.',
       readyText: 'Action unavailable',
-      buttonLabel: null,
+      actionLabel: null,
       statusIconName: 'x',
       statusIconClassName: 'h-4 w-4 mr-2 text-gray-400',
     },
@@ -274,60 +264,74 @@ function getProposalActionUiKey(action: ProposalActionResolution): ProposalActio
   return action.kind === 'blocked' ? action.reason : action.kind;
 }
 
+function toProposalCardUi(
+  card: BaseCardActionUi,
+  button: ProposalActionButtonState,
+): ProposalCardUi {
+  return {
+    title: card.title,
+    description: card.description,
+    readyText: card.readyText,
+    statusIconName: card.statusIconName,
+    statusIconClassName: card.statusIconClassName,
+    ...button,
+  };
+}
+
 export function getProposalActionUi(action: ProposalActionResolution): ProposalActionUi {
   return PROPOSAL_ACTION_UI[getProposalActionUiKey(action)];
 }
 
-export function getProposalActionButtonUi(
+export function getProposalCardUi(
   action: ProposalActionResolution,
   options: {
     isConnected: boolean;
     isPending: boolean;
     isPendingConfirmation: boolean;
   },
-): ProposalActionButtonUi {
+): ProposalCardUi {
   const card = getProposalActionUi(action).card;
 
-  if (!card.buttonLabel) {
-    return {
+  if (!card.actionLabel) {
+    return toProposalCardUi(card, {
       buttonLabel: null,
       buttonIconName: null,
-      isDisabled: true,
+      isButtonDisabled: true,
       showButton: false,
-    };
+    });
   }
 
   if (!options.isConnected) {
-    return {
+    return toProposalCardUi(card, {
       buttonLabel: 'Connect Wallet',
       buttonIconName: null,
-      isDisabled: true,
+      isButtonDisabled: true,
       showButton: true,
-    };
+    });
   }
 
   if (options.isPendingConfirmation) {
-    return {
+    return toProposalCardUi(card, {
       buttonLabel: 'Confirming...',
       buttonIconName: null,
-      isDisabled: true,
+      isButtonDisabled: true,
       showButton: true,
-    };
+    });
   }
 
   if (options.isPending) {
-    return {
+    return toProposalCardUi(card, {
       buttonLabel: action.kind === 'propose' ? 'Creating...' : 'Executing...',
       buttonIconName: null,
-      isDisabled: true,
+      isButtonDisabled: true,
       showButton: true,
-    };
+    });
   }
 
-  return {
-    buttonLabel: card.buttonLabel,
+  return toProposalCardUi(card, {
+    buttonLabel: card.actionLabel,
     buttonIconName: action.kind === 'propose' ? 'send' : 'play',
-    isDisabled: false,
+    isButtonDisabled: false,
     showButton: true,
-  };
+  });
 }

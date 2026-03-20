@@ -2,10 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { encodeFunctionData } from 'viem';
 import type { Address } from 'viem';
 import { GOVERNOR_ABI } from '../frontend/src/config/abis';
-import {
-  getProposalActionButtonUi,
-  getProposalActionUi,
-} from '../frontend/src/lib/proposal-action-ui';
+import { getProposalActionUi, getProposalCardUi } from '../frontend/src/lib/proposal-action-ui';
 import {
   buildExecuteArgs,
   buildExecuteArgsFromSimulationData,
@@ -127,10 +124,15 @@ describe('frontend write actions (deterministic wiring)', () => {
     expect(resolveProposalAction('proposed', 'Queued')).toEqual({ kind: 'execute' });
   });
 
-  it('getProposalActionUi maps resolved actions to stable surface copy', () => {
+  it('surface-specific action ui helpers stay aligned with action state', () => {
     expect(getProposalActionUi({ kind: 'propose' }).nav.label).toBe('Propose');
     expect(getProposalActionUi({ kind: 'execute' }).summary.buttonText).toBe('Review & Execute');
-    expect(getProposalActionUi({ kind: 'executed' }).card.buttonLabel).toBe(null);
+    expect(
+      getProposalCardUi(
+        { kind: 'executed' },
+        { isConnected: true, isPending: false, isPendingConfirmation: false },
+      ).showButton,
+    ).toBe(false);
     expect(getProposalActionUi({ kind: 'blocked', reason: 'defeated' }).page.title).toBe(
       'Proposal Defeated',
     );
@@ -140,40 +142,55 @@ describe('frontend write actions (deterministic wiring)', () => {
     expect(getProposalActionUi({ kind: 'invalid' }).summary.title).toBe('Action Unavailable');
   });
 
-  it('getProposalActionButtonUi maps wallet and pending state onto the CTA', () => {
+  it('getProposalCardUi maps wallet and pending state onto the CTA', () => {
     expect(
-      getProposalActionButtonUi(
+      getProposalCardUi(
         { kind: 'execute' },
         { isConnected: true, isPending: false, isPendingConfirmation: false },
       ),
     ).toEqual({
+      title: 'Proposal Execution',
+      description: 'Transaction Parameters',
+      readyText: 'Ready to execute',
+      statusIconName: 'check',
+      statusIconClassName: 'h-4 w-4 mr-2 text-green-500',
       buttonLabel: 'Execute',
       buttonIconName: 'play',
-      isDisabled: false,
+      isButtonDisabled: false,
       showButton: true,
     });
 
     expect(
-      getProposalActionButtonUi(
+      getProposalCardUi(
         { kind: 'propose' },
         { isConnected: false, isPending: false, isPendingConfirmation: false },
       ),
     ).toEqual({
+      title: 'Proposal Creation',
+      description: 'Transaction Parameters',
+      readyText: 'Ready to propose',
+      statusIconName: 'check',
+      statusIconClassName: 'h-4 w-4 mr-2 text-green-500',
       buttonLabel: 'Connect Wallet',
       buttonIconName: null,
-      isDisabled: true,
+      isButtonDisabled: true,
       showButton: true,
     });
 
     expect(
-      getProposalActionButtonUi(
+      getProposalCardUi(
         { kind: 'blocked', reason: 'defeated' },
         { isConnected: true, isPending: false, isPendingConfirmation: false },
       ),
     ).toEqual({
+      title: 'Proposal Defeated',
+      description: 'This proposal can no longer be executed.',
+      readyText: 'Proposal defeated',
+      statusIconName: 'x',
+      statusIconClassName: 'h-4 w-4 mr-2 text-red-500',
       buttonLabel: null,
       buttonIconName: null,
-      isDisabled: true,
+      isButtonDisabled: true,
       showButton: false,
     });
   });

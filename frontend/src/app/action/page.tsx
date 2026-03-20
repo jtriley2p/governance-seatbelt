@@ -1,5 +1,6 @@
 'use client';
 
+import { ProposalActionIcon } from '@/components/ProposalActionIcon';
 import { ProposalCard } from '@/components/ProposalCard';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -9,7 +10,7 @@ import { useHrefWithArtifact } from '@/hooks/use-artifact-navigation';
 import { useSimulationResults } from '@/hooks/use-simulation-results';
 import { useWriteExecuteProposal } from '@/hooks/use-write-execute-proposal';
 import { useWriteProposeNew } from '@/hooks/use-write-propose-new';
-import { getProposalActionUi, renderProposalActionIcon } from '@/lib/proposal-action-ui';
+import { getProposalActionUi } from '@/lib/proposal-action-ui';
 import { resolveProposalAction } from '@/lib/write-actions';
 import { AlertTriangleIcon, ArrowLeftIcon, InfoIcon, ShieldCheckIcon } from 'lucide-react';
 import Link from 'next/link';
@@ -145,7 +146,7 @@ function ActionSection({ isConnected }: { isConnected: boolean }) {
       <div className="space-y-2">
         <div className="flex items-center gap-3">
           <div className={`p-2 rounded-lg ${pageCopy.iconContainerClassName}`}>
-            {renderProposalActionIcon(pageCopy.iconName, pageCopy.iconClassName)}
+            <ProposalActionIcon iconName={pageCopy.iconName} className={pageCopy.iconClassName} />
           </div>
           <h1 className="text-3xl font-bold tracking-tight">{pageCopy.title}</h1>
         </div>
