@@ -127,12 +127,7 @@ function ReportSection() {
 
   return (
     <div className="w-full space-y-4">
-      <ProposalSummary
-        proposal={proposalData}
-        mode={actionResolution.mode}
-        availability={actionResolution.availability}
-        blockedState={actionResolution.blockedState}
-      />
+      <ProposalSummary proposal={proposalData} action={actionResolution} />
 
       {report.structuredReport ? (
         <StructuredReport report={report.structuredReport} proposal={proposalData} />

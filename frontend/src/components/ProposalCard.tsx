@@ -10,19 +10,17 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import type { Proposal } from '@/hooks/use-simulation-results';
-import type {
-  ProposalActionAvailability,
-  ProposalActionMode,
-  ProposalBlockedState,
-} from '@/lib/write-actions';
-import { CheckCircleIcon, ClockIcon, PlayIcon, SendIcon, XCircleIcon } from 'lucide-react';
+import {
+  getProposalActionButtonUi,
+  getProposalActionUi,
+  renderProposalActionIcon,
+} from '@/lib/proposal-action-ui';
+import type { ProposalActionResolution } from '@/lib/write-actions';
 import { useState } from 'react';
 
 interface ProposalCardProps {
   proposal: Proposal;
-  mode: ProposalActionMode;
-  availability: ProposalActionAvailability;
-  blockedState: ProposalBlockedState;
+  action: ProposalActionResolution;
   onAction: () => void;
   isPending: boolean;
   isPendingConfirmation: boolean;
@@ -30,111 +28,9 @@ interface ProposalCardProps {
   className?: string;
 }
 
-function getCardText(
-  mode: ProposalActionMode,
-  availability: ProposalActionAvailability,
-  blockedState: ProposalBlockedState,
-) {
-  if (mode === 'new') {
-    return {
-      title: 'Proposal Creation',
-      description: 'Transaction Parameters',
-      readyText: 'Ready to propose',
-      buttonLabel: 'Propose',
-    };
-  }
-
-  if (mode === 'executed') {
-    return {
-      title: 'Executed Proposal',
-      description: 'This proposal has already been executed',
-      readyText: 'Already executed',
-      buttonLabel: null,
-    };
-  }
-
-  if (availability === 'execute') {
-    return {
-      title: 'Proposal Execution',
-      description: 'Transaction Parameters',
-      readyText: 'Ready to execute',
-      buttonLabel: 'Execute',
-    };
-  }
-
-  if (blockedState === 'defeated') {
-    return {
-      title: 'Proposal Defeated',
-      description: 'This proposal can no longer be executed.',
-      readyText: 'Proposal defeated',
-      buttonLabel: null,
-    };
-  }
-
-  if (blockedState === 'expired') {
-    return {
-      title: 'Proposal Expired',
-      description: 'This proposal can no longer be executed.',
-      readyText: 'Proposal expired',
-      buttonLabel: null,
-    };
-  }
-
-  if (blockedState === 'canceled') {
-    return {
-      title: 'Proposal Canceled',
-      description: 'This proposal can no longer be executed.',
-      readyText: 'Proposal canceled',
-      buttonLabel: null,
-    };
-  }
-
-  if (mode === 'invalid') {
-    return {
-      title: 'Invalid Proposal Metadata',
-      description: 'This report cannot be used for execution.',
-      readyText: 'Action unavailable',
-      buttonLabel: null,
-    };
-  }
-
-  return {
-    title: 'Proposal Not Executable',
-    description: 'This proposal is not currently executable.',
-    readyText: 'Not executable',
-    buttonLabel: null,
-  };
-}
-
-function getStatusIcon(
-  mode: ProposalActionMode,
-  availability: ProposalActionAvailability,
-  blockedState: ProposalBlockedState,
-) {
-  if (mode === 'new' || availability === 'execute') {
-    return <CheckCircleIcon className="h-4 w-4 mr-2 text-green-500" />;
-  }
-
-  if (mode === 'executed') {
-    return <CheckCircleIcon className="h-4 w-4 mr-2 text-gray-400" />;
-  }
-
-  if (blockedState === 'defeated') {
-    return <XCircleIcon className="h-4 w-4 mr-2 text-red-500" />;
-  }
-
-  if (blockedState === 'expired' || blockedState === 'canceled' || mode === 'invalid') {
-    return <XCircleIcon className="h-4 w-4 mr-2 text-gray-400" />;
-  }
-
-  return <ClockIcon className="h-4 w-4 mr-2 text-gray-400" />;
-}
-
 export function ProposalCard({
   proposal,
-  mode,
-  availability,
-  blockedState,
+  action,
   onAction,
   isPending,
   isPendingConfirmation,
@@ -143,7 +39,7 @@ export function ProposalCard({
 }: ProposalCardProps) {
   const [selectedCallIndex, setSelectedCallIndex] = useState(0);
   const hasMultipleCalls = proposal.targets.length > 1;
-  const cardText = getCardText(mode, availability, blockedState);
+  const card = getProposalActionUi(action).card;
 
   const currentTarget = hasMultipleCalls
     ? proposal.targets[selectedCallIndex]
@@ -157,25 +53,17 @@ export function ProposalCard({
   const currentCalldata = hasMultipleCalls
     ? proposal.calldatas[selectedCallIndex]
     : proposal.calldatas[0];
-
-  const getActionText = () => {
-    if (!isConnected) return 'Connect Wallet';
-    if (isPendingConfirmation) return 'Confirming...';
-    if (isPending) {
-      return availability === 'propose' ? 'Creating...' : 'Executing...';
-    }
-    return cardText.buttonLabel;
-  };
-
-  const isActionable = availability === 'propose' || availability === 'execute';
-  const isDisabled = !isActionable || isPending || isPendingConfirmation || !isConnected;
-  const ActionIcon = availability === 'propose' ? SendIcon : PlayIcon;
+  const button = getProposalActionButtonUi(action, {
+    isConnected,
+    isPending,
+    isPendingConfirmation,
+  });
 
   return (
     <Card className={`w-full ${className || ''} border border-muted`}>
       <CardHeader className="px-6">
-        <CardTitle>{cardText.title}</CardTitle>
-        <CardDescription>{cardText.description}</CardDescription>
+        <CardTitle>{card.title}</CardTitle>
+        <CardDescription>{card.description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 pt-0 px-6">
         {hasMultipleCalls && (
@@ -235,18 +123,18 @@ export function ProposalCard({
       </CardContent>
       <CardFooter className="flex justify-between items-center border-t py-4 px-6 mt-auto">
         <div className="flex items-center text-sm text-muted-foreground">
-          {getStatusIcon(mode, availability, blockedState)}
-          {cardText.readyText}
+          {renderProposalActionIcon(card.statusIconName, card.statusIconClassName)}
+          {card.readyText}
         </div>
-        {cardText.buttonLabel && (
+        {button.showButton && (
           <Button
             onClick={onAction}
-            disabled={isDisabled}
+            disabled={button.isDisabled}
             size="lg"
             className="ml-6 px-6 font-medium cursor-pointer gap-2"
           >
-            {!isDisabled && <ActionIcon className="h-4 w-4" />}
-            {getActionText()}
+            {button.buttonIconName && renderProposalActionIcon(button.buttonIconName, 'h-4 w-4')}
+            {button.buttonLabel}
           </Button>
         )}
       </CardFooter>

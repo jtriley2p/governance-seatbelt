@@ -9,85 +9,13 @@ import { useHrefWithArtifact } from '@/hooks/use-artifact-navigation';
 import { useSimulationResults } from '@/hooks/use-simulation-results';
 import { useWriteExecuteProposal } from '@/hooks/use-write-execute-proposal';
 import { useWriteProposeNew } from '@/hooks/use-write-propose-new';
+import { getProposalActionUi, renderProposalActionIcon } from '@/lib/proposal-action-ui';
 import { resolveProposalAction } from '@/lib/write-actions';
-import {
-  AlertTriangleIcon,
-  ArrowLeftIcon,
-  CheckCircleIcon,
-  ClockIcon,
-  InfoIcon,
-  PlayIcon,
-  SendIcon,
-  ShieldCheckIcon,
-  XCircleIcon,
-} from 'lucide-react';
+import { AlertTriangleIcon, ArrowLeftIcon, InfoIcon, ShieldCheckIcon } from 'lucide-react';
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { useAccount } from 'wagmi';
-
-function getPageCopy(actionResolution: ReturnType<typeof resolveProposalAction>) {
-  if (actionResolution.mode === 'new') {
-    return {
-      title: 'Submit Proposal',
-      description: 'Review the transaction parameters and submit this proposal on-chain.',
-      icon: <SendIcon className="h-6 w-6 text-primary" />,
-      iconClassName: 'bg-primary/10',
-    };
-  }
-
-  if (actionResolution.mode === 'executed') {
-    return {
-      title: 'Proposal Details',
-      description: 'This proposal has already been executed on-chain.',
-      icon: <CheckCircleIcon className="h-6 w-6 text-green-500" />,
-      iconClassName: 'bg-green-500/10',
-    };
-  }
-
-  if (actionResolution.availability === 'execute') {
-    return {
-      title: 'Execute Proposal',
-      description: 'This proposal has passed voting and is ready to be executed.',
-      icon: <PlayIcon className="h-6 w-6 text-orange-500" />,
-      iconClassName: 'bg-orange-500/10',
-    };
-  }
-
-  if (actionResolution.blockedState === 'defeated') {
-    return {
-      title: 'Proposal Defeated',
-      description: 'This proposal was defeated and can no longer be executed.',
-      icon: <XCircleIcon className="h-6 w-6 text-red-500" />,
-      iconClassName: 'bg-red-500/10',
-    };
-  }
-
-  if (actionResolution.blockedState === 'expired') {
-    return {
-      title: 'Proposal Expired',
-      description: 'This proposal expired before execution and can no longer be executed.',
-      icon: <XCircleIcon className="h-6 w-6 text-gray-500" />,
-      iconClassName: 'bg-gray-500/10',
-    };
-  }
-
-  if (actionResolution.blockedState === 'canceled') {
-    return {
-      title: 'Proposal Canceled',
-      description: 'This proposal was canceled and can no longer be executed.',
-      icon: <XCircleIcon className="h-6 w-6 text-gray-500" />,
-      iconClassName: 'bg-gray-500/10',
-    };
-  }
-
-  return {
-    title: 'Proposal Not Executable',
-    description: 'This proposal cannot be executed from this report.',
-    icon: <ClockIcon className="h-6 w-6 text-gray-500" />,
-    iconClassName: 'bg-gray-500/10',
-  };
-}
 
 function ErrorFallback({ error }: { error: Error }) {
   return (
@@ -171,7 +99,7 @@ function ActionSection({ isConnected }: { isConnected: boolean }) {
   const proposalState = report.structuredReport?.metadata?.proposalState;
   const actionResolution = resolveProposalAction(rawSimulationType, proposalState);
 
-  if (rawSimulationType != null && actionResolution.mode === 'invalid') {
+  if (rawSimulationType != null && actionResolution.kind === 'invalid') {
     return (
       <Alert variant="destructive">
         <AlertTriangleIcon className="h-4 w-4" />
@@ -185,23 +113,23 @@ function ActionSection({ isConnected }: { isConnected: boolean }) {
   }
 
   const handleAction = () => {
-    if (actionResolution.availability === 'propose') {
+    if (actionResolution.kind === 'propose') {
       proposeNew();
-    } else if (actionResolution.availability === 'execute') {
+    } else if (actionResolution.kind === 'execute') {
       executeProposal();
     }
   };
 
   const isPending =
-    actionResolution.availability === 'propose'
+    actionResolution.kind === 'propose'
       ? isProposePending
-      : actionResolution.availability === 'execute'
+      : actionResolution.kind === 'execute'
         ? isExecutePending
         : false;
   const isPendingConfirmation =
-    actionResolution.availability === 'propose'
+    actionResolution.kind === 'propose'
       ? isProposeConfirming
-      : actionResolution.availability === 'execute'
+      : actionResolution.kind === 'execute'
         ? isExecuteConfirming
         : false;
 
@@ -210,13 +138,15 @@ function ActionSection({ isConnected }: { isConnected: boolean }) {
   const failedChecks = checks.filter((c) => c.status === 'failed');
   const warningChecks = checks.filter((c) => c.status === 'warning');
   const skippedChecks = checks.filter((c) => c.status === 'skipped');
-  const pageCopy = getPageCopy(actionResolution);
+  const pageCopy = getProposalActionUi(actionResolution).page;
 
   return (
     <>
       <div className="space-y-2">
         <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-lg ${pageCopy.iconClassName}`}>{pageCopy.icon}</div>
+          <div className={`p-2 rounded-lg ${pageCopy.iconContainerClassName}`}>
+            {renderProposalActionIcon(pageCopy.iconName, pageCopy.iconClassName)}
+          </div>
           <h1 className="text-3xl font-bold tracking-tight">{pageCopy.title}</h1>
         </div>
         <p className="text-muted-foreground">{pageCopy.description}</p>
@@ -226,9 +156,7 @@ function ActionSection({ isConnected }: { isConnected: boolean }) {
         <div className="lg:col-span-2">
           <ProposalCard
             proposal={proposalData}
-            mode={actionResolution.mode}
-            availability={actionResolution.availability}
-            blockedState={actionResolution.blockedState}
+            action={actionResolution}
             onAction={handleAction}
             isPending={isPending}
             isPendingConfirmation={isPendingConfirmation}

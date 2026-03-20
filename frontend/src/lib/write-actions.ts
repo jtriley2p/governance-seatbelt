@@ -2,15 +2,13 @@ import type { Address } from 'viem';
 
 export type SimulationType = 'new' | 'proposed' | 'executed';
 export type WriteAction = 'propose' | 'execute';
-export type ProposalActionMode = SimulationType | 'invalid';
-export type ProposalActionAvailability = WriteAction | 'none';
-export type ProposalBlockedState = 'defeated' | 'expired' | 'canceled' | 'unknown' | null;
-
-export interface ProposalActionResolution {
-  mode: ProposalActionMode;
-  availability: ProposalActionAvailability;
-  blockedState: ProposalBlockedState;
-}
+export type ProposalActionBlockedReason = 'defeated' | 'expired' | 'canceled' | 'unknown';
+export type ProposalActionResolution =
+  | { kind: 'propose' }
+  | { kind: 'execute' }
+  | { kind: 'executed' }
+  | { kind: 'invalid' }
+  | { kind: 'blocked'; reason: ProposalActionBlockedReason };
 
 export function parseSimulationType(value: unknown): SimulationType | null {
   if (value === 'new' || value === 'proposed' || value === 'executed') return value;
@@ -22,75 +20,39 @@ export function resolveProposalAction(
   proposalState?: string | null,
 ): ProposalActionResolution {
   if (simulationType == null) {
-    return {
-      mode: 'new',
-      availability: 'propose',
-      blockedState: null,
-    };
+    return { kind: 'propose' };
   }
 
   const parsedSimulationType = parseSimulationType(simulationType);
   if (!parsedSimulationType) {
-    return {
-      mode: 'invalid',
-      availability: 'none',
-      blockedState: null,
-    };
+    return { kind: 'invalid' };
   }
 
   if (parsedSimulationType === 'new') {
-    return {
-      mode: 'new',
-      availability: 'propose',
-      blockedState: null,
-    };
+    return { kind: 'propose' };
   }
 
   if (parsedSimulationType === 'executed') {
-    return {
-      mode: 'executed',
-      availability: 'none',
-      blockedState: null,
-    };
+    return { kind: 'executed' };
   }
 
   if (proposalState === 'Queued') {
-    return {
-      mode: 'proposed',
-      availability: 'execute',
-      blockedState: null,
-    };
+    return { kind: 'execute' };
   }
 
   if (proposalState === 'Defeated') {
-    return {
-      mode: 'proposed',
-      availability: 'none',
-      blockedState: 'defeated',
-    };
+    return { kind: 'blocked', reason: 'defeated' };
   }
 
   if (proposalState === 'Expired') {
-    return {
-      mode: 'proposed',
-      availability: 'none',
-      blockedState: 'expired',
-    };
+    return { kind: 'blocked', reason: 'expired' };
   }
 
   if (proposalState === 'Canceled') {
-    return {
-      mode: 'proposed',
-      availability: 'none',
-      blockedState: 'canceled',
-    };
+    return { kind: 'blocked', reason: 'canceled' };
   }
 
-  return {
-    mode: 'proposed',
-    availability: 'none',
-    blockedState: 'unknown',
-  };
+  return { kind: 'blocked', reason: 'unknown' };
 }
 
 export type ProposeLike = {
