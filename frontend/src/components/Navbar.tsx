@@ -1,23 +1,17 @@
 'use client';
 
+import { ProposalActionIcon } from '@/components/ProposalActionIcon';
 import { Button } from '@/components/ui/button';
 import { useHrefWithArtifact } from '@/hooks/use-artifact-navigation';
 import { useShareLink } from '@/hooks/use-share-link';
 import { useSimulationResults } from '@/hooks/use-simulation-results';
-import { parseSimulationType } from '@/lib/write-actions';
+import { getProposalActionUi } from '@/lib/proposal-action-ui';
+import { resolveProposalAction } from '@/lib/write-actions';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import {
-  CheckCircleIcon,
-  FileTextIcon,
-  Link2Icon,
-  Loader2Icon,
-  PlayIcon,
-  SendIcon,
-} from 'lucide-react';
+import { FileTextIcon, Link2Icon, Loader2Icon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
-import type { SimulationType } from './ProposalCard';
 
 function NavbarConnect() {
   return (
@@ -88,30 +82,9 @@ export function Navbar() {
   const { data: simulationData } = useSimulationResults();
 
   const rawSimulationType = simulationData?.report.structuredReport?.metadata?.simulationType;
-  const simulationType: SimulationType =
-    rawSimulationType == null ? 'new' : (parseSimulationType(rawSimulationType) ?? 'new');
-
-  const getActionLabel = () => {
-    switch (simulationType) {
-      case 'new':
-        return 'Propose';
-      case 'proposed':
-        return 'Execute';
-      case 'executed':
-        return 'Details';
-    }
-  };
-
-  const getActionIcon = () => {
-    switch (simulationType) {
-      case 'new':
-        return <SendIcon className="h-4 w-4" />;
-      case 'proposed':
-        return <PlayIcon className="h-4 w-4" />;
-      case 'executed':
-        return <CheckCircleIcon className="h-4 w-4" />;
-    }
-  };
+  const proposalState = simulationData?.report.structuredReport?.metadata?.proposalState;
+  const actionResolution = resolveProposalAction(rawSimulationType, proposalState);
+  const actionNav = getProposalActionUi(actionResolution).nav;
 
   const reportIsActive =
     pathname === '/' ||
@@ -166,8 +139,8 @@ export function Navbar() {
                 Report
               </NavLink>
               <NavLink href={actionHref} active={actionIsActive}>
-                {getActionIcon()}
-                {getActionLabel()}
+                <ProposalActionIcon iconName={actionNav.iconName} className="h-4 w-4" />
+                {actionNav.label}
               </NavLink>
             </div>
           </div>

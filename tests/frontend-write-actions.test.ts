@@ -2,12 +2,13 @@ import { describe, expect, it } from 'bun:test';
 import { encodeFunctionData } from 'viem';
 import type { Address } from 'viem';
 import { GOVERNOR_ABI } from '../frontend/src/config/abis';
+import { getProposalActionUi, getProposalCardUi } from '../frontend/src/lib/proposal-action-ui';
 import {
   buildExecuteArgs,
   buildExecuteArgsFromSimulationData,
   buildProposeArgs,
-  getWriteActionForSimulationType,
   parseSimulationType,
+  resolveProposalAction,
 } from '../frontend/src/lib/write-actions';
 
 describe('frontend write actions (deterministic wiring)', () => {
@@ -66,13 +67,132 @@ describe('frontend write actions (deterministic wiring)', () => {
     );
   });
 
-  it('getWriteActionForSimulationType matches Action page branching', () => {
-    expect(getWriteActionForSimulationType('new')).toBe('propose');
-    expect(getWriteActionForSimulationType('proposed')).toBe('execute');
-    expect(getWriteActionForSimulationType('executed')).toBe(null);
-    expect(getWriteActionForSimulationType(undefined)).toBe('propose');
-    expect(getWriteActionForSimulationType(null)).toBe('propose');
-    expect(getWriteActionForSimulationType('not-a-real-type')).toBe(null);
+  it('resolveProposalAction maps simulation metadata to write availability', () => {
+    expect(resolveProposalAction(undefined)).toEqual({ kind: 'propose' });
+    expect(resolveProposalAction(null)).toEqual({ kind: 'propose' });
+    expect(resolveProposalAction('new')).toEqual({ kind: 'propose' });
+    expect(resolveProposalAction('executed')).toEqual({ kind: 'executed' });
+    expect(resolveProposalAction('proposed')).toEqual({ kind: 'blocked', reason: 'unknown' });
+    expect(resolveProposalAction('proposed', 'Queued')).toEqual({ kind: 'execute' });
+    expect(resolveProposalAction('proposed', 'Defeated')).toEqual({
+      kind: 'blocked',
+      reason: 'defeated',
+    });
+    expect(resolveProposalAction('proposed', 'Expired')).toEqual({
+      kind: 'blocked',
+      reason: 'expired',
+    });
+    expect(resolveProposalAction('proposed', 'Canceled')).toEqual({
+      kind: 'blocked',
+      reason: 'canceled',
+    });
+    expect(resolveProposalAction('proposed', 'Active')).toEqual({
+      kind: 'blocked',
+      reason: 'unknown',
+    });
+    expect(resolveProposalAction('proposed', 'Succeeded')).toEqual({
+      kind: 'blocked',
+      reason: 'unknown',
+    });
+    expect(resolveProposalAction('proposed', 'Pending')).toEqual({
+      kind: 'blocked',
+      reason: 'unknown',
+    });
+    expect(resolveProposalAction('proposed', 'Executed')).toEqual({
+      kind: 'blocked',
+      reason: 'unknown',
+    });
+    expect(resolveProposalAction('not-a-real-type')).toEqual({ kind: 'invalid' });
+  });
+
+  it('only queued proposed simulations are executable', () => {
+    const nonExecutableStates = [
+      undefined,
+      'Defeated',
+      'Expired',
+      'Canceled',
+      'Active',
+      'Succeeded',
+      'Pending',
+      'Executed',
+    ];
+
+    for (const proposalState of nonExecutableStates) {
+      expect(resolveProposalAction('proposed', proposalState)).not.toEqual({ kind: 'execute' });
+    }
+
+    expect(resolveProposalAction('proposed', 'Queued')).toEqual({ kind: 'execute' });
+  });
+
+  it('surface-specific action ui helpers stay aligned with action state', () => {
+    expect(getProposalActionUi({ kind: 'propose' }).nav.label).toBe('Propose');
+    expect(getProposalActionUi({ kind: 'execute' }).summary.buttonText).toBe('Review & Execute');
+    expect(
+      getProposalCardUi(
+        { kind: 'executed' },
+        { isConnected: true, isPending: false, isPendingConfirmation: false },
+      ).showButton,
+    ).toBe(false);
+    expect(getProposalActionUi({ kind: 'blocked', reason: 'defeated' }).page.title).toBe(
+      'Proposal Defeated',
+    );
+    expect(getProposalActionUi({ kind: 'blocked', reason: 'unknown' }).nav.label).toBe(
+      'Unavailable',
+    );
+    expect(getProposalActionUi({ kind: 'invalid' }).summary.title).toBe('Action Unavailable');
+  });
+
+  it('getProposalCardUi maps wallet and pending state onto the CTA', () => {
+    expect(
+      getProposalCardUi(
+        { kind: 'execute' },
+        { isConnected: true, isPending: false, isPendingConfirmation: false },
+      ),
+    ).toEqual({
+      title: 'Proposal Execution',
+      description: 'Transaction Parameters',
+      readyText: 'Ready to execute',
+      statusIconName: 'check',
+      statusIconClassName: 'h-4 w-4 mr-2 text-green-500',
+      buttonLabel: 'Execute',
+      buttonIconName: 'play',
+      isButtonDisabled: false,
+      showButton: true,
+    });
+
+    expect(
+      getProposalCardUi(
+        { kind: 'propose' },
+        { isConnected: false, isPending: false, isPendingConfirmation: false },
+      ),
+    ).toEqual({
+      title: 'Proposal Creation',
+      description: 'Transaction Parameters',
+      readyText: 'Ready to propose',
+      statusIconName: 'check',
+      statusIconClassName: 'h-4 w-4 mr-2 text-green-500',
+      buttonLabel: 'Connect Wallet',
+      buttonIconName: null,
+      isButtonDisabled: true,
+      showButton: true,
+    });
+
+    expect(
+      getProposalCardUi(
+        { kind: 'blocked', reason: 'defeated' },
+        { isConnected: true, isPending: false, isPendingConfirmation: false },
+      ),
+    ).toEqual({
+      title: 'Proposal Defeated',
+      description: 'This proposal can no longer be executed.',
+      readyText: 'Proposal defeated',
+      statusIconName: 'x',
+      statusIconClassName: 'h-4 w-4 mr-2 text-red-500',
+      buttonLabel: null,
+      buttonIconName: null,
+      isButtonDisabled: true,
+      showButton: false,
+    });
   });
 
   it('parseSimulationType returns null for unknown values', () => {

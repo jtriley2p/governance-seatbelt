@@ -1,5 +1,6 @@
 'use client';
 
+import { ProposalActionIcon } from '@/components/ProposalActionIcon';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -10,14 +11,13 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import type { Proposal } from '@/hooks/use-simulation-results';
-import { CheckCircleIcon, PlayIcon, SendIcon } from 'lucide-react';
+import { getProposalCardUi } from '@/lib/proposal-action-ui';
+import type { ProposalActionResolution } from '@/lib/write-actions';
 import { useState } from 'react';
-
-export type SimulationType = 'new' | 'proposed' | 'executed';
 
 interface ProposalCardProps {
   proposal: Proposal;
-  simulationType: SimulationType;
+  action: ProposalActionResolution;
   onAction: () => void;
   isPending: boolean;
   isPendingConfirmation: boolean;
@@ -27,7 +27,7 @@ interface ProposalCardProps {
 
 export function ProposalCard({
   proposal,
-  simulationType,
+  action,
   onAction,
   isPending,
   isPendingConfirmation,
@@ -35,9 +35,7 @@ export function ProposalCard({
   className,
 }: ProposalCardProps) {
   const [selectedCallIndex, setSelectedCallIndex] = useState(0);
-
   const hasMultipleCalls = proposal.targets.length > 1;
-
   const currentTarget = hasMultipleCalls
     ? proposal.targets[selectedCallIndex]
     : proposal.targets[0];
@@ -50,42 +48,17 @@ export function ProposalCard({
   const currentCalldata = hasMultipleCalls
     ? proposal.calldatas[selectedCallIndex]
     : proposal.calldatas[0];
-
-  // Determine action text based on simulation type
-  const getActionText = () => {
-    if (simulationType === 'executed') return 'Already executed';
-    if (!isConnected) return 'Connect Wallet';
-    if (isPendingConfirmation) return 'Confirming...';
-    if (isPending) {
-      return simulationType === 'new' ? 'Creating...' : 'Executing...';
-    }
-    return simulationType === 'new' ? 'Propose' : 'Execute';
-  };
-
-  const getReadyText = () => {
-    if (simulationType === 'executed') return 'Already executed';
-    return simulationType === 'new' ? 'Ready to propose' : 'Ready to execute';
-  };
-
-  const getCardTitle = () => {
-    if (simulationType === 'executed') return 'Executed Proposal';
-    return simulationType === 'new' ? 'Proposal Creation' : 'Proposal Execution';
-  };
-
-  const getCardDescription = () => {
-    if (simulationType === 'executed') return 'This proposal has already been executed';
-    return 'Transaction Parameters';
-  };
-
-  const isDisabled =
-    isPending || isPendingConfirmation || !isConnected || simulationType === 'executed';
-  const ActionIcon = simulationType === 'new' ? SendIcon : PlayIcon;
+  const card = getProposalCardUi(action, {
+    isConnected,
+    isPending,
+    isPendingConfirmation,
+  });
 
   return (
     <Card className={`w-full ${className || ''} border border-muted`}>
       <CardHeader className="px-6">
-        <CardTitle>{getCardTitle()}</CardTitle>
-        <CardDescription>{getCardDescription()}</CardDescription>
+        <CardTitle>{card.title}</CardTitle>
+        <CardDescription>{card.description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 pt-0 px-6">
         {hasMultipleCalls && (
@@ -145,20 +118,22 @@ export function ProposalCard({
       </CardContent>
       <CardFooter className="flex justify-between items-center border-t py-4 px-6 mt-auto">
         <div className="flex items-center text-sm text-muted-foreground">
-          <CheckCircleIcon
-            className={`h-4 w-4 mr-2 ${simulationType === 'executed' ? 'text-gray-400' : 'text-green-500'}`}
-          />
-          {getReadyText()}
+          <ProposalActionIcon iconName={card.statusIconName} className={card.statusIconClassName} />
+          {card.readyText}
         </div>
-        <Button
-          onClick={onAction}
-          disabled={isDisabled}
-          size="lg"
-          className="ml-6 px-6 font-medium cursor-pointer gap-2"
-        >
-          {!isDisabled && <ActionIcon className="h-4 w-4" />}
-          {getActionText()}
-        </Button>
+        {card.showButton && (
+          <Button
+            onClick={onAction}
+            disabled={card.isButtonDisabled}
+            size="lg"
+            className="ml-6 px-6 font-medium cursor-pointer gap-2"
+          >
+            {card.buttonIconName && (
+              <ProposalActionIcon iconName={card.buttonIconName} className="h-4 w-4" />
+            )}
+            {card.buttonLabel}
+          </Button>
+        )}
       </CardFooter>
     </Card>
   );

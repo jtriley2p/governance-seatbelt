@@ -20,6 +20,7 @@
       "metadata": {
         "schemaVersion": 1,
         "simulationType": "proposed",
+        "proposalState": "Queued",
         "proposalId": "123",
         "governorAddress": "0x9876543210fedcba9876543210fedcba98765432",
         "chainId": 1,

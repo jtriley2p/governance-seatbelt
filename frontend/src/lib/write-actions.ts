@@ -2,19 +2,57 @@ import type { Address } from 'viem';
 
 export type SimulationType = 'new' | 'proposed' | 'executed';
 export type WriteAction = 'propose' | 'execute';
+export type ProposalActionBlockedReason = 'defeated' | 'expired' | 'canceled' | 'unknown';
+export type ProposalActionResolution =
+  | { kind: 'propose' }
+  | { kind: 'execute' }
+  | { kind: 'executed' }
+  | { kind: 'invalid' }
+  | { kind: 'blocked'; reason: ProposalActionBlockedReason };
 
 export function parseSimulationType(value: unknown): SimulationType | null {
   if (value === 'new' || value === 'proposed' || value === 'executed') return value;
   return null;
 }
 
-export function getWriteActionForSimulationType(simulationType: unknown): WriteAction | null {
-  if (simulationType == null) return 'propose';
-  const parsed = parseSimulationType(simulationType);
-  if (!parsed) return null;
-  if (parsed === 'proposed') return 'execute';
-  if (parsed === 'executed') return null;
-  return 'propose';
+export function resolveProposalAction(
+  simulationType: unknown,
+  proposalState?: string | null,
+): ProposalActionResolution {
+  if (simulationType == null) {
+    return { kind: 'propose' };
+  }
+
+  const parsedSimulationType = parseSimulationType(simulationType);
+  if (!parsedSimulationType) {
+    return { kind: 'invalid' };
+  }
+
+  if (parsedSimulationType === 'new') {
+    return { kind: 'propose' };
+  }
+
+  if (parsedSimulationType === 'executed') {
+    return { kind: 'executed' };
+  }
+
+  if (proposalState === 'Queued') {
+    return { kind: 'execute' };
+  }
+
+  if (proposalState === 'Defeated') {
+    return { kind: 'blocked', reason: 'defeated' };
+  }
+
+  if (proposalState === 'Expired') {
+    return { kind: 'blocked', reason: 'expired' };
+  }
+
+  if (proposalState === 'Canceled') {
+    return { kind: 'blocked', reason: 'canceled' };
+  }
+
+  return { kind: 'blocked', reason: 'unknown' };
 }
 
 export type ProposeLike = {

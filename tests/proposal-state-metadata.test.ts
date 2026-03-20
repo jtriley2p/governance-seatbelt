@@ -76,7 +76,7 @@ describe('proposalState metadata', () => {
     cleanup();
   });
 
-  it('should not include proposalState in metadata when not provided', async () => {
+  it('should omit proposalState from metadata when not provided', async () => {
     cleanup();
     mkdirSync(testOutputDir, { recursive: true });
 
@@ -90,7 +90,7 @@ describe('proposalState metadata', () => {
       outputDir: testOutputDir,
       governorAddress: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       simulationType: 'proposed',
-      // proposalState intentionally omitted
+      // proposalState intentionally omitted; frontend execution policy is validated separately
     };
 
     await generateAndSaveReports(params);
