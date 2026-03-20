@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { encodeFunctionData, parseAbi } from 'viem';
-import { arbitrum, base, optimism } from 'viem/chains';
+import { arbitrum, base, optimism, unichain } from 'viem/chains';
 import type { CallTrace, CrossChainExecutionJob } from '../../types';
 import {
   extractArbitrumL1L2Jobs,
@@ -403,6 +403,41 @@ describe('Cross-Chain Bridge Parsing Integration Tests', () => {
         bridgeType: 'OptimismL1L2',
         destinationChainId: 480,
       });
+    });
+
+    test('extractOptimismL1L2JobsFromProposal preserves the original sender for Unichain forwarded calls', () => {
+      const timelock = '0x1a9C8182C09F50C8318d769245beA52c32BE35BC';
+      const unichainMessenger = '0x9A3D64E386C18Cb1d6d5179a9596A4B5736e98A6';
+      const router = '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D';
+      const finalTarget = '0x4200000000000000000000000000000000000006';
+      const finalData = '0xd0e30db0';
+      const forwardData = encodeFunctionData({
+        abi: parseAbi(['function forward(address target, bytes data)']),
+        functionName: 'forward',
+        args: [finalTarget, finalData],
+      });
+      const sendMessageCalldata = encodeFunctionData({
+        abi: parseAbi([
+          'function sendMessage(address _target, bytes _message, uint32 _minGasLimit)',
+        ]),
+        functionName: 'sendMessage',
+        args: [router, forwardData, 1_000_000],
+      });
+
+      const messages = extractOptimismL1L2JobsFromProposal(
+        [unichainMessenger],
+        [sendMessageCalldata],
+        timelock,
+      );
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({
+        bridgeType: 'OptimismL1L2',
+        destinationChainId: unichain.id,
+        l2FromAddress: timelock,
+      });
+      expect(firstCall(messages[0]).l2TargetAddress).toBe(finalTarget);
+      expect(firstCall(messages[0]).l2InputData).toBe(finalData);
     });
 
     test('extractOptimismL1L2JobsFromProposal parses portal depositTransaction targets', () => {

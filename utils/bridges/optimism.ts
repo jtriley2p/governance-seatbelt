@@ -8,6 +8,7 @@ import {
   toFunctionSelector,
   toHex,
 } from 'viem';
+import { unichain } from 'viem/chains';
 import type { CallTrace, TenderlySimulation } from '../../types.d';
 import type { CrossChainExecutionJob } from '../../types.d';
 
@@ -66,6 +67,8 @@ const L2_CROSS_CHAIN_ACCOUNT_FORWARD_ABI = parseAbi([
 const CROSS_CHAIN_FORWARD_SELECTOR = toFunctionSelector(
   'function forward(address target, bytes data)',
 );
+
+const UNICHAIN_CHAIN_ID = unichain.id;
 
 // Constants for validation
 const VALIDATION_CONSTANTS = {
@@ -306,7 +309,10 @@ function buildMessageFromDecodedPayload(input: {
     slice(input.messageData, 0, 4) === CROSS_CHAIN_FORWARD_SELECTOR &&
     (!expectedForwarder || getAddress(input.targetAddress) === getAddress(expectedForwarder));
 
-  // Decode forwarded payloads so we simulate and label the final target contract call.
+  // Decode forwarded payloads so we simulate the final target/data directly.
+  // Most OP chains execute the unwrapped call from a CrossChainAccount-style forwarder,
+  // but Unichain admin ownership is held by the aliased timelock, so its destination
+  // sim must preserve the original bridged sender instead of rewriting it to the forwarder.
   if (shouldAttemptForwardDecode) {
     try {
       const decodedForward = decodeFunctionData({
@@ -315,7 +321,9 @@ function buildMessageFromDecodedPayload(input: {
       });
       if (decodedForward.functionName === 'forward') {
         const [forwardTarget, forwardData] = decodedForward.args;
-        l2FromAddress = getAddress(input.targetAddress);
+        if (input.destinationChainId !== UNICHAIN_CHAIN_ID) {
+          l2FromAddress = getAddress(input.targetAddress);
+        }
         l2TargetAddress = getAddress(forwardTarget);
         l2InputData = forwardData as Hex;
       }
