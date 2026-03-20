@@ -46,13 +46,12 @@ export function CrossChainPreview({ jobs }: { jobs: CrossChainJobPreview[] }) {
             </div>
 
             <div className="space-y-2">
-              {chainJobs.map((job, jobIndex) => {
+              {chainJobs.map((job) => {
                 const firstStep = job.steps[0];
                 const jobKey = `${job.chainId}-${job.bridgeType}-${job.sourceOrder}-${job.l2FromAddress}-${job.status}`;
                 const target = firstStep?.l2TargetAddress;
                 const targetLabel = firstStep?.targetLabel;
                 const call = firstStep ? formatCrossChainCall(firstStep) : '(empty job)';
-                const executionLabel = chainJobs.length > 1 ? `Execution ${jobIndex + 1}` : null;
 
                 const statusBadge =
                   job.status === 'success' ? (
@@ -73,9 +72,6 @@ export function CrossChainPreview({ jobs }: { jobs: CrossChainJobPreview[] }) {
                   <div key={jobKey} className="border border-border/40 rounded bg-muted/20 p-2.5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 text-xs">
-                        {executionLabel ? (
-                          <span className="text-muted-foreground">{executionLabel}</span>
-                        ) : null}
                         {targetLabel ? <span className="font-medium">{targetLabel}</span> : null}
                         {target ? (
                           <a
@@ -100,10 +96,6 @@ export function CrossChainPreview({ jobs }: { jobs: CrossChainJobPreview[] }) {
                     <code className="block mt-1.5 font-mono text-[10px] text-muted-foreground truncate">
                       {call}
                     </code>
-
-                    <div className="text-[10px] text-muted-foreground mt-1">
-                      {job.steps.length} step{job.steps.length === 1 ? '' : 's'}
-                    </div>
 
                     {job.error ? (
                       <div className="text-[10px] text-red-600 mt-1">{job.error}</div>

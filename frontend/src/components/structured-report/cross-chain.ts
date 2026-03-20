@@ -20,7 +20,6 @@ type CrossChainChainSummary = {
   successCount: number;
   failureCount: number;
   failures: Array<{
-    executionIndex: number;
     sourceOrder: number;
     status: 'failure' | 'skipped';
     call: string | null;
@@ -64,8 +63,7 @@ export function summarizeCrossChainJobs(jobs: CrossChainJobPreview[]): {
         successCount,
         failureCount,
         failures: chainJobs
-          .map((job, executionIndex) => ({
-            executionIndex,
+          .map((job) => ({
             sourceOrder: job.sourceOrder,
             call: job.steps[0] ? formatCrossChainCall(job.steps[0]) : null,
             targetLabel: job.steps[0]?.targetLabel,
@@ -74,8 +72,7 @@ export function summarizeCrossChainJobs(jobs: CrossChainJobPreview[]): {
             error: job.error,
           }))
           .filter((job) => job.status !== 'success')
-          .map(({ executionIndex, sourceOrder, status, call, targetLabel, target, error }) => ({
-            executionIndex,
+          .map(({ sourceOrder, status, call, targetLabel, target, error }) => ({
             sourceOrder,
             status: toFailureStatus(status),
             call,

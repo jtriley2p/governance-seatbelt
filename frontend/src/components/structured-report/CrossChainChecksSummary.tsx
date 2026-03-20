@@ -27,7 +27,7 @@ export function CrossChainChecksSummary({ jobs, onNavigateToChain }: CrossChainC
             <CheckCircleIcon className="h-5 w-5 text-green-500 mt-0.5" />
           )}
           <div>
-            <div className="font-semibold">Cross-chain jobs</div>
+            <div className="font-semibold">Cross-chain results</div>
             <div className="text-xs text-muted-foreground">
               L2 execution can fail independently of the main-chain checks.
             </div>
@@ -113,7 +113,6 @@ export function CrossChainChecksSummary({ jobs, onNavigateToChain }: CrossChainC
                     className="flex items-center gap-2 flex-wrap"
                   >
                     <span className="text-red-600 font-medium">
-                      {chain.total > 1 ? `Execution ${job.executionIndex + 1} ` : ''}
                       {job.status === 'skipped' ? 'skipped' : 'failed'}:
                     </span>
                     {job.call ? (
