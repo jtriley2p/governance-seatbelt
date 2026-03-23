@@ -25,7 +25,10 @@ const OWNER_ABI = parseAbi(['function owner() view returns (address)']);
 const V2_FACTORY_ABI = parseAbi(['function feeToSetter() view returns (address)']);
 const EXTERNAL_API_TIMEOUT_MS = 180000;
 
-type LaneKey = Extract<TestOnlyWormholeLaneKey, 'bnb' | 'polygon' | 'avalanche' | 'monad'>;
+type LaneKey = Extract<
+  TestOnlyWormholeLaneKey,
+  'bnb' | 'polygon' | 'avalanche' | 'monad' | 'tempo'
+>;
 
 function buildExecutionOptions(
   config: SimulationConfigNew,
@@ -62,6 +65,7 @@ describe('Wormhole lane live authority validation', () => {
     { laneKey: 'polygon', chainName: 'Polygon' },
     { laneKey: 'avalanche', chainName: 'Avalanche' },
     { laneKey: 'monad', chainName: 'Monad' },
+    { laneKey: 'tempo', chainName: 'Tempo' },
   ];
 
   test.each(supportedLanes)(

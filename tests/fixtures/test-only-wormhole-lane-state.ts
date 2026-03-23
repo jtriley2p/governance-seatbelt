@@ -1,6 +1,6 @@
 import { getAddress, pad, toHex } from 'viem';
 import type { Address } from 'viem';
-import { avalanche, bsc, celo, monad, polygon } from 'viem/chains';
+import { avalanche, bsc, celo, monad, polygon, tempo } from 'viem/chains';
 import type { SimulationConfigNew } from '../../types';
 
 export const TEST_ONLY_CELO_PRE_94_OWNER = getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071');
@@ -35,6 +35,12 @@ export const TEST_ONLY_WORMHOLE_LANES = {
     wormholeChainId: 48,
     l2FromAddress: getAddress('0xe783de89a7f0408687f051e3e6d0beb62719ebad'),
     name: 'Monad',
+  },
+  tempo: {
+    chainId: tempo.id,
+    wormholeChainId: 68,
+    l2FromAddress: getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b'),
+    name: 'Tempo Mainnet',
   },
 } as const;
 
@@ -106,6 +112,14 @@ export const TEST_ONLY_WORMHOLE_LANE_ARTIFACTS: Record<
     v4PoolManager: getAddress('0x100000000000000000000000000000000000b413'),
     feeAdapter: getAddress('0x100000000000000000000000000000000000b414'),
     tokenJar: getAddress('0x100000000000000000000000000000000000b415'),
+  },
+  tempo: {
+    crossChainAccount: getAddress('0x100000000000000000000000000000000000b510'),
+    v2Factory: getAddress('0x100000000000000000000000000000000000b511'),
+    v3Factory: getAddress('0x100000000000000000000000000000000000b512'),
+    v4PoolManager: getAddress('0x100000000000000000000000000000000000b513'),
+    feeAdapter: getAddress('0x100000000000000000000000000000000000b514'),
+    tokenJar: getAddress('0x100000000000000000000000000000000000b515'),
   },
 };
 

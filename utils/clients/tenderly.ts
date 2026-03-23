@@ -277,7 +277,14 @@ export async function simulateNew(
   // For new proposals, use simulation timing as created timing since they don't exist on-chain yet
   const proposalCreatedBlock = latestBlock;
 
-  return { sim, proposal, latestBlock, deps, proposalCreatedBlock };
+  return {
+    sim,
+    proposal,
+    latestBlock,
+    simulationTimestamp: simTimestamp,
+    deps,
+    proposalCreatedBlock,
+  };
 }
 
 /**
@@ -472,7 +479,14 @@ async function simulateProposed(
     blockNumber: proposalCreatedEvent.blockNumber,
   });
 
-  return { sim, proposal: formattedProposal, latestBlock, deps, proposalCreatedBlock };
+  return {
+    sim,
+    proposal: formattedProposal,
+    latestBlock,
+    simulationTimestamp: simTimestamp,
+    deps,
+    proposalCreatedBlock,
+  };
 }
 
 /**
@@ -614,6 +628,7 @@ async function simulateExecuted(
       sim,
       proposal: formattedProposal,
       latestBlock,
+      simulationTimestamp: proposalExecutedBlock?.timestamp ?? latestBlock.timestamp,
       deps,
       executor: tx.from,
       proposalCreatedBlock,
@@ -725,6 +740,7 @@ async function simulateExecuted(
     sim,
     proposal: formattedProposal,
     latestBlock,
+    simulationTimestamp: proposalExecutedBlock.timestamp,
     deps,
     executor: tx.from,
     proposalCreatedBlock,

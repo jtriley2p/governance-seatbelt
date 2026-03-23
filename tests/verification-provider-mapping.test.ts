@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { getAddress } from 'viem';
-import { worldchain, xLayer, zora } from 'viem/chains';
+import { tempo, worldchain, xLayer, zora } from 'viem/chains';
 
 function seedRpcEnv(): void {
   process.env.MAINNET_RPC_URL ??= 'http://localhost:8545';
@@ -50,7 +50,7 @@ function setMockFetch(mockFetch: typeof fetch): () => void {
 }
 
 describe('verification backend provider mapping', () => {
-  test('maps Zora to Blockscout, Worldchain to Etherscan v2, and XLayer to Sourcify-only', async () => {
+  test('maps Zora to Blockscout, Worldchain to Etherscan v2, and XLayer/Tempo to Sourcify-only', async () => {
     seedRpcEnv();
 
     const { VerificationBackend, getChainConfig } = await import('../utils/clients/client');
@@ -60,6 +60,7 @@ describe('verification backend provider mapping', () => {
       VerificationBackend.EtherscanV2,
     );
     expect(getChainConfig(xLayer.id).verification?.backend).toBe(VerificationBackend.SourcifyOnly);
+    expect(getChainConfig(tempo.id).verification?.backend).toBe(VerificationBackend.SourcifyOnly);
   });
 
   test('does not call unsupported explorer APIs for Sourcify-only chains', async () => {

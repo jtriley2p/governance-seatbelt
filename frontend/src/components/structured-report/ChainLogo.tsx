@@ -11,6 +11,7 @@ import {
   optimism,
   polygon,
   soneium,
+  tempo,
   unichain,
   worldchain,
   xLayer,
@@ -31,6 +32,7 @@ import {
 // - Polygon: https://polygon.technology
 // - Avalanche: https://www.avax.network
 // - Monad: https://www.monad.xyz and https://docs.monad.xyz/developer-essentials/network-information
+// - Tempo: https://tempo.xyz
 // - Celo: https://celo.org/brand-kit
 // - X Layer: https://static.oklink.com
 // - World: https://world.org/brand#world-logo
@@ -55,6 +57,7 @@ export function ChainLogo({ chainId, size = 20 }: { chainId: number; size?: numb
     [polygon.id]: '/chain-logos/polygon.png',
     [avalanche.id]: '/chain-logos/avalanche.svg',
     [monad.id]: '/chain-logos/monad.svg',
+    [tempo.id]: '/chain-logos/tempo.svg',
   };
 
   const logoPath = logoFiles[chainId];

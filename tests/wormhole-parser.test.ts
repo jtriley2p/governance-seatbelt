@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { encodeFunctionData, getAddress } from 'viem';
-import { avalanche, bsc, celo, monad, polygon } from 'viem/chains';
+import { avalanche, bsc, celo, monad, polygon, tempo } from 'viem/chains';
 import {
   WORMHOLE_SEND_MESSAGE_ABI,
   extractWormholeExecutionJobsFromProposal,
@@ -43,6 +43,13 @@ describe('wormhole proposal parser', () => {
       expectedSender: getAddress('0xe783de89a7f0408687f051e3e6d0beb62719ebad'),
       target: getAddress('0x204faca1764b154221e35c0d20abb3c525710498'),
     },
+    {
+      chainName: 'Tempo',
+      wormholeChainId: 68,
+      destinationChainId: tempo.id,
+      expectedSender: getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b'),
+      target: getAddress('0x24a3d4757E330890A8b8978028c9e58E04611fd6'),
+    },
   ];
 
   test('extracts celo destination calls from wormhole sendMessage calldata', () => {
@@ -78,6 +85,7 @@ describe('wormhole proposal parser', () => {
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.destinationChainId).toBe(celo.id);
     expect(jobs[0]?.bridgeType).toBe('WormholeL1L2');
+    expect(jobs[0]?.wormholeChainId).toBe(14);
     expect(jobs[0]?.l2FromAddress).toBe(getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071'));
     expect(jobs[0]?.sourceOrder).toBe(0);
     expect(jobs[0]?.calls.map((call) => call.l2TargetAddress)).toEqual(celoTargets);
@@ -107,6 +115,7 @@ describe('wormhole proposal parser', () => {
 
       expect(jobs).toHaveLength(1);
       expect(jobs[0]?.destinationChainId).toBe(destinationChainId);
+      expect(jobs[0]?.wormholeChainId).toBe(wormholeChainId);
       expect(jobs[0]?.l2FromAddress).toBe(expectedSender);
       expect(jobs[0]?.calls).toHaveLength(1);
     },

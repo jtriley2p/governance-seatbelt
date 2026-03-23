@@ -94,6 +94,7 @@ export interface SimulationResult {
   proposal: ProposalEvent;
   deps: ProposalData;
   latestBlock: SimulationBlock;
+  simulationTimestamp?: bigint;
   executor?: string; // Who executed the proposal (for executed proposals)
   proposalCreatedBlock?: SimulationBlock; // Block when proposal was created
   proposalExecutedBlock?: SimulationBlock; // Block when proposal was executed (for executed proposals)
@@ -256,6 +257,7 @@ export interface CrossChainExecutionJob {
   bridgeType: BridgeType;
   destinationChainId: number;
   l2FromAddress: Address;
+  wormholeChainId?: number;
   sourceOrder: number;
   calls: CrossChainExecutionCall[];
 }

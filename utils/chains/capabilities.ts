@@ -11,6 +11,7 @@ import {
   optimism,
   polygon,
   soneium,
+  tempo,
   unichain,
   worldchain,
   xLayer,
@@ -86,6 +87,11 @@ const CHAIN_CAPABILITIES: Record<number, ChainCapability> = {
     isOpStackDestination: false,
   },
   [monad.id]: {
+    supportsL2Checks: true,
+    supportsTenderlyDestinationSimulation: true,
+    isOpStackDestination: false,
+  },
+  [tempo.id]: {
     supportsL2Checks: true,
     supportsTenderlyDestinationSimulation: true,
     isOpStackDestination: false,

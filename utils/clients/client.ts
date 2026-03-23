@@ -13,6 +13,7 @@ import {
   optimism,
   polygon,
   soneium,
+  tempo,
   unichain,
   worldchain,
   xLayer,
@@ -83,6 +84,7 @@ const CELO_RPC_URL = process.env.CELO_RPC_URL || celo.rpcUrls.default.http[0];
 const POLYGON_RPC_URL = process.env.POLYGON_RPC_URL || 'https://polygon-bor-rpc.publicnode.com';
 const AVALANCHE_RPC_URL = process.env.AVALANCHE_RPC_URL || avalanche.rpcUrls.default.http[0];
 const MONAD_RPC_URL = process.env.MONAD_RPC_URL || monad.rpcUrls.default.http[0];
+const TEMPO_RPC_URL = process.env.TEMPO_RPC_URL || tempo.rpcUrls.default.http[0];
 const WORLDCHAIN_RPC_URL = process.env.WORLDCHAIN_RPC_URL || worldchain.rpcUrls.default.http[0];
 const ZORA_RPC_URL = process.env.ZORA_RPC_URL || zora.rpcUrls.default.http[0];
 const XLAYER_RPC_URL = process.env.XLAYER_RPC_URL || xLayer.rpcUrls.default.http[0];
@@ -103,6 +105,7 @@ type ChainById = {
   [polygon.id]: typeof polygon;
   [avalanche.id]: typeof avalanche;
   [monad.id]: typeof monad;
+  [tempo.id]: typeof tempo;
   [worldchain.id]: typeof worldchain;
   [zora.id]: typeof zora;
   [xLayer.id]: typeof xLayer;
@@ -122,6 +125,7 @@ const CHAIN_BY_ID: ChainById = {
   [polygon.id]: polygon,
   [avalanche.id]: avalanche,
   [monad.id]: monad,
+  [tempo.id]: tempo,
   [worldchain.id]: worldchain,
   [zora.id]: zora,
   [xLayer.id]: xLayer,
@@ -286,6 +290,17 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     },
     rpcUrl: MONAD_RPC_URL,
   },
+  [tempo.id]: {
+    chainId: tempo.id,
+    blockExplorer: {
+      baseUrl: tempo.blockExplorers?.default.url || 'https://explore.tempo.xyz',
+    },
+    verification: {
+      backend: VerificationBackend.SourcifyOnly,
+      degradedReason: 'Tempo explorer verification API is not supported yet; using Sourcify only.',
+    },
+    rpcUrl: TEMPO_RPC_URL,
+  },
   [worldchain.id]: {
     chainId: worldchain.id,
     blockExplorer: {
@@ -423,6 +438,10 @@ const clients = {
   [monad.id]: createPublicClient({
     chain: monad,
     transport: http(CHAIN_CONFIGS[monad.id].rpcUrl),
+  }),
+  [tempo.id]: createPublicClient({
+    chain: tempo,
+    transport: http(CHAIN_CONFIGS[tempo.id].rpcUrl),
   }),
   [worldchain.id]: createPublicClient({
     chain: worldchain,
