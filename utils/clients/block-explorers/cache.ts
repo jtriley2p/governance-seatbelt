@@ -28,7 +28,7 @@ if (!existsSync(CONTRACT_NAME_CACHE_DIR)) {
 const abiCache: Record<string, Abi> = {};
 
 export type VerificationSource = 'sourcify' | 'block-explorer' | 'none';
-export type VerificationBackendCacheKey = 'etherscan-v2' | 'blockscout' | 'sourcify-only';
+export type VerificationBackendCacheKey = 'etherscan-v2' | 'blockscout' | 'tempo' | 'sourcify-only';
 
 export interface VerificationCacheEntry {
   schemaVersion: 2;
@@ -195,6 +195,7 @@ export class CacheManager {
           const verificationBackend =
             cachedObj.verificationBackend === 'etherscan-v2' ||
             cachedObj.verificationBackend === 'blockscout' ||
+            cachedObj.verificationBackend === 'tempo' ||
             cachedObj.verificationBackend === 'sourcify-only'
               ? cachedObj.verificationBackend
               : undefined;

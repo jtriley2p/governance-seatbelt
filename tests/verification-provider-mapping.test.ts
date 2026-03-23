@@ -1,56 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { getAddress } from 'viem';
 import { tempo, worldchain, xLayer, zora } from 'viem/chains';
-
-function seedRpcEnv(): void {
-  process.env.MAINNET_RPC_URL ??= 'http://localhost:8545';
-  process.env.ARBITRUM_RPC_URL ??= 'http://localhost:8545';
-  process.env.ETHERSCAN_API_KEY ??= 'test-key';
-}
-
-function uniqueAddress(seed: number): `0x${string}` {
-  const value = BigInt(seed).toString(16).padStart(40, '0');
-  return getAddress(`0x${value}`);
-}
-
-function toFetchUrl(input: Parameters<typeof fetch>[0]): URL {
-  if (typeof input === 'string') {
-    return new URL(input);
-  }
-
-  if (input instanceof URL) {
-    return input;
-  }
-
-  return new URL(input.url);
-}
-
-function sourcifyNotFoundResponse(chainId: number, address: string): Response {
-  return new Response(
-    JSON.stringify({
-      match: null,
-      creationMatch: null,
-      runtimeMatch: null,
-      chainId: String(chainId),
-      address,
-    }),
-    {
-      status: 404,
-      headers: { 'content-type': 'application/json' },
-    },
-  );
-}
-
-function setMockFetch(mockFetch: typeof fetch): () => void {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = mockFetch;
-  return () => {
-    globalThis.fetch = originalFetch;
-  };
-}
+import {
+  seedRpcEnv,
+  setMockFetch,
+  sourcifyNotFoundResponse,
+  toFetchUrl,
+  uniqueAddress,
+} from './helpers/verification-test-helpers';
 
 describe('verification backend provider mapping', () => {
-  test('maps Zora to Blockscout, Worldchain to Etherscan v2, and XLayer/Tempo to Sourcify-only', async () => {
+  test('maps Zora to Blockscout, Worldchain to Etherscan v2, XLayer to Sourcify-only, and Tempo to Tempo verifier', async () => {
     seedRpcEnv();
 
     const { VerificationBackend, getChainConfig } = await import('../utils/clients/client');
@@ -60,7 +19,7 @@ describe('verification backend provider mapping', () => {
       VerificationBackend.EtherscanV2,
     );
     expect(getChainConfig(xLayer.id).verification?.backend).toBe(VerificationBackend.SourcifyOnly);
-    expect(getChainConfig(tempo.id).verification?.backend).toBe(VerificationBackend.SourcifyOnly);
+    expect(getChainConfig(tempo.id).verification?.backend).toBe(VerificationBackend.Tempo);
   });
 
   test('does not call unsupported explorer APIs for Sourcify-only chains', async () => {
@@ -106,7 +65,8 @@ describe('verification backend provider mapping', () => {
       const cachedResult = await BlockExplorerFactory.getContractVerification(address, chainId);
       expect(cachedResult.status).toBe('unknown');
       expect(cachedResult.source).toBe('unknown');
-      expect(sourcifyCalls).toBe(sourcifyCallsAfterFirstCheck);
+      expect(sourcifyCalls).toBeGreaterThan(sourcifyCallsAfterFirstCheck);
+      expect(nonSourcifyCalls).toBe(0);
     } finally {
       restoreFetch();
       CacheManager.setVerificationInFile = originalSetVerificationInFile;

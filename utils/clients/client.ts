@@ -29,6 +29,7 @@ export enum BlockExplorerSource {
 export enum VerificationBackend {
   EtherscanV2 = 'etherscan-v2',
   Blockscout = 'blockscout',
+  Tempo = 'tempo',
   SourcifyOnly = 'sourcify-only',
 }
 
@@ -296,8 +297,8 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
       baseUrl: tempo.blockExplorers?.default.url || 'https://explore.tempo.xyz',
     },
     verification: {
-      backend: VerificationBackend.SourcifyOnly,
-      degradedReason: 'Tempo explorer verification API is not supported yet; using Sourcify only.',
+      backend: VerificationBackend.Tempo,
+      apiUrl: 'https://contracts.tempo.xyz',
     },
     rpcUrl: TEMPO_RPC_URL,
   },
@@ -348,6 +349,7 @@ export function getChainConfig(chainId: number): ChainConfig {
 export function formatVerificationBackend(backend: VerificationBackend): string {
   if (backend === VerificationBackend.EtherscanV2) return 'Etherscan v2 API';
   if (backend === VerificationBackend.Blockscout) return 'Blockscout API';
+  if (backend === VerificationBackend.Tempo) return 'Tempo verifier API';
   return 'Sourcify-only (no verification API backend)';
 }
 

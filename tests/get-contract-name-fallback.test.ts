@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { existsSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { getAddress } from 'viem';
 import type { TenderlyContract } from '../types.d';
+import { CacheManager } from '../utils/clients/block-explorers/cache';
 import { BlockExplorerFactory } from '../utils/clients/block-explorers/factory';
 import { getContractName } from '../utils/clients/tenderly';
 
@@ -20,6 +23,10 @@ describe('getContractName() explorer fallback', () => {
 
     try {
       const targetAddress = getAddress('0x0000000000000000000000000000000000000001');
+      CacheManager.clearMemory();
+      const cachePath = join(process.cwd(), 'cache', 'contract-names', `1-${targetAddress}.json`);
+      if (existsSync(cachePath)) unlinkSync(cachePath);
+
       const name = await getContractName({ address: targetAddress } as TenderlyContract, 1);
 
       expect(called).toBe(true);
