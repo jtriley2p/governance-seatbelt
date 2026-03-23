@@ -25,7 +25,10 @@ const OWNER_ABI = parseAbi(['function owner() view returns (address)']);
 const V2_FACTORY_ABI = parseAbi(['function feeToSetter() view returns (address)']);
 const EXTERNAL_API_TIMEOUT_MS = 180000;
 
-type LaneKey = Extract<TestOnlyWormholeLaneKey, 'bnb' | 'polygon' | 'avalanche' | 'monad' | 'tempo'>;
+type LaneKey = Extract<
+  TestOnlyWormholeLaneKey,
+  'bnb' | 'polygon' | 'avalanche' | 'monad' | 'tempo'
+>;
 
 function buildExecutionOptions(
   config: SimulationConfigNew,

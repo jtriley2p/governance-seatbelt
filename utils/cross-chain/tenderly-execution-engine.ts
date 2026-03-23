@@ -1,4 +1,4 @@
-import { getAddress, type Address } from 'viem';
+import { type Address, getAddress } from 'viem';
 import type {
   CrossChainExecutionJob,
   CrossChainExecutionJobResult,
@@ -23,13 +23,13 @@ import {
   mergeStateObjects,
 } from '../derived-state';
 import {
-  buildWormholeReceiverSimulationCall,
-  getOverriddenWormholeReceiverSequence,
-  getWormholeReceiverRuntimeStateKey,
   WORMHOLE_CORE_STUB_RUNTIME_BYTECODE,
   WORMHOLE_RECEIVER_ABI,
   type WormholeReceiverRuntimeState,
   type WormholeReceiverRuntimeStateCacheKey,
+  buildWormholeReceiverSimulationCall,
+  getOverriddenWormholeReceiverSequence,
+  getWormholeReceiverRuntimeStateKey,
 } from './wormhole-receiver-sim';
 
 export interface TenderlySimulationExecutionOptions {
@@ -215,7 +215,10 @@ async function resolveWormholeReceiverRuntimeState(
 ): Promise<WormholeReceiverRuntimeState | null> {
   if (!isWormholeReceiverModeJob(job)) return null;
 
-  const runtimeStateKey = getWormholeReceiverRuntimeStateKey(job.destinationChainId, job.l2FromAddress);
+  const runtimeStateKey = getWormholeReceiverRuntimeStateKey(
+    job.destinationChainId,
+    job.l2FromAddress,
+  );
   const overriddenSequence = getOverriddenWormholeReceiverSequence(workingState, job.l2FromAddress);
   const cached = runtimeStateByKey[runtimeStateKey];
   if (cached) {
@@ -262,10 +265,7 @@ async function resolveWormholeReceiverRuntimeState(
   return runtimeState;
 }
 
-function formatPayloadForLog(
-  payload: TenderlyPayload,
-  isReceiverMode: boolean,
-): string {
+function formatPayloadForLog(payload: TenderlyPayload, isReceiverMode: boolean): string {
   if (!isReceiverMode) {
     return JSON.stringify(payload, null, 2);
   }
@@ -278,7 +278,8 @@ function formatPayloadForLog(
       value: payload.value,
       gas: payload.gas,
       receiverMode: true,
-      inputPrefix: typeof payload.input === 'string' ? `${payload.input.slice(0, 18)}...` : payload.input,
+      inputPrefix:
+        typeof payload.input === 'string' ? `${payload.input.slice(0, 18)}...` : payload.input,
       stateObjectKeys: Object.keys(payload.state_objects ?? {}),
     },
     null,
@@ -315,13 +316,14 @@ function buildDestinationSimulationPayload(
 ): TenderlyPayload {
   const { save, saveIfFails } = getTenderlySaveFlags(true);
   const wormholeCoreAddress = getWormholeReceiverCoreAddress(job);
-  const stateObjects = isReceiverMode && wormholeCoreAddress
-    ? mergeStateObjects(workingState, {
-        [wormholeCoreAddress]: {
-          code: WORMHOLE_CORE_STUB_RUNTIME_BYTECODE,
-        },
-      })
-    : workingState;
+  const stateObjects =
+    isReceiverMode && wormholeCoreAddress
+      ? mergeStateObjects(workingState, {
+          [wormholeCoreAddress]: {
+            code: WORMHOLE_CORE_STUB_RUNTIME_BYTECODE,
+          },
+        })
+      : workingState;
 
   return {
     network_id: job.destinationChainId.toString() as TenderlyPayload['network_id'],

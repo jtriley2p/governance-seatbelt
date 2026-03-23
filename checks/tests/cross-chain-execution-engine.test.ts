@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { decodeAbiParameters, decodeFunctionData, encodeFunctionData, getAddress, parseAbi } from 'viem';
+import {
+  decodeAbiParameters,
+  decodeFunctionData,
+  encodeFunctionData,
+  getAddress,
+  parseAbi,
+} from 'viem';
 import { mainnet, tempo } from 'viem/chains';
 import type { TenderlySimulation } from '../../types.d';
 import { WORMHOLE_SEND_MESSAGE_ABI } from '../../utils/bridges/wormhole';
@@ -514,9 +520,11 @@ describe('cross-chain destination execution engine', () => {
     expect(jobResult?.stepResults).toHaveLength(1);
     expect(jobResult?.stepResults[0]?.sim?.simulation.id).toBe('tempo-receiver-step');
     expect(result.crossChainFailure).toBe(false);
-    expect(result.destinationStateByChain[tempo.id]?.[tempoReceiver]?.storage?.[
-      '0x0000000000000000000000000000000000000000000000000000000000000000'
-    ]).toBe('0x01');
+    expect(
+      result.destinationStateByChain[tempo.id]?.[tempoReceiver]?.storage?.[
+        '0x0000000000000000000000000000000000000000000000000000000000000000'
+      ],
+    ).toBe('0x01');
     expect(result.destinationStateByChain[tempo.id]?.[tempoWormholeCore]).toBeUndefined();
   });
 
@@ -536,7 +544,9 @@ describe('cross-chain destination execution engine', () => {
       }),
     );
 
-    const result = await handleCrossChainSimulations(makeSourceResult([tempoCalldata, celoCalldata]));
+    const result = await handleCrossChainSimulations(
+      makeSourceResult([tempoCalldata, celoCalldata]),
+    );
 
     expect(mockedSendSimulation).toHaveBeenCalledTimes(1);
     expect(transportCalls[0]).toMatchObject({
@@ -615,8 +625,14 @@ describe('cross-chain destination execution engine', () => {
   test('uses receiver state overrides for later tempo jobs on the same chain', async () => {
     const tempoFirstTarget = getAddress('0x24a3d4757E330890A8b8978028c9e58E04611fd6');
     const tempoSecondTarget = getAddress('0x33620f62C5b9B2086dD6b62F4A297A9f30347029');
-    const firstCalldata = makeWormholeCalldata([{ target: tempoFirstTarget, data: '0x8da5cb5b' }], 68);
-    const secondCalldata = makeWormholeCalldata([{ target: tempoSecondTarget, data: '0x8da5cb5b' }], 68);
+    const firstCalldata = makeWormholeCalldata(
+      [{ target: tempoFirstTarget, data: '0x8da5cb5b' }],
+      68,
+    );
+    const secondCalldata = makeWormholeCalldata(
+      [{ target: tempoSecondTarget, data: '0x8da5cb5b' }],
+      68,
+    );
 
     enqueueSimulation(
       makeSimulation({
@@ -683,9 +699,11 @@ describe('cross-chain destination execution engine', () => {
     const firstResult = await handleCrossChainSimulations(makeSourceResult([firstCalldata]));
 
     expect(firstResult.destinationJobResults[0]?.status).toBe('success');
-    expect(firstResult.destinationStateByChain[tempo.id]?.[tempoReceiver]?.storage?.[
-      '0x0000000000000000000000000000000000000000000000000000000000000000'
-    ]).toBe('0x09');
+    expect(
+      firstResult.destinationStateByChain[tempo.id]?.[tempoReceiver]?.storage?.[
+        '0x0000000000000000000000000000000000000000000000000000000000000000'
+      ],
+    ).toBe('0x09');
 
     enqueueSimulation(
       makeSimulation({

@@ -277,7 +277,14 @@ export async function simulateNew(
   // For new proposals, use simulation timing as created timing since they don't exist on-chain yet
   const proposalCreatedBlock = latestBlock;
 
-  return { sim, proposal, latestBlock, simulationTimestamp: simTimestamp, deps, proposalCreatedBlock };
+  return {
+    sim,
+    proposal,
+    latestBlock,
+    simulationTimestamp: simTimestamp,
+    deps,
+    proposalCreatedBlock,
+  };
 }
 
 /**

@@ -1,7 +1,6 @@
-import { encodeAbiParameters, encodeFunctionData, parseAbi, type Address, type Hex } from 'viem';
+import { type Address, type Hex, encodeAbiParameters, encodeFunctionData, parseAbi } from 'viem';
 import type { CrossChainExecutionJob } from '../../types.d';
 import type { SimulationStateObjects } from '../derived-state';
-import { WORMHOLE_CORE_STUB_RUNTIME_BYTECODE } from './wormhole-core-stub-bytecode';
 
 export { WORMHOLE_CORE_STUB_RUNTIME_BYTECODE } from './wormhole-core-stub-bytecode';
 
@@ -75,7 +74,11 @@ function buildWormholeExecutionPayload(
   );
 }
 
-function buildWormholeMessageEnvelope(payload: Hex, sequence: bigint, sourceTimestamp: bigint): Hex {
+function buildWormholeMessageEnvelope(
+  payload: Hex,
+  sequence: bigint,
+  sourceTimestamp: bigint,
+): Hex {
   return encodeAbiParameters(
     [{ type: 'uint32' }, { type: 'uint64' }, { type: 'bytes' }],
     [getWormholeMessageTimestamp(sourceTimestamp), sequence, payload],
