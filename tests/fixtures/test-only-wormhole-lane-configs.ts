@@ -24,8 +24,9 @@ export const REPRESENTATIVE_WORMHOLE_ROLLOUT_LANE_KEYS = [
   'polygon',
   'avalanche',
   'monad',
+  'tempo',
 ] as const satisfies ReadonlyArray<
-  Extract<TestOnlyWormholeLaneKey, 'bnb' | 'polygon' | 'avalanche' | 'monad'>
+  Extract<TestOnlyWormholeLaneKey, 'bnb' | 'polygon' | 'avalanche' | 'monad' | 'tempo'>
 >;
 
 export type LiveWormholeLaneValidationTargets = {
@@ -35,7 +36,7 @@ export type LiveWormholeLaneValidationTargets = {
 };
 
 export const LIVE_WORMHOLE_LANE_VALIDATION_TARGETS: Record<
-  Extract<TestOnlyWormholeLaneKey, 'bnb' | 'polygon' | 'avalanche' | 'monad'>,
+  Extract<TestOnlyWormholeLaneKey, 'bnb' | 'polygon' | 'avalanche' | 'monad' | 'tempo'>,
   LiveWormholeLaneValidationTargets
 > = {
   bnb: {
@@ -51,6 +52,11 @@ export const LIVE_WORMHOLE_LANE_VALIDATION_TARGETS: Record<
     v2Factory: getAddress('0x182a927119d56008d921126764bf884221b10f59'),
     v3Factory: getAddress('0x204faca1764b154221e35c0d20abb3c525710498'),
     v4PoolManager: getAddress('0x188d586ddcf52439676ca21a244753fa19f9ea8e'),
+  },
+  tempo: {
+    v2Factory: getAddress('0xf9EC577a4E45B5278BB7Cf60FCBc20c3acAef68f'),
+    v3Factory: getAddress('0x24a3d4757E330890A8b8978028c9e58E04611fd6'),
+    v4PoolManager: getAddress('0x33620f62C5b9B2086dD6b62F4A297A9f30347029'),
   },
 };
 

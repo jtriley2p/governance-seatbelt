@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { encodeFunctionData, getAddress } from 'viem';
-import { mainnet } from 'viem/chains';
+import { mainnet, tempo } from 'viem/chains';
 import type { TenderlySimulation } from '../../types.d';
 import { WORMHOLE_SEND_MESSAGE_ABI } from '../../utils/bridges/wormhole';
 import { getChainConfig } from '../../utils/clients/client';
@@ -75,17 +75,19 @@ function enqueueFailure(error: string) {
 function makeSimulation(params: {
   id: string;
   status?: boolean;
+  chainId?: number;
   stateDiff?: Array<{ address: string; key: string; dirty: string; original?: string }>;
   errorReason?: string;
 }): TenderlySimulation {
   const sim = createMockSimulation([]);
+  const chainId = params.chainId ?? CELO_CHAIN_ID;
 
   sim.simulation.id = params.id;
-  sim.simulation.network_id = String(CELO_CHAIN_ID);
+  sim.simulation.network_id = String(chainId);
   sim.simulation.block_number = 31_000_000;
   sim.simulation.status = params.status ?? true;
 
-  sim.transaction.network_id = String(CELO_CHAIN_ID);
+  sim.transaction.network_id = String(chainId);
   sim.transaction.block_number = 31_000_000;
   sim.transaction.status = params.status ?? true;
 
@@ -118,6 +120,7 @@ function makeWormholeCalldata(
     value?: bigint;
     data: `0x${string}`;
   }>,
+  wormholeChainId = 14,
 ): `0x${string}` {
   return encodeFunctionData({
     abi: WORMHOLE_SEND_MESSAGE_ABI,
@@ -127,7 +130,7 @@ function makeWormholeCalldata(
       calls.map((call) => call.value ?? 0n),
       calls.map((call) => call.data),
       WORMHOLE_ADDRESS,
-      14,
+      wormholeChainId,
     ],
   });
 }
@@ -371,5 +374,52 @@ describe('cross-chain destination execution engine', () => {
       '0xseed',
     );
     expect(result.destinationStateByChain[CELO_CHAIN_ID]?.[target]).toBeUndefined();
+  });
+
+  test('uses wormhole receiver mode for tempo and stubs the Wormhole core contract', async () => {
+    const tempoTarget = getAddress('0x24a3d4757E330890A8b8978028c9e58E04611fd6');
+    const tempoReceiver = getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b');
+    const tempoWormholeCore = getAddress('0xbebdb6C8ddC678FfA9f8748f85C815C556Dd8ac6');
+    const calldata = makeWormholeCalldata([{ target: tempoTarget, data: '0x8da5cb5b' }], 68);
+
+    enqueueSimulation(
+      makeSimulation({
+        id: 'tempo-receiver-step',
+        chainId: tempo.id,
+        stateDiff: [
+          {
+            address: tempoReceiver,
+            key: '0x0000000000000000000000000000000000000000000000000000000000000000',
+            dirty: '0x01',
+          },
+        ],
+      }),
+    );
+
+    const result = await handleCrossChainSimulations(makeSourceResult([calldata]));
+
+    expect(mockedSendSimulation).toHaveBeenCalledTimes(1);
+    expect(transportCalls[0]).toMatchObject({
+      network_id: `${tempo.id}`,
+      from: '0x0000000000000000000000000000000000001234',
+      to: tempoReceiver,
+      value: '0',
+    });
+    expect(String(transportCalls[0]?.input ?? '')).toMatch(/^0xf953cec7/);
+    expect(transportCalls[0]?.state_objects).toMatchObject({
+      [tempoWormholeCore]: {
+        code: expect.stringMatching(/^0x/),
+      },
+    });
+
+    const [jobResult] = result.destinationJobResults;
+    expect(jobResult?.status).toBe('success');
+    expect(jobResult?.stepResults).toHaveLength(1);
+    expect(jobResult?.stepResults[0]?.sim?.simulation.id).toBe('tempo-receiver-step');
+    expect(result.crossChainFailure).toBe(false);
+    expect(result.destinationStateByChain[tempo.id]?.[tempoReceiver]?.storage?.[
+      '0x0000000000000000000000000000000000000000000000000000000000000000'
+    ]).toBe('0x01');
+    expect(result.destinationStateByChain[tempo.id]?.[tempoWormholeCore]).toBeUndefined();
   });
 });

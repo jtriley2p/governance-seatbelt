@@ -256,6 +256,7 @@ export interface CrossChainExecutionJob {
   bridgeType: BridgeType;
   destinationChainId: number;
   l2FromAddress: Address;
+  wormholeChainId?: number;
   sourceOrder: number;
   calls: CrossChainExecutionCall[];
 }

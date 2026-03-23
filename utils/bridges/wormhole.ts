@@ -1,5 +1,5 @@
 import { decodeFunctionData, getAddress, isHex, parseAbi, slice, toFunctionSelector } from 'viem';
-import { avalanche, bsc, celo, monad, polygon } from 'viem/chains';
+import { avalanche, bsc, celo, monad, polygon, tempo } from 'viem/chains';
 import type { CrossChainExecutionCall, CrossChainExecutionJob } from '../../types.d';
 
 export const WORMHOLE_SEND_MESSAGE_ABI = parseAbi([
@@ -43,6 +43,10 @@ const WORMHOLE_CHAIN_ID_TO_LANE_METADATA: Record<number, WormholeLaneMetadata> =
     destinationChainId: monad.id,
     l2FromAddress: getAddress('0xe783de89a7f0408687f051e3e6d0beb62719ebad'),
   },
+  68: {
+    destinationChainId: tempo.id,
+    l2FromAddress: getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b'),
+  },
 };
 
 function hasMatchingLengths(
@@ -56,6 +60,7 @@ function hasMatchingLengths(
 type WormholeDestinationContext = {
   destinationChainId: number;
   l2FromAddress: `0x${string}`;
+  wormholeChainId: number;
 };
 
 type WormholeBatch = WormholeDestinationContext & {
@@ -92,6 +97,7 @@ function resolveWormholeDestinationContext(
   return {
     destinationChainId: metadata.destinationChainId,
     l2FromAddress: metadata.l2FromAddress,
+    wormholeChainId,
   };
 }
 
@@ -154,7 +160,7 @@ function tryDecodeWormholeBatch(data: string): WormholeBatch | null {
 /**
  * Extract wormhole destination calls from proposal calldata.
  *
- * Current coverage: BNB (4), Polygon (5), Avalanche (6), Celo (14), and Monad (48).
+ * Current coverage: BNB (4), Polygon (5), Avalanche (6), Celo (14), Monad (48), and Tempo (68).
  */
 export function extractWormholeExecutionJobsFromProposal(
   targets: readonly string[],
@@ -174,6 +180,7 @@ export function extractWormholeExecutionJobsFromProposal(
       bridgeType: 'WormholeL1L2',
       destinationChainId: batch.destinationChainId,
       l2FromAddress: batch.l2FromAddress,
+      wormholeChainId: batch.wormholeChainId,
       sourceOrder: i,
       calls: batch.calls,
     });
