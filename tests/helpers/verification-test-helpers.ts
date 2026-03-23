@@ -20,7 +20,11 @@ export function toFetchUrl(input: Parameters<typeof fetch>[0]): URL {
     return input;
   }
 
-  return new URL(input.url);
+  if (input instanceof Request) {
+    return new URL(input.url);
+  }
+
+  throw new TypeError('Unsupported fetch input type');
 }
 
 export function sourcifyNotFoundResponse(chainId: number, address: string): Response {
