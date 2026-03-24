@@ -20,25 +20,34 @@ process.env.ARBITRUM_RPC_URL ??= 'http://localhost:8545';
 
 const actualClientModule = await import('../../utils/clients/client');
 
-const mockedReceiverReadContract = mock(
-  async (request: { address: `0x${string}`; functionName: string; blockNumber?: bigint }) => {
-    expect(request.address).toBe(getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b'));
-    if (request.functionName === 'nextMinimumSequence') return 7n;
-    if (request.functionName === 'EXPECTED_MESSAGE_PAYLOAD_VERSION') {
-      return '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b';
-    }
-    throw new Error(`Unexpected readContract call for ${request.functionName}`);
-  },
-);
+async function defaultReceiverReadContract(request: {
+  address: `0x${string}`;
+  functionName: string;
+  blockNumber?: bigint;
+}) {
+  expect(request.address).toBe(getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b'));
+  if (request.functionName === 'nextMinimumSequence') return 7n;
+  if (request.functionName === 'EXPECTED_MESSAGE_PAYLOAD_VERSION') {
+    return '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b';
+  }
+  throw new Error(`Unexpected readContract call for ${request.functionName}`);
+}
 
-const mockedGetBlockNumber = mock(async () => 100n);
-const mockedGetBlock = mock(async (request?: { blockNumber?: bigint }) => {
+async function defaultGetBlockNumber() {
+  return 100n;
+}
+
+async function defaultGetBlock(request?: { blockNumber?: bigint }) {
   const blockNumber = request?.blockNumber ?? 100n;
   return {
     number: blockNumber,
     timestamp: 1_600_000_000n + blockNumber,
   };
-});
+}
+
+const mockedReceiverReadContract = mock(defaultReceiverReadContract);
+const mockedGetBlockNumber = mock(defaultGetBlockNumber);
+const mockedGetBlock = mock(defaultGetBlock);
 
 const mockedGetClientForChain = mock(() => ({
   getBlockNumber: mockedGetBlockNumber,
@@ -118,6 +127,9 @@ afterEach(() => {
   mockedGetBlockNumber.mockClear();
   mockedGetBlock.mockClear();
   mockedReceiverReadContract.mockClear();
+  mockedGetBlockNumber.mockImplementation(defaultGetBlockNumber);
+  mockedGetBlock.mockImplementation(defaultGetBlock);
+  mockedReceiverReadContract.mockImplementation(defaultReceiverReadContract);
 });
 
 function enqueueSimulation(sim: TenderlySimulation) {
@@ -534,7 +546,7 @@ describe('cross-chain destination execution engine', () => {
     const tempoCalldata = makeWormholeCalldata([{ target: tempoTarget, data: '0x8da5cb5b' }], 68);
     const celoCalldata = makeWormholeCalldata([{ target: celoTarget, data: '0x99999999' }]);
 
-    mockedReceiverReadContract.mockImplementationOnce(async () => {
+    mockedReceiverReadContract.mockImplementation(async () => {
       throw new Error('receiver metadata unavailable');
     });
 
@@ -559,6 +571,39 @@ describe('cross-chain destination execution engine', () => {
     expect(result.destinationJobResults[0]?.error).toContain('receiver metadata unavailable');
     expect(result.destinationJobResults[0]?.stepResults).toHaveLength(0);
     expect(result.destinationJobResults[1]?.status).toBe('success');
+  });
+
+  test('retries a transient tempo historical block read before succeeding', async () => {
+    const tempoTarget = getAddress('0x24a3d4757E330890A8b8978028c9e58E04611fd6');
+    const tempoReceiver = getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b');
+    const calldata = makeWormholeCalldata([{ target: tempoTarget, data: '0x8da5cb5b' }], 68);
+
+    mockedGetBlock.mockImplementationOnce(async () => {
+      throw new Error('tempo historical block unavailable');
+    });
+
+    enqueueSimulation(
+      makeSimulation({
+        id: 'tempo-retry-success',
+        chainId: tempo.id,
+        stateDiff: [
+          {
+            address: tempoReceiver,
+            key: '0x0000000000000000000000000000000000000000000000000000000000000000',
+            dirty: '0x01',
+          },
+        ],
+      }),
+    );
+
+    const result = await handleCrossChainSimulations(
+      makeSourceResult([calldata], { simulationTimestamp: 1_600_000_321n }),
+    );
+
+    expect(mockedGetBlock).toHaveBeenCalledTimes(2);
+    expect(result.crossChainFailure).toBe(false);
+    expect(result.destinationJobResults[0]?.status).toBe('success');
+    expect(result.destinationJobResults[0]?.stepResults).toHaveLength(1);
   });
 
   test('preserves non-code Wormhole core overrides after receiver-mode cleanup', async () => {
