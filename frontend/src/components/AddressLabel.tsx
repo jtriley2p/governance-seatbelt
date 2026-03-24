@@ -73,6 +73,8 @@ export function AddressLabel({
 
   const abbreviated = abbreviateAddress(address);
   const displayText = label ? `${label.label} (${abbreviated})` : abbreviated;
+  const normalizedExplorerAddress =
+    blockExplorerUrl === 'https://explore.tempo.xyz' ? address.toLowerCase() : address;
 
   const handleCopy = async () => {
     try {
@@ -86,7 +88,9 @@ export function AddressLabel({
     }
   };
 
-  const explorerLink = blockExplorerUrl ? `${blockExplorerUrl}/address/${address}` : undefined;
+  const explorerLink = blockExplorerUrl
+    ? `${blockExplorerUrl}/address/${normalizedExplorerAddress}`
+    : undefined;
 
   const Trigger = explorerLink && showLink && linkMode === 'inline' ? 'a' : 'span';
   const triggerProps =

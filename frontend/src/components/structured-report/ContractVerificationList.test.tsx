@@ -48,4 +48,26 @@ describe('ContractVerificationList link routing', () => {
     expect(html).toContain(`href="https://soneium.blockscout.com/address/${address}"`);
     expect(html).not.toContain('https://etherscan.io/address/');
   });
+
+  it('prefers info rows over merged details to avoid duplicate unverified contracts', () => {
+    const address = '0x4444444444444444444444444444444444444444';
+    const details = [
+      `**Warning**: Unverified contract: [${address}](https://explore.tempo.xyz/address/${address}): Contract (unverified; checked Sourcify + Tempo verifier API)`,
+      `**Info**: [${address}](https://explore.tempo.xyz/address/${address}): Contract (unverified; checked Sourcify + Tempo verifier API)`,
+    ].join('\n\n');
+
+    const html = renderToStaticMarkup(
+      createElement(ContractVerificationList, {
+        details,
+        info: [
+          `[${address}](https://explore.tempo.xyz/address/${address}): Contract (unverified; checked Sourcify + Tempo verifier API)`,
+        ],
+        blockExplorerBaseUrl: 'https://explore.tempo.xyz',
+      }),
+    );
+
+    expect(html).toContain('Total:</span><span class="font-semibold">1</span>');
+    expect(html).not.toContain('Total:</span><span class="font-semibold">2</span>');
+    expect(html).toContain(`href="https://explore.tempo.xyz/address/${address}"`);
+  });
 });

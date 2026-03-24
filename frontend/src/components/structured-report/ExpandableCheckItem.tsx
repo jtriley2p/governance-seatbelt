@@ -327,6 +327,7 @@ export function ExpandableCheckItem({
               <div className="mt-4">
                 <ContractVerificationList
                   details={check.details}
+                  info={check.info}
                   blockExplorerBaseUrl={metadata?.blockExplorerBaseUrl}
                 />
               </div>

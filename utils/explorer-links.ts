@@ -10,6 +10,14 @@ export function normalizeBlockExplorerBaseUrl(baseUrl?: string): string {
   return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
 }
 
+function shouldLowercaseAddressForExplorer(baseUrl?: string): boolean {
+  return normalizeBlockExplorerBaseUrl(baseUrl) === 'https://explore.tempo.xyz';
+}
+
+function normalizeAddressForExplorer(address: string, baseUrl?: string): string {
+  return shouldLowercaseAddressForExplorer(baseUrl) ? address.toLowerCase() : address;
+}
+
 function normalizeSourcifyMatchPath(match?: string): 'full_match' | 'partial_match' {
   if (match === 'match') {
     return 'partial_match';
@@ -19,7 +27,7 @@ function normalizeSourcifyMatchPath(match?: string): 'full_match' | 'partial_mat
 }
 
 export function toBlockExplorerAddressUrl(address: string, baseUrl?: string): string {
-  return `${normalizeBlockExplorerBaseUrl(baseUrl)}/address/${address}`;
+  return `${normalizeBlockExplorerBaseUrl(baseUrl)}/address/${normalizeAddressForExplorer(address, baseUrl)}`;
 }
 
 export function toSourcifyAddressUrl(address: string, chainId: number, match?: string): string {

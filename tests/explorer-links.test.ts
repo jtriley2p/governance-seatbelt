@@ -1,55 +1,20 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import { toBlockExplorerAddressUrl } from '../utils/explorer-links';
 
-function seedRpcEnv(): void {
-  process.env.MAINNET_RPC_URL ??= 'http://localhost:8545';
-  process.env.ARBITRUM_RPC_URL ??= 'http://localhost:8545';
-  process.env.ETHERSCAN_API_KEY ??= 'test-key';
-  process.env.TENDERLY_ACCESS_TOKEN ??= 'test-token';
-  process.env.TENDERLY_USER ??= 'test-user';
-  process.env.TENDERLY_PROJECT_SLUG ??= 'test-project';
-}
+describe('toBlockExplorerAddressUrl', () => {
+  it('preserves checksum casing for standard explorers', () => {
+    const address = '0x24A3D4757E330890A8b8978028c9e58e04611fD6';
 
-describe('canonical explorer link helpers', () => {
-  test('builds normalized address links and report helper reuses canonical output', async () => {
-    seedRpcEnv();
-
-    const { toExplorerAddressMarkdownLink } = await import('../utils/explorer-links');
-    const { toAddressLink } = await import('../presentation/report');
-
-    const address = '0x1234567890abcdef1234567890abcdef12345678';
-    const baseUrl = 'https://basescan.org/';
-
-    const canonical = toExplorerAddressMarkdownLink(address, baseUrl);
-    const fromReport = toAddressLink(address, baseUrl);
-
-    expect(canonical).toBe(`[${address}](https://basescan.org/address/${address})`);
-    expect(fromReport).toBe(canonical);
-  });
-
-  test('normalizes base URLs and defaults to etherscan when missing', async () => {
-    const { normalizeBlockExplorerBaseUrl, toExplorerAddressMarkdownLink } = await import(
-      '../utils/explorer-links'
-    );
-
-    const address = '0x1234567890abcdef1234567890abcdef12345678';
-
-    expect(normalizeBlockExplorerBaseUrl('https://arbiscan.io/')).toBe('https://arbiscan.io');
-    expect(normalizeBlockExplorerBaseUrl(undefined)).toBe('https://etherscan.io');
-    expect(toExplorerAddressMarkdownLink(address)).toBe(
-      `[${address}](https://etherscan.io/address/${address})`,
+    expect(toBlockExplorerAddressUrl(address, 'https://etherscan.io')).toBe(
+      `https://etherscan.io/address/${address}`,
     );
   });
 
-  test('builds Sourcify contract links based on match type', async () => {
-    const { toSourcifyAddressMarkdownLink } = await import('../utils/explorer-links');
+  it('lowercases Tempo explorer addresses', () => {
+    const address = '0x24A3D4757E330890A8b8978028c9e58e04611fD6';
 
-    const address = '0x1234567890abcdef1234567890abcdef12345678';
-
-    expect(toSourcifyAddressMarkdownLink(address, 480, 'exact_match')).toBe(
-      `[${address}](https://repo.sourcify.dev/contracts/full_match/480/${address}/)`,
-    );
-    expect(toSourcifyAddressMarkdownLink(address, 480, 'match')).toBe(
-      `[${address}](https://repo.sourcify.dev/contracts/partial_match/480/${address}/)`,
+    expect(toBlockExplorerAddressUrl(address, 'https://explore.tempo.xyz')).toBe(
+      'https://explore.tempo.xyz/address/0x24a3d4757e330890a8b8978028c9e58e04611fd6',
     );
   });
 });

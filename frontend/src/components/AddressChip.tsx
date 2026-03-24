@@ -25,6 +25,12 @@ function normalizeBaseUrl(blockExplorerUrl?: string): string {
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }
 
+function normalizeAddressForExplorer(address: string, blockExplorerUrl?: string): string {
+  return normalizeBaseUrl(blockExplorerUrl) === 'https://explore.tempo.xyz'
+    ? address.toLowerCase()
+    : address;
+}
+
 export function AddressChip({
   address,
   label,
@@ -44,7 +50,7 @@ export function AddressChip({
     };
   }, []);
 
-  const explorerHref = `${normalizeBaseUrl(blockExplorerUrl)}/address/${address}`;
+  const explorerHref = `${normalizeBaseUrl(blockExplorerUrl)}/address/${normalizeAddressForExplorer(address, blockExplorerUrl)}`;
 
   const handleCopy = async () => {
     try {

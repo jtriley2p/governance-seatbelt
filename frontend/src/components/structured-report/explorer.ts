@@ -4,16 +4,21 @@ function getExplorerUrl(metadata: StructuredSimulationReport['metadata']): strin
   return metadata.blockExplorerBaseUrl || 'https://etherscan.io';
 }
 
+function normalizeAddressForExplorer(address: string, baseUrl: string): string {
+  return baseUrl === 'https://explore.tempo.xyz' ? address.toLowerCase() : address;
+}
+
 export function buildAddressLink(
   address: string,
   metadata: StructuredSimulationReport['metadata'],
 ): string {
   const baseUrl = getExplorerUrl(metadata);
-  return `${baseUrl}/address/${address}`;
+  return `${baseUrl}/address/${normalizeAddressForExplorer(address, baseUrl)}`;
 }
 
 export function buildAddressLinkForExplorer(address: string, baseUrl: string): string {
-  return `${baseUrl || 'https://etherscan.io'}/address/${address}`;
+  const normalizedBaseUrl = baseUrl || 'https://etherscan.io';
+  return `${normalizedBaseUrl}/address/${normalizeAddressForExplorer(address, normalizedBaseUrl)}`;
 }
 
 export function buildBlockLink(
