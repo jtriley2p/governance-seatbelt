@@ -20,7 +20,7 @@ This document provides a reference for the API keys and secrets required by gove
 |--------|---------|-------------|
 | `OPTIMISM_RPC_URL` | Optimism L2 access | Cross-chain proposals targeting Optimism |
 | `BASE_RPC_URL` | Base L2 access | Cross-chain proposals targeting Base |
-| `TEMPO_RPC_URL` | Tempo L2 access | Recommended in CI for reliable Tempo live-state reads during wormhole validation |
+| `TEMPO_RPC_URL` | Tempo RPC access | Recommended in CI for reliable Tempo live-state reads during wormhole validation |
 | `ALCHEMY_API_KEY` | Fallback for optional chain RPCs | When chain-specific RPC URLs aren't set |
 
 ## Local Development
