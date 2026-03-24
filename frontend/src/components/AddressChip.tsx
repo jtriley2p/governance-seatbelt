@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { toBlockExplorerAddressUrl } from '@/lib/explorer-links';
 import { cn } from '@/lib/utils';
 import { CheckIcon, CopyIcon, ExternalLinkIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -18,17 +19,6 @@ export interface AddressChipProps {
 function truncateAddress(address: string): string {
   if (address.length < 12) return address;
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
-
-function normalizeBaseUrl(blockExplorerUrl?: string): string {
-  const url = (blockExplorerUrl || 'https://etherscan.io').trim();
-  return url.endsWith('/') ? url.slice(0, -1) : url;
-}
-
-function normalizeAddressForExplorer(address: string, blockExplorerUrl?: string): string {
-  return normalizeBaseUrl(blockExplorerUrl) === 'https://explore.tempo.xyz'
-    ? address.toLowerCase()
-    : address;
 }
 
 export function AddressChip({
@@ -50,7 +40,7 @@ export function AddressChip({
     };
   }, []);
 
-  const explorerHref = `${normalizeBaseUrl(blockExplorerUrl)}/address/${normalizeAddressForExplorer(address, blockExplorerUrl)}`;
+  const explorerHref = toBlockExplorerAddressUrl(address, blockExplorerUrl);
 
   const handleCopy = async () => {
     try {

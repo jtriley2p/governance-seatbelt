@@ -70,4 +70,20 @@ describe('ContractVerificationList link routing', () => {
     expect(html).not.toContain('Total:</span><span class="font-semibold">2</span>');
     expect(html).toContain(`href="https://explore.tempo.xyz/address/${address}"`);
   });
+
+  it('lowercases Tempo fallback explorer links when a row has no explicit href', () => {
+    const address = '0x24A3D4757E330890A8b8978028c9e58E04611fD6';
+    const details = `${address}: Contract (verified via verification backend API)`;
+
+    const html = renderToStaticMarkup(
+      createElement(ContractVerificationList, {
+        details,
+        blockExplorerBaseUrl: 'https://explore.tempo.xyz/',
+      }),
+    );
+
+    expect(html).toContain(
+      'href="https://explore.tempo.xyz/address/0x24a3d4757e330890a8b8978028c9e58e04611fd6"',
+    );
+  });
 });

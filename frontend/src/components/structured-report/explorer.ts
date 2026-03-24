@@ -1,32 +1,30 @@
 import type { StructuredSimulationReport } from '@/hooks/use-simulation-results';
+import {
+  normalizeBlockExplorerBaseUrl,
+  toBlockExplorerAddressUrl,
+  toBlockExplorerBlockUrl,
+} from '@/lib/explorer-links';
 
 function getExplorerUrl(metadata: StructuredSimulationReport['metadata']): string {
-  return metadata.blockExplorerBaseUrl || 'https://etherscan.io';
-}
-
-function normalizeAddressForExplorer(address: string, baseUrl: string): string {
-  return baseUrl === 'https://explore.tempo.xyz' ? address.toLowerCase() : address;
+  return normalizeBlockExplorerBaseUrl(metadata.blockExplorerBaseUrl);
 }
 
 export function buildAddressLink(
   address: string,
   metadata: StructuredSimulationReport['metadata'],
 ): string {
-  const baseUrl = getExplorerUrl(metadata);
-  return `${baseUrl}/address/${normalizeAddressForExplorer(address, baseUrl)}`;
+  return toBlockExplorerAddressUrl(address, getExplorerUrl(metadata));
 }
 
 export function buildAddressLinkForExplorer(address: string, baseUrl: string): string {
-  const normalizedBaseUrl = baseUrl || 'https://etherscan.io';
-  return `${normalizedBaseUrl}/address/${normalizeAddressForExplorer(address, normalizedBaseUrl)}`;
+  return toBlockExplorerAddressUrl(address, baseUrl);
 }
 
 export function buildBlockLink(
   blockNumber: string,
   metadata: StructuredSimulationReport['metadata'],
 ): string {
-  const baseUrl = getExplorerUrl(metadata);
-  return `${baseUrl}/block/${blockNumber}`;
+  return toBlockExplorerBlockUrl(blockNumber, getExplorerUrl(metadata));
 }
 
 export function isPlaceholderAddress(

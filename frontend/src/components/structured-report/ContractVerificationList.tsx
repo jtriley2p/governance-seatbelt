@@ -1,6 +1,7 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
+import { toBlockExplorerAddressUrl } from '@/lib/explorer-links';
 import {
   ExternalLinkIcon,
   InfoIcon,
@@ -23,12 +24,6 @@ interface ParsedContract {
 }
 
 type ParsedContractBase = Omit<ParsedContract, 'key'>;
-
-function normalizeBaseUrl(baseUrl?: string): string {
-  const normalized = (baseUrl ?? '').trim();
-  if (!normalized) return 'https://etherscan.io';
-  return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
-}
 
 function parseVerificationLine(line: string): ParsedContractBase | null {
   const markdownLinkMatch = line.match(ADDRESS_MARKDOWN_LINK_REGEX);
@@ -96,7 +91,7 @@ function ContractCard({ contract, variant, blockExplorerBaseUrl }: ContractCardP
 
   const styles = variantStyles[variant];
   const explorerHref =
-    contract.href || `${normalizeBaseUrl(blockExplorerBaseUrl)}/address/${contract.address}`;
+    contract.href || toBlockExplorerAddressUrl(contract.address, blockExplorerBaseUrl);
 
   return (
     <div
