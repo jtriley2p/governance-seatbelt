@@ -1,14 +1,19 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
+  type Hex,
   decodeAbiParameters,
   decodeFunctionData,
   encodeFunctionData,
   getAddress,
   parseAbi,
 } from 'viem';
-import { mainnet, tempo } from 'viem/chains';
+import { bsc, mainnet, monad, polygon, tempo } from 'viem/chains';
 import type { TenderlySimulation } from '../../types.d';
 import { WORMHOLE_SEND_MESSAGE_ABI } from '../../utils/bridges/wormhole';
+import {
+  DEFAULT_WORMHOLE_MESSAGE_PAYLOAD_VERSION,
+  WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT,
+} from '../../utils/bridges/wormhole-runtime-state';
 import { createMockSimulation } from './test-utils';
 
 process.env.ETHERSCAN_API_KEY ??= 'test-etherscan-key';
@@ -20,18 +25,42 @@ process.env.ARBITRUM_RPC_URL ??= 'http://localhost:8545';
 
 const actualClientModule = await import('../../utils/clients/client');
 
-async function defaultReceiverReadContract(request: {
-  address: `0x${string}`;
-  functionName: string;
-  blockNumber?: bigint;
-}) {
-  expect(request.address).toBe(getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b'));
-  if (request.functionName === 'nextMinimumSequence') return 7n;
-  if (request.functionName === 'EXPECTED_MESSAGE_PAYLOAD_VERSION') {
-    return '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b';
+const RECEIVER_PAYLOAD_VERSION = DEFAULT_WORMHOLE_MESSAGE_PAYLOAD_VERSION;
+const TEMPO_RECEIVER = getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b');
+const CELO_RECEIVER = getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071');
+const MONAD_RECEIVER = getAddress('0xe783de89a7f0408687f051e3e6d0beb62719ebad');
+const BNB_RECEIVER = getAddress('0x341c1511141022cf8eE20824Ae0fFA3491F1302b');
+const CELO_WORMHOLE_CORE = getAddress('0xa321448d90d4e5b0A732867c18eA198e75CAC48E');
+const MONAD_WORMHOLE_CORE = getAddress('0x194B123c5E96B9B2e49763619985790Dc241CAC0');
+
+type ReceiverReadRequest = { address: `0x${string}`; functionName: string; blockNumber?: bigint };
+
+async function resolveMockedReceiverReadContract(
+  request: ReceiverReadRequest,
+): Promise<Hex | bigint> {
+  const receiverAddress = getAddress(request.address);
+
+  if (
+    receiverAddress === TEMPO_RECEIVER ||
+    receiverAddress === CELO_RECEIVER ||
+    receiverAddress === MONAD_RECEIVER
+  ) {
+    if (request.functionName === 'nextMinimumSequence') return 7n;
+    if (request.functionName === 'EXPECTED_MESSAGE_PAYLOAD_VERSION') {
+      return RECEIVER_PAYLOAD_VERSION;
+    }
   }
-  throw new Error(`Unexpected readContract call for ${request.functionName}`);
+
+  if (receiverAddress === BNB_RECEIVER) {
+    throw new Error(`Legacy BNB receiver should not probe ${request.functionName}`);
+  }
+
+  throw new Error(`Unexpected readContract call for ${request.functionName} on ${request.address}`);
 }
+
+const mockedReceiverReadContract = mock(async (request: ReceiverReadRequest) =>
+  resolveMockedReceiverReadContract(request),
+);
 
 async function defaultGetBlockNumber() {
   return 100n;
@@ -45,14 +74,34 @@ async function defaultGetBlock(request?: { blockNumber?: bigint }) {
   };
 }
 
-const mockedReceiverReadContract = mock(defaultReceiverReadContract);
 const mockedGetBlockNumber = mock(defaultGetBlockNumber);
 const mockedGetBlock = mock(defaultGetBlock);
+
+type ReceiverStorageRequest = {
+  address: `0x${string}`;
+  slot: `0x${string}`;
+  blockNumber?: bigint;
+};
+
+async function resolveMockedGetStorageAt(
+  request: ReceiverStorageRequest,
+): Promise<Hex | undefined> {
+  expect(request.slot).toBe(WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT);
+  if (getAddress(request.address) === BNB_RECEIVER) {
+    return '0x0b';
+  }
+  return undefined;
+}
+
+const mockedGetStorageAt = mock(async (request: ReceiverStorageRequest) =>
+  resolveMockedGetStorageAt(request),
+);
 
 const mockedGetClientForChain = mock(() => ({
   getBlockNumber: mockedGetBlockNumber,
   getBlock: mockedGetBlock,
   readContract: mockedReceiverReadContract,
+  getStorageAt: mockedGetStorageAt,
 }));
 
 mock.module('../../utils/clients/client', () => ({
@@ -97,7 +146,7 @@ mock.module('../../utils/clients/tenderly-api', () => ({
 
 const WORMHOLE_PROPOSAL_TARGET = '0xf5F4496219F31CDCBa6130B5402873624585615a' as const;
 const WORMHOLE_ADDRESS = '0x00000000000000000000000000000000000000AA' as const;
-const CELO_CHAIN_ID = 42220;
+const DIRECT_DESTINATION_CHAIN_ID = polygon.id;
 const TIMELOCK_ADDRESS = '0x1a9C8182C09F50C8318d769245beA52c32BE35BC';
 
 type CrossChainHandler = typeof import('../../utils/clients/tenderly').handleCrossChainSimulations;
@@ -126,10 +175,12 @@ afterEach(() => {
   mockedGetClientForChain.mockClear();
   mockedGetBlockNumber.mockClear();
   mockedGetBlock.mockClear();
-  mockedReceiverReadContract.mockClear();
   mockedGetBlockNumber.mockImplementation(defaultGetBlockNumber);
   mockedGetBlock.mockImplementation(defaultGetBlock);
-  mockedReceiverReadContract.mockImplementation(defaultReceiverReadContract);
+  mockedReceiverReadContract.mockClear();
+  mockedReceiverReadContract.mockImplementation(resolveMockedReceiverReadContract);
+  mockedGetStorageAt.mockClear();
+  mockedGetStorageAt.mockImplementation(resolveMockedGetStorageAt);
 });
 
 function enqueueSimulation(sim: TenderlySimulation) {
@@ -148,7 +199,7 @@ function makeSimulation(params: {
   errorReason?: string;
 }): TenderlySimulation {
   const sim = createMockSimulation([]);
-  const chainId = params.chainId ?? CELO_CHAIN_ID;
+  const chainId = params.chainId ?? DIRECT_DESTINATION_CHAIN_ID;
 
   sim.simulation.id = params.id;
   sim.simulation.network_id = String(chainId);
@@ -188,7 +239,7 @@ function makeWormholeCalldata(
     value?: bigint;
     data: `0x${string}`;
   }>,
-  wormholeChainId = 14,
+  wormholeChainId = 5,
 ): `0x${string}` {
   return encodeFunctionData({
     abi: WORMHOLE_SEND_MESSAGE_ABI,
@@ -286,12 +337,14 @@ describe('cross-chain destination execution engine', () => {
     expect(jobResult?.stepResults[1]?.sim?.simulation.id).toBe('step-2');
     expect(jobResult?.accumulatedSim?.simulation.id).toBe('step-2');
     expect(result.crossChainFailure).toBe(false);
-    expect(result.destinationStateByChain[CELO_CHAIN_ID]?.[firstTarget]?.storage?.['0x01']).toBe(
-      '0xaa',
-    );
-    expect(result.destinationStateByChain[CELO_CHAIN_ID]?.[secondTarget]?.storage?.['0x02']).toBe(
-      '0xbb',
-    );
+    expect(
+      result.destinationStateByChain[DIRECT_DESTINATION_CHAIN_ID]?.[firstTarget]?.storage?.['0x01'],
+    ).toBe('0xaa');
+    expect(
+      result.destinationStateByChain[DIRECT_DESTINATION_CHAIN_ID]?.[secondTarget]?.storage?.[
+        '0x02'
+      ],
+    ).toBe('0xbb');
   });
 
   test('preserves earlier successful steps but does not commit state when a later step fails', async () => {
@@ -338,7 +391,7 @@ describe('cross-chain destination execution engine', () => {
     expect(jobResult?.stepResults[1]?.sim?.simulation.id).toBe('step-failure');
     expect(jobResult?.error).toBe('bridge reverted');
     expect(result.crossChainFailure).toBe(true);
-    expect(result.destinationStateByChain[CELO_CHAIN_ID]).toBeUndefined();
+    expect(result.destinationStateByChain[DIRECT_DESTINATION_CHAIN_ID]).toBeUndefined();
   });
 
   test('later jobs on the same chain start from committed state of earlier successful jobs', async () => {
@@ -376,12 +429,14 @@ describe('cross-chain destination execution engine', () => {
     expect(result.destinationJobResults.every((jobResult) => jobResult.status === 'success')).toBe(
       true,
     );
-    expect(result.destinationStateByChain[CELO_CHAIN_ID]?.[firstTarget]?.storage?.['0x01']).toBe(
-      '0xdd',
-    );
-    expect(result.destinationStateByChain[CELO_CHAIN_ID]?.[secondTarget]?.storage?.['0x02']).toBe(
-      '0xee',
-    );
+    expect(
+      result.destinationStateByChain[DIRECT_DESTINATION_CHAIN_ID]?.[firstTarget]?.storage?.['0x01'],
+    ).toBe('0xdd');
+    expect(
+      result.destinationStateByChain[DIRECT_DESTINATION_CHAIN_ID]?.[secondTarget]?.storage?.[
+        '0x02'
+      ],
+    ).toBe('0xee');
   });
 
   test('later failed jobs on the same chain do not roll back earlier committed state', async () => {
@@ -419,10 +474,12 @@ describe('cross-chain destination execution engine', () => {
     expect(result.destinationJobResults).toHaveLength(2);
     expect(result.destinationJobResults[0]?.status).toBe('success');
     expect(result.destinationJobResults[1]?.status).toBe('failure');
-    expect(result.destinationStateByChain[CELO_CHAIN_ID]?.[firstTarget]?.storage?.['0x01']).toBe(
-      '0xff',
-    );
-    expect(result.destinationStateByChain[CELO_CHAIN_ID]?.[secondTarget]).toBeUndefined();
+    expect(
+      result.destinationStateByChain[DIRECT_DESTINATION_CHAIN_ID]?.[firstTarget]?.storage?.['0x01'],
+    ).toBe('0xff');
+    expect(
+      result.destinationStateByChain[DIRECT_DESTINATION_CHAIN_ID]?.[secondTarget],
+    ).toBeUndefined();
   });
 
   test('records API exceptions without recording a sim or committing state', async () => {
@@ -434,7 +491,7 @@ describe('cross-chain destination execution engine', () => {
 
     const result = await handleCrossChainSimulations(makeSourceResult([calldata]), {
       initialStateByChain: {
-        [CELO_CHAIN_ID]: {
+        [DIRECT_DESTINATION_CHAIN_ID]: {
           [seededAddress]: {
             storage: {
               '0x09': '0xseed',
@@ -450,15 +507,16 @@ describe('cross-chain destination execution engine', () => {
     expect(jobResult?.stepResults[0]?.sim).toBeUndefined();
     expect(jobResult?.error).toContain('network down');
     expect(result.crossChainFailure).toBe(true);
-    expect(result.destinationStateByChain[CELO_CHAIN_ID]?.[seededAddress]?.storage?.['0x09']).toBe(
-      '0xseed',
-    );
-    expect(result.destinationStateByChain[CELO_CHAIN_ID]?.[target]).toBeUndefined();
+    expect(
+      result.destinationStateByChain[DIRECT_DESTINATION_CHAIN_ID]?.[seededAddress]?.storage?.[
+        '0x09'
+      ],
+    ).toBe('0xseed');
+    expect(result.destinationStateByChain[DIRECT_DESTINATION_CHAIN_ID]?.[target]).toBeUndefined();
   });
 
   test('uses wormhole receiver mode for tempo and stubs the Wormhole core contract', async () => {
     const tempoTarget = getAddress('0x24a3d4757E330890A8b8978028c9e58E04611fd6');
-    const tempoReceiver = getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b');
     const tempoWormholeCore = getAddress('0xbebdb6C8ddC678FfA9f8748f85C815C556Dd8ac6');
     const calldata = makeWormholeCalldata([{ target: tempoTarget, data: '0x8da5cb5b' }], 68);
 
@@ -468,7 +526,7 @@ describe('cross-chain destination execution engine', () => {
         chainId: tempo.id,
         stateDiff: [
           {
-            address: tempoReceiver,
+            address: TEMPO_RECEIVER,
             key: '0x0000000000000000000000000000000000000000000000000000000000000000',
             dirty: '0x01',
           },
@@ -486,7 +544,7 @@ describe('cross-chain destination execution engine', () => {
     expect(transportCalls[0]).toMatchObject({
       network_id: `${tempo.id}`,
       from: '0x0000000000000000000000000000000000001234',
-      to: tempoReceiver,
+      to: TEMPO_RECEIVER,
       value: '0',
     });
     expect(String(transportCalls[0]?.input ?? '')).toMatch(/^0xf953cec7/);
@@ -518,13 +576,11 @@ describe('cross-chain destination execution engine', () => {
       );
     expect(timestamp).toBe(1_600_000_321);
     expect(sequence).toBe(7n);
-    expect(payloadVersion).toBe(
-      '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b',
-    );
+    expect(payloadVersion).toBe(RECEIVER_PAYLOAD_VERSION);
     expect(targets).toEqual([tempoTarget]);
     expect(values).toEqual([0n]);
     expect(datas).toEqual(['0x8da5cb5b']);
-    expect(receiverAddress).toBe(tempoReceiver);
+    expect(receiverAddress).toBe(TEMPO_RECEIVER);
     expect(wormholeChainId).toBe(68);
 
     const [jobResult] = result.destinationJobResults;
@@ -533,18 +589,267 @@ describe('cross-chain destination execution engine', () => {
     expect(jobResult?.stepResults[0]?.sim?.simulation.id).toBe('tempo-receiver-step');
     expect(result.crossChainFailure).toBe(false);
     expect(
-      result.destinationStateByChain[tempo.id]?.[tempoReceiver]?.storage?.[
+      result.destinationStateByChain[tempo.id]?.[TEMPO_RECEIVER]?.storage?.[
         '0x0000000000000000000000000000000000000000000000000000000000000000'
       ],
     ).toBe('0x01');
     expect(result.destinationStateByChain[tempo.id]?.[tempoWormholeCore]).toBeUndefined();
   });
 
+  test('uses receiver mode for the legacy BNB Wormhole receiver with storage fallback', async () => {
+    const bnbTarget = getAddress('0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7');
+    const bnbWormholeCore = getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B');
+    const calldata = makeWormholeCalldata([{ target: bnbTarget, data: '0x8da5cb5b' }], 4);
+
+    enqueueSimulation(
+      makeSimulation({
+        id: 'bnb-receiver-step',
+        chainId: bsc.id,
+        stateDiff: [
+          {
+            address: BNB_RECEIVER,
+            key: WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT,
+            dirty: '0x0c',
+          },
+        ],
+      }),
+    );
+
+    const result = await handleCrossChainSimulations(
+      makeSourceResult([calldata], { simulationTimestamp: 1_600_000_321n }),
+    );
+
+    expect(mockedSendSimulation).toHaveBeenCalledTimes(1);
+    expect(mockedReceiverReadContract).not.toHaveBeenCalled();
+    expect(mockedGetClientForChain).toHaveBeenCalledWith(bsc.id);
+    expect(mockedGetStorageAt).toHaveBeenCalledWith({
+      address: BNB_RECEIVER,
+      slot: WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT,
+      blockNumber: 100n,
+    });
+    expect(transportCalls[0]).toMatchObject({
+      network_id: `${bsc.id}`,
+      from: '0x0000000000000000000000000000000000001234',
+      to: BNB_RECEIVER,
+      value: '0',
+    });
+    expect(transportCalls[0]?.state_objects).toMatchObject({
+      [bnbWormholeCore]: {
+        code: expect.stringMatching(/^0x/),
+      },
+    });
+
+    const decodedTransportInput = decodeFunctionData({
+      abi: parseAbi(['function receiveMessage(bytes whMessage)']),
+      data: transportCalls[0]?.input as `0x${string}`,
+    });
+    const [whMessage] = decodedTransportInput.args;
+    const [, sequence, payload] = decodeAbiParameters(
+      [{ type: 'uint32' }, { type: 'uint64' }, { type: 'bytes' }],
+      whMessage,
+    );
+    const [payloadVersion, targets, values, datas, receiverAddress, wormholeChainId] =
+      decodeAbiParameters(
+        [
+          { type: 'bytes32' },
+          { type: 'address[]' },
+          { type: 'uint256[]' },
+          { type: 'bytes[]' },
+          { type: 'address' },
+          { type: 'uint16' },
+        ],
+        payload,
+      );
+
+    expect(sequence).toBe(11n);
+    expect(payloadVersion).toBe(RECEIVER_PAYLOAD_VERSION);
+    expect(targets).toEqual([bnbTarget]);
+    expect(values).toEqual([0n]);
+    expect(datas).toEqual(['0x8da5cb5b']);
+    expect(receiverAddress).toBe(BNB_RECEIVER);
+    expect(wormholeChainId).toBe(4);
+    expect(result.destinationJobResults[0]?.status).toBe('success');
+    expect(
+      result.destinationStateByChain[bsc.id]?.[BNB_RECEIVER]?.storage?.[
+        WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT
+      ],
+    ).toBe('0x0c');
+  });
+
+  test.each([
+    {
+      name: 'Celo',
+      chainId: 42220,
+      wormholeChainId: 14,
+      receiver: CELO_RECEIVER,
+      core: CELO_WORMHOLE_CORE,
+      target: getAddress('0xAfE208a311B21f13EF87E33A90049fC17A7acDEc'),
+    },
+    {
+      name: 'Monad',
+      chainId: monad.id,
+      wormholeChainId: 48,
+      receiver: MONAD_RECEIVER,
+      core: MONAD_WORMHOLE_CORE,
+      target: getAddress('0x204faca1764b154221e35c0d20abb3c525710498'),
+    },
+  ])(
+    'uses receiver mode for $name wormhole lanes',
+    async ({ chainId, wormholeChainId, receiver, core, target }) => {
+      const calldata = makeWormholeCalldata([{ target, data: '0x8da5cb5b' }], wormholeChainId);
+
+      enqueueSimulation(
+        makeSimulation({
+          id: `${chainId}-receiver-step`,
+          chainId,
+          stateDiff: [
+            {
+              address: receiver,
+              key: WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT,
+              dirty: '0x01',
+            },
+          ],
+        }),
+      );
+
+      const result = await handleCrossChainSimulations(
+        makeSourceResult([calldata], { simulationTimestamp: 1_600_000_321n }),
+      );
+
+      expect(mockedSendSimulation).toHaveBeenCalledTimes(1);
+      expect(mockedGetClientForChain).toHaveBeenCalledWith(chainId);
+      expect(mockedReceiverReadContract).toHaveBeenCalledWith({
+        address: receiver,
+        abi: expect.any(Array),
+        functionName: 'EXPECTED_MESSAGE_PAYLOAD_VERSION',
+        blockNumber: 100n,
+      });
+      expect(mockedReceiverReadContract).toHaveBeenCalledWith({
+        address: receiver,
+        abi: expect.any(Array),
+        functionName: 'nextMinimumSequence',
+        blockNumber: 100n,
+      });
+      expect(transportCalls[0]).toMatchObject({
+        network_id: `${chainId}`,
+        from: '0x0000000000000000000000000000000000001234',
+        to: receiver,
+        value: '0',
+      });
+      expect(transportCalls[0]?.state_objects).toMatchObject({
+        [core]: {
+          code: expect.stringMatching(/^0x/),
+        },
+      });
+
+      const decodedTransportInput = decodeFunctionData({
+        abi: parseAbi(['function receiveMessage(bytes whMessage)']),
+        data: transportCalls[0]?.input as `0x${string}`,
+      });
+      const [whMessage] = decodedTransportInput.args;
+      const [, sequence, payload] = decodeAbiParameters(
+        [{ type: 'uint32' }, { type: 'uint64' }, { type: 'bytes' }],
+        whMessage,
+      );
+      const [payloadVersion, targets, values, datas, receiverAddress, decodedChainId] =
+        decodeAbiParameters(
+          [
+            { type: 'bytes32' },
+            { type: 'address[]' },
+            { type: 'uint256[]' },
+            { type: 'bytes[]' },
+            { type: 'address' },
+            { type: 'uint16' },
+          ],
+          payload,
+        );
+
+      expect(sequence).toBe(7n);
+      expect(payloadVersion).toBe(RECEIVER_PAYLOAD_VERSION);
+      expect(targets).toEqual([target]);
+      expect(values).toEqual([0n]);
+      expect(datas).toEqual(['0x8da5cb5b']);
+      expect(receiverAddress).toBe(receiver);
+      expect(decodedChainId).toBe(wormholeChainId);
+      expect(result.destinationJobResults[0]?.status).toBe('success');
+    },
+  );
+
+  test('keeps polygon wormhole lanes on direct mode when the destination authority is not a receiver', async () => {
+    const polygonTarget = getAddress('0x1F98431c8aD98523631AE4a59f267346ea31F984');
+    const calldata = makeWormholeCalldata([{ target: polygonTarget, data: '0x8da5cb5b' }], 5);
+
+    enqueueSimulation(
+      makeSimulation({
+        id: 'polygon-direct-step',
+        chainId: polygon.id,
+      }),
+    );
+
+    const result = await handleCrossChainSimulations(makeSourceResult([calldata]));
+
+    expect(mockedSendSimulation).toHaveBeenCalledTimes(1);
+    expect(mockedReceiverReadContract).not.toHaveBeenCalled();
+    expect(mockedGetStorageAt).not.toHaveBeenCalled();
+    expect(transportCalls[0]).toMatchObject({
+      network_id: `${polygon.id}`,
+      from: getAddress('0x8a1B966aC46F42275860f905dbC75EfBfDC12374'),
+      to: polygonTarget,
+      input: '0x8da5cb5b',
+      value: '0',
+    });
+    expect(result.destinationJobResults[0]?.status).toBe('success');
+  });
+
+  test('contains legacy receiver storage read failures to the BNB job', async () => {
+    const bnbTarget = getAddress('0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7');
+    const polygonTarget = getAddress('0x00000000000000000000000000000000000000F1');
+    const bnbCalldata = makeWormholeCalldata([{ target: bnbTarget, data: '0x8da5cb5b' }], 4);
+    const polygonCalldata = makeWormholeCalldata(
+      [{ target: polygonTarget, data: '0x99999999' }],
+      5,
+    );
+
+    mockedGetStorageAt.mockImplementation(async (request) => {
+      if (getAddress(request.address) === BNB_RECEIVER) {
+        throw new Error('receiver storage unavailable');
+      }
+
+      expect(request.slot).toBe(WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT);
+      return undefined;
+    });
+
+    enqueueSimulation(
+      makeSimulation({
+        id: 'polygon-after-bnb-setup-failure',
+      }),
+    );
+
+    const result = await handleCrossChainSimulations(
+      makeSourceResult([bnbCalldata, polygonCalldata]),
+    );
+
+    expect(mockedSendSimulation).toHaveBeenCalledTimes(1);
+    expect(transportCalls[0]).toMatchObject({
+      network_id: `${polygon.id}`,
+      to: polygonTarget,
+    });
+    expect(result.crossChainFailure).toBe(true);
+    expect(result.destinationJobResults).toHaveLength(2);
+    expect(result.destinationJobResults[0]?.status).toBe('failure');
+    expect(result.destinationJobResults[0]?.error).toContain('receiver storage unavailable');
+    expect(result.destinationJobResults[0]?.stepResults).toHaveLength(0);
+    expect(result.destinationJobResults[1]?.status).toBe('success');
+  });
+
   test('contains receiver metadata read failures to the tempo job', async () => {
     const tempoTarget = getAddress('0x24a3d4757E330890A8b8978028c9e58E04611fd6');
-    const celoTarget = getAddress('0x00000000000000000000000000000000000000F1');
+    const polygonTarget = getAddress('0x00000000000000000000000000000000000000F1');
     const tempoCalldata = makeWormholeCalldata([{ target: tempoTarget, data: '0x8da5cb5b' }], 68);
-    const celoCalldata = makeWormholeCalldata([{ target: celoTarget, data: '0x99999999' }]);
+    const polygonCalldata = makeWormholeCalldata(
+      [{ target: polygonTarget, data: '0x99999999' }],
+      5,
+    );
 
     mockedReceiverReadContract.mockImplementation(async () => {
       throw new Error('receiver metadata unavailable');
@@ -552,18 +857,19 @@ describe('cross-chain destination execution engine', () => {
 
     enqueueSimulation(
       makeSimulation({
-        id: 'celo-after-tempo-setup-failure',
+        id: 'polygon-after-tempo-setup-failure',
+        chainId: polygon.id,
       }),
     );
 
     const result = await handleCrossChainSimulations(
-      makeSourceResult([tempoCalldata, celoCalldata]),
+      makeSourceResult([tempoCalldata, polygonCalldata]),
     );
 
     expect(mockedSendSimulation).toHaveBeenCalledTimes(1);
     expect(transportCalls[0]).toMatchObject({
-      network_id: `${CELO_CHAIN_ID}`,
-      to: celoTarget,
+      network_id: `${polygon.id}`,
+      to: polygonTarget,
     });
     expect(result.crossChainFailure).toBe(true);
     expect(result.destinationJobResults).toHaveLength(2);
@@ -575,7 +881,6 @@ describe('cross-chain destination execution engine', () => {
 
   test('retries a transient tempo historical block read before succeeding', async () => {
     const tempoTarget = getAddress('0x24a3d4757E330890A8b8978028c9e58E04611fd6');
-    const tempoReceiver = getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b');
     const calldata = makeWormholeCalldata([{ target: tempoTarget, data: '0x8da5cb5b' }], 68);
 
     mockedGetBlock.mockImplementationOnce(async () => {
@@ -588,8 +893,8 @@ describe('cross-chain destination execution engine', () => {
         chainId: tempo.id,
         stateDiff: [
           {
-            address: tempoReceiver,
-            key: '0x0000000000000000000000000000000000000000000000000000000000000000',
+            address: TEMPO_RECEIVER,
+            key: WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT,
             dirty: '0x01',
           },
         ],
@@ -604,6 +909,69 @@ describe('cross-chain destination execution engine', () => {
     expect(result.crossChainFailure).toBe(false);
     expect(result.destinationJobResults[0]?.status).toBe('success');
     expect(result.destinationJobResults[0]?.stepResults).toHaveLength(1);
+  });
+
+  test('fails closed when modern receiver metadata reads fail', async () => {
+    const tempoTarget = getAddress('0x24a3d4757E330890A8b8978028c9e58E04611fd6');
+    const calldata = makeWormholeCalldata([{ target: tempoTarget, data: '0x8da5cb5b' }], 68);
+
+    mockedReceiverReadContract.mockImplementation(async (request) => {
+      if (
+        getAddress(request.address) === TEMPO_RECEIVER &&
+        request.functionName === 'EXPECTED_MESSAGE_PAYLOAD_VERSION'
+      ) {
+        throw new Error('tempo metadata RPC unavailable');
+      }
+
+      return await resolveMockedReceiverReadContract(request);
+    });
+
+    const result = await handleCrossChainSimulations(makeSourceResult([calldata]));
+
+    expect(mockedSendSimulation).not.toHaveBeenCalled();
+    expect(result.crossChainFailure).toBe(true);
+    expect(result.destinationJobResults[0]?.status).toBe('failure');
+    expect(result.destinationJobResults[0]?.error).toContain('tempo metadata RPC unavailable');
+  });
+
+  test('fails closed when legacy receiver storage is missing', async () => {
+    const bnbTarget = getAddress('0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7');
+    const calldata = makeWormholeCalldata([{ target: bnbTarget, data: '0x8da5cb5b' }], 4);
+
+    mockedGetStorageAt.mockImplementation(async (request) => {
+      expect(request.slot).toBe(WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT);
+      return undefined;
+    });
+
+    const result = await handleCrossChainSimulations(makeSourceResult([calldata]));
+
+    expect(mockedSendSimulation).not.toHaveBeenCalled();
+    expect(mockedReceiverReadContract).not.toHaveBeenCalled();
+    expect(result.crossChainFailure).toBe(true);
+    expect(result.destinationJobResults[0]?.status).toBe('failure');
+    expect(result.destinationJobResults[0]?.error).toContain(
+      'Missing legacy Wormhole receiver sequence storage',
+    );
+  });
+
+  test('fails closed when legacy receiver storage is empty hex', async () => {
+    const bnbTarget = getAddress('0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7');
+    const calldata = makeWormholeCalldata([{ target: bnbTarget, data: '0x8da5cb5b' }], 4);
+
+    mockedGetStorageAt.mockImplementation(async (request) => {
+      expect(request.slot).toBe(WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT);
+      return '0x';
+    });
+
+    const result = await handleCrossChainSimulations(makeSourceResult([calldata]));
+
+    expect(mockedSendSimulation).not.toHaveBeenCalled();
+    expect(mockedReceiverReadContract).not.toHaveBeenCalled();
+    expect(result.crossChainFailure).toBe(true);
+    expect(result.destinationJobResults[0]?.status).toBe('failure');
+    expect(result.destinationJobResults[0]?.error).toContain(
+      'Missing legacy Wormhole receiver sequence storage',
+    );
   });
 
   test('preserves non-code Wormhole core overrides after receiver-mode cleanup', async () => {
@@ -685,7 +1053,7 @@ describe('cross-chain destination execution engine', () => {
         chainId: tempo.id,
         stateDiff: [
           {
-            address: getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b'),
+            address: TEMPO_RECEIVER,
             key: '0x0000000000000000000000000000000000000000000000000000000000000000',
             dirty: '0x09',
           },
@@ -723,7 +1091,6 @@ describe('cross-chain destination execution engine', () => {
 
   test('carries receiver runtime state across chained tempo simulations', async () => {
     const tempoTarget = getAddress('0x24a3d4757E330890A8b8978028c9e58E04611fd6');
-    const tempoReceiver = getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b');
     const firstCalldata = makeWormholeCalldata([{ target: tempoTarget, data: '0x8da5cb5b' }], 68);
     const secondCalldata = makeWormholeCalldata([{ target: tempoTarget, data: '0x8da5cb5b' }], 68);
 
@@ -733,7 +1100,7 @@ describe('cross-chain destination execution engine', () => {
         chainId: tempo.id,
         stateDiff: [
           {
-            address: tempoReceiver,
+            address: TEMPO_RECEIVER,
             key: '0x0000000000000000000000000000000000000000000000000000000000000000',
             dirty: '0x09',
           },
@@ -745,7 +1112,7 @@ describe('cross-chain destination execution engine', () => {
 
     expect(firstResult.destinationJobResults[0]?.status).toBe('success');
     expect(
-      firstResult.destinationStateByChain[tempo.id]?.[tempoReceiver]?.storage?.[
+      firstResult.destinationStateByChain[tempo.id]?.[TEMPO_RECEIVER]?.storage?.[
         '0x0000000000000000000000000000000000000000000000000000000000000000'
       ],
     ).toBe('0x09');

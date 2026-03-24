@@ -24,9 +24,13 @@ type WormholeLaneMetadata = {
 const WORMHOLE_CHAIN_ID_TO_LANE_METADATA: Record<number, WormholeLaneMetadata> = {
   // Live Uniswap governance authority values are sourced from the current destination-chain
   // factory/pool-manager owner fields as of 2026-03-19.
+  // Only lanes with a `wormholeReceiverCoreAddress` currently use receiver-mode simulation.
+  // Polygon and Avalanche still execute through direct mode because their live destination
+  // authorities are not Uniswap Wormhole receiver contracts.
   4: {
     destinationChainId: bsc.id,
     l2FromAddress: getAddress('0x341c1511141022cf8eE20824Ae0fFA3491F1302b'),
+    wormholeReceiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
   },
   5: {
     destinationChainId: polygon.id,
@@ -39,10 +43,12 @@ const WORMHOLE_CHAIN_ID_TO_LANE_METADATA: Record<number, WormholeLaneMetadata> =
   14: {
     destinationChainId: celo.id,
     l2FromAddress: getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071'),
+    wormholeReceiverCoreAddress: getAddress('0xa321448d90d4e5b0A732867c18eA198e75CAC48E'),
   },
   48: {
     destinationChainId: monad.id,
     l2FromAddress: getAddress('0xe783de89a7f0408687f051e3e6d0beb62719ebad'),
+    wormholeReceiverCoreAddress: getAddress('0x194B123c5E96B9B2e49763619985790Dc241CAC0'),
   },
   68: {
     destinationChainId: tempo.id,
@@ -163,6 +169,8 @@ function tryDecodeWormholeBatch(data: string): WormholeBatch | null {
  * Extract wormhole destination calls from proposal calldata.
  *
  * Current coverage: BNB (4), Polygon (5), Avalanche (6), Celo (14), Monad (48), and Tempo (68).
+ * Receiver-mode is enabled where the destination authority is a Wormhole receiver; other lanes
+ * continue to use direct-mode simulation until their live destination contracts match that path.
  */
 export function extractWormholeExecutionJobsFromProposal(
   targets: readonly string[],

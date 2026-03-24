@@ -10,6 +10,9 @@ export const WORMHOLE_RECEIVER_ABI = parseAbi([
   'function EXPECTED_MESSAGE_PAYLOAD_VERSION() view returns (bytes32)',
 ]);
 
+export const DEFAULT_WORMHOLE_MESSAGE_PAYLOAD_VERSION =
+  '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b' as const;
+
 export type WormholeReceiverRuntimeState = {
   expectedPayloadVersion: Hex;
   nextSequence: bigint;
