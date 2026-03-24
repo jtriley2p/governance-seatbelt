@@ -1,14 +1,18 @@
-export const DEFAULT_BLOCK_EXPLORER_BASE_URL = 'https://etherscan.io';
+import {
+  DEFAULT_BLOCK_EXPLORER_BASE_URL,
+  normalizeBlockExplorerBaseUrl,
+  toBlockExplorerAddressUrl,
+  toBlockExplorerBlockUrl,
+} from '../shared/explorer-links';
+
+export {
+  DEFAULT_BLOCK_EXPLORER_BASE_URL,
+  normalizeBlockExplorerBaseUrl,
+  toBlockExplorerAddressUrl,
+  toBlockExplorerBlockUrl,
+};
+
 const SOURCIFY_REPO_CONTRACTS_BASE_URL = 'https://repo.sourcify.dev/contracts';
-
-export function normalizeBlockExplorerBaseUrl(baseUrl?: string): string {
-  const normalized = (baseUrl ?? '').trim();
-  if (!normalized) {
-    return DEFAULT_BLOCK_EXPLORER_BASE_URL;
-  }
-
-  return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
-}
 
 function normalizeSourcifyMatchPath(match?: string): 'full_match' | 'partial_match' {
   if (match === 'match') {
@@ -18,20 +22,9 @@ function normalizeSourcifyMatchPath(match?: string): 'full_match' | 'partial_mat
   return 'full_match';
 }
 
-export function toBlockExplorerAddressUrl(address: string, baseUrl?: string): string {
-  return `${normalizeBlockExplorerBaseUrl(baseUrl)}/address/${address}`;
-}
-
 export function toSourcifyAddressUrl(address: string, chainId: number, match?: string): string {
   const matchPath = normalizeSourcifyMatchPath(match);
   return `${SOURCIFY_REPO_CONTRACTS_BASE_URL}/${matchPath}/${chainId}/${address}/`;
-}
-
-export function toBlockExplorerBlockUrl(
-  blockNumber: bigint | number | string,
-  baseUrl?: string,
-): string {
-  return `${normalizeBlockExplorerBaseUrl(baseUrl)}/block/${blockNumber}`;
 }
 
 export function toExplorerAddressMarkdownLink(address: string, baseUrl?: string): string {

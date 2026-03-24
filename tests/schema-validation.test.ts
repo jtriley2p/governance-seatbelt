@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { BlockscoutExplorer } from '../utils/clients/block-explorers/blockscout';
 import { CacheManager } from '../utils/clients/block-explorers/cache';
 import { EtherscanExplorer } from '../utils/clients/block-explorers/etherscan';
+import { TempoExplorer } from '../utils/clients/block-explorers/tempo';
 import { SourcifyClient } from '../utils/clients/sourcify';
 import { SchemaValidationError } from '../utils/validation/zod';
 
@@ -88,6 +89,39 @@ describe('Schema validation at API boundaries', () => {
       await expect(
         SourcifyClient.isContractVerified('0x0000000000000000000000000000000000000001', 1),
       ).rejects.toBeInstanceOf(SchemaValidationError);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('throws for invalid Tempo verifier response shape', async () => {
+    const originalFetch = globalThis.fetch;
+    CacheManager.clearMemory();
+
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          match: 'exact_match',
+          chainId: '4217',
+          address: '0x0000000000000000000000000000000000000001',
+          abi: 'not-an-abi',
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      )) as typeof fetch;
+
+    try {
+      const chainId = 4217;
+      const address = '0x0000000000000000000000000000000000000001';
+      const cachePath = join(process.cwd(), 'cache', 'abis', `${chainId}-${address}.json`);
+      if (existsSync(cachePath)) unlinkSync(cachePath);
+
+      const explorer = new TempoExplorer();
+      await expect(explorer.fetchContractAbi(address, chainId)).rejects.toBeInstanceOf(
+        SchemaValidationError,
+      );
     } finally {
       globalThis.fetch = originalFetch;
     }

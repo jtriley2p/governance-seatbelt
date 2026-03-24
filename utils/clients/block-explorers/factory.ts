@@ -11,6 +11,7 @@ import { BlockscoutExplorer } from './blockscout';
 import { CacheManager } from './cache';
 import { EtherscanExplorer } from './etherscan';
 import type { BlockExplorer } from './index';
+import { TempoExplorer } from './tempo';
 
 export type ContractVerificationStatus = 'verified' | 'unverified' | 'unknown';
 
@@ -25,7 +26,24 @@ export interface ContractVerificationResult {
 
 // biome-ignore lint/complexity/noStaticOnlyClass: Factory pattern with static methods
 export class BlockExplorerFactory {
-  private static explorers: Record<number, BlockExplorer | null> = {};
+  private static explorers: Record<number, { cacheKey: string; explorer: BlockExplorer | null }> =
+    {};
+
+  private static buildExplorerCacheKey(
+    baseUrl: string,
+    verificationConfig: {
+      backend: VerificationBackend;
+      apiKey?: string;
+      apiUrl?: string;
+    },
+  ): string {
+    return [
+      verificationConfig.backend,
+      verificationConfig.apiUrl ?? '',
+      verificationConfig.apiKey ?? '',
+      baseUrl,
+    ].join('|');
+  }
 
   private static setVerificationCache(
     chainId: number,
@@ -45,32 +63,43 @@ export class BlockExplorerFactory {
   }
 
   static getExplorer(chainId: number): BlockExplorer | null {
-    if (Object.prototype.hasOwnProperty.call(BlockExplorerFactory.explorers, chainId)) {
-      return BlockExplorerFactory.explorers[chainId] ?? null;
-    }
-
     const chainConfig = getChainConfig(chainId);
     const verificationConfig = resolveVerificationConfig(chainConfig);
+    const cacheKey = BlockExplorerFactory.buildExplorerCacheKey(
+      chainConfig.blockExplorer.baseUrl,
+      verificationConfig,
+    );
+
+    const cachedExplorer = BlockExplorerFactory.explorers[chainId];
+    if (cachedExplorer?.cacheKey === cacheKey) {
+      return cachedExplorer.explorer;
+    }
 
     if (verificationConfig.backend === VerificationBackend.Blockscout) {
       if (!verificationConfig.apiUrl) {
         throw new Error(`Missing Blockscout API URL for chain ${chainId}`);
       }
-      BlockExplorerFactory.explorers[chainId] = new BlockscoutExplorer(
+      const explorer = new BlockscoutExplorer(
         chainConfig.blockExplorer.baseUrl,
         verificationConfig.apiUrl,
       );
-      return BlockExplorerFactory.explorers[chainId];
+      BlockExplorerFactory.explorers[chainId] = { cacheKey, explorer };
+      return explorer;
     }
 
     if (verificationConfig.backend === VerificationBackend.EtherscanV2) {
-      BlockExplorerFactory.explorers[chainId] = new EtherscanExplorer(
-        verificationConfig.apiKey || '',
-      );
-      return BlockExplorerFactory.explorers[chainId];
+      const explorer = new EtherscanExplorer(verificationConfig.apiKey || '');
+      BlockExplorerFactory.explorers[chainId] = { cacheKey, explorer };
+      return explorer;
     }
 
-    BlockExplorerFactory.explorers[chainId] = null;
+    if (verificationConfig.backend === VerificationBackend.Tempo) {
+      const explorer = new TempoExplorer();
+      BlockExplorerFactory.explorers[chainId] = { cacheKey, explorer };
+      return explorer;
+    }
+
+    BlockExplorerFactory.explorers[chainId] = { cacheKey, explorer: null };
     return null;
   }
 

@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { AddressLabel as AddressLabelType } from '@/hooks/use-simulation-results';
+import { toBlockExplorerAddressUrl } from '@/lib/explorer-links';
 import { CheckIcon, CopyIcon, ExternalLinkIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -86,7 +87,9 @@ export function AddressLabel({
     }
   };
 
-  const explorerLink = blockExplorerUrl ? `${blockExplorerUrl}/address/${address}` : undefined;
+  const explorerLink = blockExplorerUrl
+    ? toBlockExplorerAddressUrl(address, blockExplorerUrl)
+    : undefined;
 
   const Trigger = explorerLink && showLink && linkMode === 'inline' ? 'a' : 'span';
   const triggerProps =

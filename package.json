@@ -17,6 +17,7 @@
     "check": "bun run typecheck && biome check",
     "check:fix": "bun run typecheck && biome check --write",
     "test": "bun test",
+    "test:verifiers:live": "bun test tests/verifier-live-smoke.test.ts",
     "contract:check": "bun test checks/tests/report-json-contract.test.ts",
     "check-proposal": "bun run-checks.ts",
     "sim": "bun start",

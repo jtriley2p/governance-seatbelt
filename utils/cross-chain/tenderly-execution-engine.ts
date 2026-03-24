@@ -88,6 +88,8 @@ type WormholeReceiverRuntimeStateByKey = Record<
   WormholeReceiverRuntimeState
 >;
 
+const DESTINATION_SETUP_MAX_ATTEMPTS = 3;
+
 function extractDestinationJobs(
   targets: readonly string[],
   calldatas: readonly string[],
@@ -170,6 +172,30 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
+async function withDestinationSetupRetry<T>(
+  label: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= DESTINATION_SETUP_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error: unknown) {
+      lastError = error;
+      if (attempt === DESTINATION_SETUP_MAX_ATTEMPTS) {
+        throw error;
+      }
+
+      console.warn(
+        `[CrossChainHandler] Retrying destination job setup ${label} (attempt ${attempt + 1}/${DESTINATION_SETUP_MAX_ATTEMPTS}) after error: ${getErrorMessage(error)}`,
+      );
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 function getWormholeReceiverCoreAddress(job: CrossChainExecutionJob): Address | null {
   if (job.bridgeType !== 'WormholeL1L2') return null;
   return getWormholeReceiverCoreAddressForChain(job.wormholeChainId);
@@ -184,8 +210,14 @@ async function findBlockNumberAtOrBeforeTimestamp(
   sourceTimestamp: bigint,
 ): Promise<bigint> {
   const client = getClientForChain(chainId);
-  const latestBlockNumber = await client.getBlockNumber();
-  const latestBlock = await client.getBlock({ blockNumber: latestBlockNumber });
+  const latestBlockNumber = await withDestinationSetupRetry(
+    `latest block number on chain ${chainId}`,
+    async () => await client.getBlockNumber(),
+  );
+  const latestBlock = await withDestinationSetupRetry(
+    `latest block on chain ${chainId}`,
+    async () => await client.getBlock({ blockNumber: latestBlockNumber }),
+  );
   if (latestBlock.timestamp <= sourceTimestamp) return latestBlock.number;
 
   let low = 0n;
@@ -194,7 +226,10 @@ async function findBlockNumberAtOrBeforeTimestamp(
 
   while (low <= high) {
     const mid = (low + high) / 2n;
-    const candidateBlock = await client.getBlock({ blockNumber: mid });
+    const candidateBlock = await withDestinationSetupRetry(
+      `block ${mid} on chain ${chainId}`,
+      async () => await client.getBlock({ blockNumber: mid }),
+    );
 
     if (candidateBlock.timestamp <= sourceTimestamp) {
       best = candidateBlock.number;
@@ -237,23 +272,31 @@ async function resolveWormholeReceiverRuntimeState(
     job.destinationChainId,
     sourceTimestamp,
   );
-  const expectedPayloadVersion = await client.readContract({
-    address: job.l2FromAddress,
-    abi: WORMHOLE_RECEIVER_ABI,
-    functionName: 'EXPECTED_MESSAGE_PAYLOAD_VERSION',
-    blockNumber: runtimeStateBlockNumber,
-  });
+  const expectedPayloadVersion = await withDestinationSetupRetry(
+    `EXPECTED_MESSAGE_PAYLOAD_VERSION for ${job.l2FromAddress} on chain ${job.destinationChainId}`,
+    async () =>
+      await client.readContract({
+        address: job.l2FromAddress,
+        abi: WORMHOLE_RECEIVER_ABI,
+        functionName: 'EXPECTED_MESSAGE_PAYLOAD_VERSION',
+        blockNumber: runtimeStateBlockNumber,
+      }),
+  );
   let nextSequence: bigint;
   if (overriddenSequence !== null) {
     nextSequence = overriddenSequence;
   } else {
     nextSequence = BigInt(
-      await client.readContract({
-        address: job.l2FromAddress,
-        abi: WORMHOLE_RECEIVER_ABI,
-        functionName: 'nextMinimumSequence',
-        blockNumber: runtimeStateBlockNumber,
-      }),
+      await withDestinationSetupRetry(
+        `nextMinimumSequence for ${job.l2FromAddress} on chain ${job.destinationChainId}`,
+        async () =>
+          await client.readContract({
+            address: job.l2FromAddress,
+            abi: WORMHOLE_RECEIVER_ABI,
+            functionName: 'nextMinimumSequence',
+            blockNumber: runtimeStateBlockNumber,
+          }),
+      ),
     );
   }
 

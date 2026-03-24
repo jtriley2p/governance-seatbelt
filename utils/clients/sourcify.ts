@@ -1,5 +1,4 @@
-import { getAddress } from 'viem';
-import { SchemaValidationError, parseWithSchema, z } from '../validation/zod';
+import { VerifierLookupClient, type VerifierLookupResponse } from './verifier-lookup';
 
 /**
  * Sourcify verification status values.
@@ -20,23 +19,6 @@ export type SourcifyMatch = 'exact_match' | 'match' | 'no_match' | 'error';
 export type SourcifyVerification =
   | { status: 'verified'; match: 'exact_match' | 'partial_match' }
   | { status: 'unverified' };
-// In-memory cache for Sourcify verification results
-const sourcifyCache: Record<string, SourcifyCheckResult> = {};
-
-const sourcifyV2LookupResponseSchema = z
-  .object({
-    match: z.string().nullable(),
-    creationMatch: z.string().nullable().optional(),
-    runtimeMatch: z.string().nullable().optional(),
-    verifiedAt: z.string().optional(),
-    chainId: z.union([z.string(), z.number()]),
-    address: z.string(),
-  })
-  .passthrough();
-
-function getCacheKey(address: string, chainId: number): string {
-  return `${chainId}:${getAddress(address)}`;
-}
 
 /**
  * Sourcify API client for checking contract verification status.
@@ -48,75 +30,20 @@ function getCacheKey(address: string, chainId: number): string {
  */
 // biome-ignore lint/complexity/noStaticOnlyClass: Consistent with BlockExplorerFactory pattern
 export class SourcifyClient {
-  private static readonly BASE_URL = 'https://sourcify.dev/server/v2';
-  private static readonly TIMEOUT_MS = 10000;
+  private static readonly client = new VerifierLookupClient({
+    baseUrl: 'https://sourcify.dev/server',
+    name: 'Sourcify',
+  });
 
   static async isContractVerified(address: string, chainId: number): Promise<SourcifyCheckResult> {
-    const cacheKey = getCacheKey(address, chainId);
-    if (sourcifyCache[cacheKey]) return sourcifyCache[cacheKey];
-
-    try {
-      const checksummedAddress = getAddress(address);
-      const url = `${SourcifyClient.BASE_URL}/contract/${chainId}/${checksummedAddress}`;
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), SourcifyClient.TIMEOUT_MS);
-
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (response.status === 404) {
-        const rawData = await response.json();
-        const data = parseWithSchema(
-          sourcifyV2LookupResponseSchema,
-          rawData,
-          'Sourcify v2 contract lookup response',
-        );
-        const result = SourcifyClient.parseV2LookupResponse(data);
-        sourcifyCache[cacheKey] = result;
-        return result;
-      }
-
-      if (!response.ok) {
-        console.warn(`Sourcify API returned status ${response.status} for ${address}`);
-        const result: SourcifyCheckResult = { verified: false, status: 'error' };
-        sourcifyCache[cacheKey] = result;
-        return result;
-      }
-
-      const rawData = await response.json();
-      const data = parseWithSchema(
-        sourcifyV2LookupResponseSchema,
-        rawData,
-        'Sourcify v2 contract lookup response',
-      );
-      const result = SourcifyClient.parseV2LookupResponse(data);
-      sourcifyCache[cacheKey] = result;
-      return result;
-    } catch (error) {
-      if (error instanceof SchemaValidationError) {
-        throw error;
-      }
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.warn(`Sourcify API timeout for ${address} on chain ${chainId}`);
-      } else {
-        console.warn(`Sourcify API error for ${address} on chain ${chainId}:`, error);
-      }
-
-      const result: SourcifyCheckResult = { verified: false, status: 'error' };
-      sourcifyCache[cacheKey] = result;
-      return result;
-    }
+    const lookup = await SourcifyClient.client.lookup(address, chainId);
+    if (lookup.status === 'error') return { verified: false, status: 'error' };
+    if (lookup.status === 'not_found' || !lookup.data)
+      return { verified: false, status: 'no_match' };
+    return SourcifyClient.parseLookupResponse(lookup.data);
   }
 
-  private static parseV2LookupResponse(
-    data: z.infer<typeof sourcifyV2LookupResponseSchema>,
-  ): SourcifyCheckResult {
+  private static parseLookupResponse(data: VerifierLookupResponse): SourcifyCheckResult {
     if (data.match === 'exact_match' || data.match === 'match') {
       return { verified: true, status: data.match };
     }
@@ -124,9 +51,7 @@ export class SourcifyClient {
   }
 
   static clearCache(): void {
-    for (const key of Object.keys(sourcifyCache)) {
-      delete sourcifyCache[key];
-    }
+    SourcifyClient.client.clearCache();
   }
 }
 
