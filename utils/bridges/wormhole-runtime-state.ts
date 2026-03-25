@@ -1,0 +1,6 @@
+export const DEFAULT_WORMHOLE_MESSAGE_PAYLOAD_VERSION =
+  '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b' as const;
+
+// `nextMinimumSequence` is the first storage slot in the live Uniswap Wormhole receiver.
+export const WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT =
+  '0x0000000000000000000000000000000000000000000000000000000000000000' as const;

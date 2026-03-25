@@ -89,7 +89,6 @@ type WormholeReceiverRuntimeStateByKey = Record<
 >;
 
 const DESTINATION_SETUP_MAX_ATTEMPTS = 3;
-
 function extractDestinationJobs(
   targets: readonly string[],
   calldatas: readonly string[],

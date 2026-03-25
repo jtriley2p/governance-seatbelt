@@ -13,14 +13,12 @@ import {
   type TestOnlyWormholeLaneKey,
 } from '../../tests/fixtures/test-only-wormhole-lane-state';
 import type { SimulationConfigNew, SimulationResult } from '../../types';
-import { getWormholeReceiverCoreAddressForChain } from '../../utils/bridges/wormhole';
+import { getWormholeLaneCapabilities } from '../../utils/bridges/wormhole';
+import { WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT } from '../../utils/bridges/wormhole-runtime-state';
 import { getClientForChain } from '../../utils/clients/client';
 import type { SimulationExecutionOptions } from '../../utils/clients/tenderly';
-import {
-  WORMHOLE_RECEIVER_ABI,
-  WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT,
-} from '../../utils/cross-chain/wormhole-receiver-sim';
 import { handleCrossChainSimulations, simulateNew } from '../../utils/clients/tenderly';
+import { WORMHOLE_RECEIVER_ABI } from '../../utils/cross-chain/wormhole-receiver-sim';
 import {
   buildDerivedBaselineChains,
   buildDerivedStateByChain,
@@ -36,13 +34,6 @@ type LaneKey = Extract<
   TestOnlyWormholeLaneKey,
   'bnb' | 'polygon' | 'avalanche' | 'celo' | 'monad' | 'tempo'
 >;
-
-const RECEIVER_MODE_LANE_KEYS: ReadonlySet<LaneKey> = new Set([
-  'bnb',
-  'celo',
-  'monad',
-  'tempo',
-]);
 
 function buildExecutionOptions(
   config: SimulationConfigNew,
@@ -71,6 +62,23 @@ async function runRepresentativeLaneSimulation(
   const executionOptions = buildExecutionOptions(config, derivedStateByChain);
   const sourceResult = await simulateNew(config, executionOptions);
   return await handleCrossChainSimulations(sourceResult, executionOptions);
+}
+
+function getCeloWormholeJob(result: SimulationResult) {
+  return (result.destinationJobResults ?? []).find(
+    (job) =>
+      job.bridgeType === 'WormholeL1L2' &&
+      job.chainId === TEST_ONLY_WORMHOLE_LANES.celo.chainId &&
+      job.job.l2FromAddress.toLowerCase() ===
+        TEST_ONLY_WORMHOLE_LANES.celo.l2FromAddress.toLowerCase(),
+  );
+}
+
+function getCeloFollowupJobs(result: SimulationResult) {
+  return (result.destinationJobResults ?? []).filter(
+    (job) =>
+      job.bridgeType === 'OptimismL1L2' && job.chainId === TEST_ONLY_WORMHOLE_LANES.celo.chainId,
+  );
 }
 
 describe('Wormhole lane live authority validation', () => {
@@ -120,18 +128,25 @@ describe('Wormhole lane live authority validation', () => {
       expect(code).toBeDefined();
       expect(code).not.toBe('0x');
 
-      const wormholeReceiverCoreAddress = getWormholeReceiverCoreAddressForChain(lane.wormholeChainId);
+      const laneCapabilities = getWormholeLaneCapabilities(lane.wormholeChainId);
+      const wormholeReceiverCoreAddress = laneCapabilities.receiverCoreAddress;
+      const usesReceiverMode = laneCapabilities.kind !== 'direct';
+      const usesLegacyRuntimeState = laneCapabilities.kind === 'legacy';
 
-      if (RECEIVER_MODE_LANE_KEYS.has(laneKey)) {
+      expect(usesReceiverMode).toBe(wormholeReceiverCoreAddress !== null);
+      expect(usesLegacyRuntimeState && !usesReceiverMode).toBe(false);
+
+      if (usesReceiverMode) {
         expect(wormholeReceiverCoreAddress).not.toBeNull();
+        const receiverCoreAddress = wormholeReceiverCoreAddress!;
 
         const wormholeCoreCode = await client.getCode({
-          address: wormholeReceiverCoreAddress!,
+          address: receiverCoreAddress,
         });
         expect(wormholeCoreCode).toBeDefined();
         expect(wormholeCoreCode).not.toBe('0x');
 
-        if (laneKey === 'bnb') {
+        if (usesLegacyRuntimeState) {
           await expect(
             client.readContract({
               address: lane.l2FromAddress,
@@ -210,15 +225,15 @@ describe('Celo 94 -> 95 derived-state validation', () => {
     '94-test succeeds on the Celo Wormhole handoff lane',
     async () => {
       const proposal94Result = await getProposal94Result();
-      const celoJob = (proposal94Result.destinationJobResults ?? []).find(
-        (job) => job.chainId === TEST_ONLY_WORMHOLE_LANES.celo.chainId,
-      );
+      const celoJob = getCeloWormholeJob(proposal94Result);
 
       expect(celoJob?.bridgeType).toBe('WormholeL1L2');
       expect(celoJob?.job.l2FromAddress.toLowerCase()).toBe(
         TEST_ONLY_WORMHOLE_LANES.celo.l2FromAddress.toLowerCase(),
       );
       expect(celoJob?.status).toBe('success');
+      expect(celoJob?.stepResults.every((step) => step.status === 'success')).toBe(true);
+      expect(proposal94Result.crossChainFailure).toBe(false);
     },
     EXTERNAL_API_TIMEOUT_MS,
   );
@@ -227,11 +242,11 @@ describe('Celo 94 -> 95 derived-state validation', () => {
     '95-test fails on Celo without the derived 94 baseline',
     async () => {
       const proposal95Result = await getStandalone95Result();
-      const celoJob = (proposal95Result.destinationJobResults ?? []).find(
-        (job) => job.chainId === TEST_ONLY_WORMHOLE_LANES.celo.chainId,
-      );
+      const celoJobs = getCeloFollowupJobs(proposal95Result);
 
-      expect(celoJob?.status).toBe('failure');
+      expect(celoJobs).toHaveLength(2);
+      expect(celoJobs.every((job) => job.status === 'failure')).toBe(true);
+      expect(proposal95Result.crossChainFailure).toBe(true);
     },
     EXTERNAL_API_TIMEOUT_MS,
   );
@@ -240,11 +255,14 @@ describe('Celo 94 -> 95 derived-state validation', () => {
     '95-test succeeds on Celo when derived from the 94 baseline',
     async () => {
       const proposal95Result = await getDerived95Result();
-      const celoJob = (proposal95Result.destinationJobResults ?? []).find(
-        (job) => job.chainId === TEST_ONLY_WORMHOLE_LANES.celo.chainId,
-      );
+      const celoJobs = getCeloFollowupJobs(proposal95Result);
 
-      expect(celoJob?.status).toBe('success');
+      expect(celoJobs).toHaveLength(2);
+      expect(celoJobs.every((job) => job.status === 'success')).toBe(true);
+      expect(
+        celoJobs.every((job) => job.stepResults.every((step) => step.status === 'success')),
+      ).toBe(true);
+      expect(proposal95Result.crossChainFailure).toBe(false);
     },
     EXTERNAL_API_TIMEOUT_MS,
   );

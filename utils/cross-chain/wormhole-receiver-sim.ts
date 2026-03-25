@@ -1,5 +1,6 @@
 import { type Address, type Hex, encodeAbiParameters, encodeFunctionData, parseAbi } from 'viem';
 import type { CrossChainExecutionJob } from '../../types.d';
+import { WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT } from '../bridges/wormhole-runtime-state';
 import type { SimulationStateObjects } from '../derived-state';
 
 export { WORMHOLE_CORE_STUB_RUNTIME_BYTECODE } from './wormhole-core-stub-bytecode';
@@ -10,21 +11,12 @@ export const WORMHOLE_RECEIVER_ABI = parseAbi([
   'function EXPECTED_MESSAGE_PAYLOAD_VERSION() view returns (bytes32)',
 ]);
 
-export const DEFAULT_WORMHOLE_MESSAGE_PAYLOAD_VERSION =
-  '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b' as const;
-
 export type WormholeReceiverRuntimeState = {
   expectedPayloadVersion: Hex;
   nextSequence: bigint;
 };
 
 export type WormholeReceiverRuntimeStateCacheKey = `${number}:${string}`;
-
-// `nextMinimumSequence` is the first storage slot in the live Uniswap Wormhole receiver.
-// We only read it from local state overrides so chained simulations can carry the receiver
-// sequence forward without a second Tenderly round-trip; interface reads only see live state.
-export const WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT =
-  '0x0000000000000000000000000000000000000000000000000000000000000000' as const;
 
 export function getOverriddenWormholeReceiverSequence(
   workingState: SimulationStateObjects | undefined,
