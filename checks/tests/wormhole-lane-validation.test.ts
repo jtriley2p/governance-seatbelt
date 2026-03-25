@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { parseAbi } from 'viem';
+import { config as proposal94TestConfig } from '../../sims/94-test.sim';
+import { config as proposal95TestConfig } from '../../sims/95-test.sim';
 import {
   LIVE_WORMHOLE_LANE_VALIDATION_TARGETS,
   REPRESENTATIVE_WORMHOLE_ROLLOUT_LANE_KEYS,
@@ -11,9 +13,12 @@ import {
   type TestOnlyWormholeLaneKey,
 } from '../../tests/fixtures/test-only-wormhole-lane-state';
 import type { SimulationConfigNew, SimulationResult } from '../../types';
+import { getWormholeLaneCapabilities } from '../../utils/bridges/wormhole';
+import { WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT } from '../../utils/bridges/wormhole-runtime-state';
 import { getClientForChain } from '../../utils/clients/client';
 import type { SimulationExecutionOptions } from '../../utils/clients/tenderly';
 import { handleCrossChainSimulations, simulateNew } from '../../utils/clients/tenderly';
+import { WORMHOLE_RECEIVER_ABI } from '../../utils/cross-chain/wormhole-receiver-sim';
 import {
   buildDerivedBaselineChains,
   buildDerivedStateByChain,
@@ -27,7 +32,7 @@ const EXTERNAL_API_TIMEOUT_MS = 180000;
 
 type LaneKey = Extract<
   TestOnlyWormholeLaneKey,
-  'bnb' | 'polygon' | 'avalanche' | 'monad' | 'tempo'
+  'bnb' | 'polygon' | 'avalanche' | 'celo' | 'monad' | 'tempo'
 >;
 
 function buildExecutionOptions(
@@ -59,11 +64,29 @@ async function runRepresentativeLaneSimulation(
   return await handleCrossChainSimulations(sourceResult, executionOptions);
 }
 
+function getCeloWormholeJob(result: SimulationResult) {
+  return (result.destinationJobResults ?? []).find(
+    (job) =>
+      job.bridgeType === 'WormholeL1L2' &&
+      job.chainId === TEST_ONLY_WORMHOLE_LANES.celo.chainId &&
+      job.job.l2FromAddress.toLowerCase() ===
+        TEST_ONLY_WORMHOLE_LANES.celo.l2FromAddress.toLowerCase(),
+  );
+}
+
+function getCeloFollowupJobs(result: SimulationResult) {
+  return (result.destinationJobResults ?? []).filter(
+    (job) =>
+      job.bridgeType === 'OptimismL1L2' && job.chainId === TEST_ONLY_WORMHOLE_LANES.celo.chainId,
+  );
+}
+
 describe('Wormhole lane live authority validation', () => {
   const supportedLanes: Array<{ laneKey: LaneKey; chainName: string }> = [
     { laneKey: 'bnb', chainName: 'BNB' },
     { laneKey: 'polygon', chainName: 'Polygon' },
     { laneKey: 'avalanche', chainName: 'Avalanche' },
+    { laneKey: 'celo', chainName: 'Celo' },
     { laneKey: 'monad', chainName: 'Monad' },
     { laneKey: 'tempo', chainName: 'Tempo' },
   ];
@@ -104,6 +127,142 @@ describe('Wormhole lane live authority validation', () => {
       const code = await client.getCode({ address: lane.l2FromAddress });
       expect(code).toBeDefined();
       expect(code).not.toBe('0x');
+
+      const laneCapabilities = getWormholeLaneCapabilities(lane.wormholeChainId);
+      const wormholeReceiverCoreAddress = laneCapabilities.receiverCoreAddress;
+      const usesReceiverMode = laneCapabilities.kind !== 'direct';
+      const usesLegacyRuntimeState = laneCapabilities.kind === 'legacy';
+
+      expect(usesReceiverMode).toBe(wormholeReceiverCoreAddress !== null);
+      expect(usesLegacyRuntimeState && !usesReceiverMode).toBe(false);
+
+      if (usesReceiverMode) {
+        expect(wormholeReceiverCoreAddress).not.toBeNull();
+        const receiverCoreAddress = wormholeReceiverCoreAddress!;
+
+        const wormholeCoreCode = await client.getCode({
+          address: receiverCoreAddress,
+        });
+        expect(wormholeCoreCode).toBeDefined();
+        expect(wormholeCoreCode).not.toBe('0x');
+
+        if (usesLegacyRuntimeState) {
+          await expect(
+            client.readContract({
+              address: lane.l2FromAddress,
+              abi: WORMHOLE_RECEIVER_ABI,
+              functionName: 'EXPECTED_MESSAGE_PAYLOAD_VERSION',
+            }),
+          ).rejects.toThrow();
+          await expect(
+            client.readContract({
+              address: lane.l2FromAddress,
+              abi: WORMHOLE_RECEIVER_ABI,
+              functionName: 'nextMinimumSequence',
+            }),
+          ).rejects.toThrow();
+
+          const storedSequence = await client.getStorageAt({
+            address: lane.l2FromAddress,
+            slot: WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT,
+          });
+          expect(storedSequence).toBeDefined();
+        } else {
+          const payloadVersion = await client.readContract({
+            address: lane.l2FromAddress,
+            abi: WORMHOLE_RECEIVER_ABI,
+            functionName: 'EXPECTED_MESSAGE_PAYLOAD_VERSION',
+          });
+          const nextMinimumSequence = await client.readContract({
+            address: lane.l2FromAddress,
+            abi: WORMHOLE_RECEIVER_ABI,
+            functionName: 'nextMinimumSequence',
+          });
+
+          expect(payloadVersion).toMatch(/^0x[0-9a-fA-F]{64}$/);
+          expect(typeof nextMinimumSequence).toBe('bigint');
+        }
+      } else {
+        expect(wormholeReceiverCoreAddress).toBeNull();
+        await expect(
+          client.readContract({
+            address: lane.l2FromAddress,
+            abi: WORMHOLE_RECEIVER_ABI,
+            functionName: 'EXPECTED_MESSAGE_PAYLOAD_VERSION',
+          }),
+        ).rejects.toThrow();
+      }
+    },
+    EXTERNAL_API_TIMEOUT_MS,
+  );
+});
+
+describe('Celo 94 -> 95 derived-state validation', () => {
+  let proposal94ResultPromise: Promise<SimulationResult> | undefined;
+  let standalone95ResultPromise: Promise<SimulationResult> | undefined;
+  let derived95ResultPromise: Promise<SimulationResult> | undefined;
+
+  function getProposal94Result() {
+    proposal94ResultPromise ??= runRepresentativeLaneSimulation(proposal94TestConfig);
+    return proposal94ResultPromise;
+  }
+
+  function getStandalone95Result() {
+    standalone95ResultPromise ??= runRepresentativeLaneSimulation(proposal95TestConfig);
+    return standalone95ResultPromise;
+  }
+
+  function getDerived95Result() {
+    derived95ResultPromise ??= (async () => {
+      const proposal94Result = await getProposal94Result();
+      const derivedStateByChain = buildDerivedStateByChain(proposal94Result);
+      return await runRepresentativeLaneSimulation(proposal95TestConfig, derivedStateByChain);
+    })();
+    return derived95ResultPromise;
+  }
+
+  test(
+    '94-test succeeds on the Celo Wormhole handoff lane',
+    async () => {
+      const proposal94Result = await getProposal94Result();
+      const celoJob = getCeloWormholeJob(proposal94Result);
+
+      expect(celoJob?.bridgeType).toBe('WormholeL1L2');
+      expect(celoJob?.job.l2FromAddress.toLowerCase()).toBe(
+        TEST_ONLY_WORMHOLE_LANES.celo.l2FromAddress.toLowerCase(),
+      );
+      expect(celoJob?.status).toBe('success');
+      expect(celoJob?.stepResults.every((step) => step.status === 'success')).toBe(true);
+      expect(proposal94Result.crossChainFailure).toBe(false);
+    },
+    EXTERNAL_API_TIMEOUT_MS,
+  );
+
+  test(
+    '95-test fails on Celo without the derived 94 baseline',
+    async () => {
+      const proposal95Result = await getStandalone95Result();
+      const celoJobs = getCeloFollowupJobs(proposal95Result);
+
+      expect(celoJobs).toHaveLength(2);
+      expect(celoJobs.every((job) => job.status === 'failure')).toBe(true);
+      expect(proposal95Result.crossChainFailure).toBe(true);
+    },
+    EXTERNAL_API_TIMEOUT_MS,
+  );
+
+  test(
+    '95-test succeeds on Celo when derived from the 94 baseline',
+    async () => {
+      const proposal95Result = await getDerived95Result();
+      const celoJobs = getCeloFollowupJobs(proposal95Result);
+
+      expect(celoJobs).toHaveLength(2);
+      expect(celoJobs.every((job) => job.status === 'success')).toBe(true);
+      expect(
+        celoJobs.every((job) => job.stepResults.every((step) => step.status === 'success')),
+      ).toBe(true);
+      expect(proposal95Result.crossChainFailure).toBe(false);
     },
     EXTERNAL_API_TIMEOUT_MS,
   );

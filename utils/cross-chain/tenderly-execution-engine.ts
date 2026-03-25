@@ -1,4 +1,4 @@
-import { type Address, getAddress } from 'viem';
+import { type Address, type Hex, getAddress } from 'viem';
 import type {
   CrossChainExecutionJob,
   CrossChainExecutionJobResult,
@@ -10,7 +10,7 @@ import { extractArbitrumL1L2JobsFromProposal } from '../bridges/arbitrum';
 import { extractOptimismL1L2JobsFromProposal } from '../bridges/optimism';
 import {
   extractWormholeExecutionJobsFromProposal,
-  getWormholeReceiverCoreAddressForChain,
+  getWormholeLaneCapabilities,
 } from '../bridges/wormhole';
 import { supportsTenderlyDestinationSimulation } from '../chains/capabilities';
 import { getClientForChain } from '../clients/client';
@@ -89,7 +89,6 @@ type WormholeReceiverRuntimeStateByKey = Record<
 >;
 
 const DESTINATION_SETUP_MAX_ATTEMPTS = 3;
-
 function extractDestinationJobs(
   targets: readonly string[],
   calldatas: readonly string[],
@@ -198,11 +197,98 @@ async function withDestinationSetupRetry<T>(
 
 function getWormholeReceiverCoreAddress(job: CrossChainExecutionJob): Address | null {
   if (job.bridgeType !== 'WormholeL1L2') return null;
-  return getWormholeReceiverCoreAddressForChain(job.wormholeChainId);
+  return getWormholeLaneCapabilities(job.wormholeChainId).receiverCoreAddress;
 }
 
 function isWormholeReceiverModeJob(job: CrossChainExecutionJob): boolean {
   return getWormholeReceiverCoreAddress(job) !== null && job.wormholeChainId !== undefined;
+}
+
+function parseLegacyWormholeReceiverSequenceStorage(
+  storedSequence: Hex | undefined,
+  job: CrossChainExecutionJob,
+  runtimeStateBlockNumber: bigint,
+): bigint {
+  if (storedSequence === undefined || storedSequence === '0x') {
+    throw new Error(
+      `Missing legacy Wormhole receiver sequence storage for ${job.l2FromAddress} at block ${runtimeStateBlockNumber.toString()}`,
+    );
+  }
+
+  try {
+    return BigInt(storedSequence);
+  } catch {
+    throw new Error(
+      `Invalid legacy Wormhole receiver sequence storage for ${job.l2FromAddress} at block ${runtimeStateBlockNumber.toString()}: ${storedSequence}`,
+    );
+  }
+}
+
+async function resolveLegacyWormholeReceiverRuntimeState(
+  job: CrossChainExecutionJob,
+  runtimeStateBlockNumber: bigint,
+  payloadVersion: Hex,
+  nextSequenceStorageSlot: `0x${string}`,
+  overriddenSequence: bigint | null,
+): Promise<WormholeReceiverRuntimeState> {
+  const client = getClientForChain(job.destinationChainId);
+  const nextSequence =
+    overriddenSequence ??
+    parseLegacyWormholeReceiverSequenceStorage(
+      await withDestinationSetupRetry(
+        `legacy sequence storage for ${job.l2FromAddress} on chain ${job.destinationChainId}`,
+        async () =>
+          await client.getStorageAt({
+            address: job.l2FromAddress,
+            slot: nextSequenceStorageSlot,
+            blockNumber: runtimeStateBlockNumber,
+          }),
+      ),
+      job,
+      runtimeStateBlockNumber,
+    );
+
+  return {
+    nextSequence,
+    expectedPayloadVersion: payloadVersion,
+  };
+}
+
+async function resolveModernWormholeReceiverRuntimeState(
+  job: CrossChainExecutionJob,
+  runtimeStateBlockNumber: bigint,
+  overriddenSequence: bigint | null,
+): Promise<WormholeReceiverRuntimeState> {
+  const client = getClientForChain(job.destinationChainId);
+  const expectedPayloadVersion = await withDestinationSetupRetry(
+    `EXPECTED_MESSAGE_PAYLOAD_VERSION for ${job.l2FromAddress} on chain ${job.destinationChainId}`,
+    async () =>
+      await client.readContract({
+        address: job.l2FromAddress,
+        abi: WORMHOLE_RECEIVER_ABI,
+        functionName: 'EXPECTED_MESSAGE_PAYLOAD_VERSION',
+        blockNumber: runtimeStateBlockNumber,
+      }),
+  );
+  const nextSequence =
+    overriddenSequence ??
+    BigInt(
+      await withDestinationSetupRetry(
+        `nextMinimumSequence for ${job.l2FromAddress} on chain ${job.destinationChainId}`,
+        async () =>
+          await client.readContract({
+            address: job.l2FromAddress,
+            abi: WORMHOLE_RECEIVER_ABI,
+            functionName: 'nextMinimumSequence',
+            blockNumber: runtimeStateBlockNumber,
+          }),
+      ),
+    );
+
+  return {
+    nextSequence,
+    expectedPayloadVersion,
+  };
 }
 
 async function findBlockNumberAtOrBeforeTimestamp(
@@ -267,43 +353,25 @@ async function resolveWormholeReceiverRuntimeState(
     return refreshedRuntimeState;
   }
 
-  const client = getClientForChain(job.destinationChainId);
   const runtimeStateBlockNumber = await findBlockNumberAtOrBeforeTimestamp(
     job.destinationChainId,
     sourceTimestamp,
   );
-  const expectedPayloadVersion = await withDestinationSetupRetry(
-    `EXPECTED_MESSAGE_PAYLOAD_VERSION for ${job.l2FromAddress} on chain ${job.destinationChainId}`,
-    async () =>
-      await client.readContract({
-        address: job.l2FromAddress,
-        abi: WORMHOLE_RECEIVER_ABI,
-        functionName: 'EXPECTED_MESSAGE_PAYLOAD_VERSION',
-        blockNumber: runtimeStateBlockNumber,
-      }),
-  );
-  let nextSequence: bigint;
-  if (overriddenSequence !== null) {
-    nextSequence = overriddenSequence;
-  } else {
-    nextSequence = BigInt(
-      await withDestinationSetupRetry(
-        `nextMinimumSequence for ${job.l2FromAddress} on chain ${job.destinationChainId}`,
-        async () =>
-          await client.readContract({
-            address: job.l2FromAddress,
-            abi: WORMHOLE_RECEIVER_ABI,
-            functionName: 'nextMinimumSequence',
-            blockNumber: runtimeStateBlockNumber,
-          }),
-      ),
-    );
-  }
-
-  const runtimeState = {
-    nextSequence,
-    expectedPayloadVersion,
-  } satisfies WormholeReceiverRuntimeState;
+  const laneCapabilities = getWormholeLaneCapabilities(job.wormholeChainId);
+  const runtimeState =
+    laneCapabilities.kind === 'legacy'
+      ? await resolveLegacyWormholeReceiverRuntimeState(
+          job,
+          runtimeStateBlockNumber,
+          laneCapabilities.payloadVersion,
+          laneCapabilities.nextSequenceStorageSlot,
+          overriddenSequence,
+        )
+      : await resolveModernWormholeReceiverRuntimeState(
+          job,
+          runtimeStateBlockNumber,
+          overriddenSequence,
+        );
   runtimeStateByKey[runtimeStateKey] = runtimeState;
   return runtimeState;
 }

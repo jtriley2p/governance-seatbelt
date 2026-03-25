@@ -36,7 +36,7 @@ export type LiveWormholeLaneValidationTargets = {
 };
 
 export const LIVE_WORMHOLE_LANE_VALIDATION_TARGETS: Record<
-  Extract<TestOnlyWormholeLaneKey, 'bnb' | 'polygon' | 'avalanche' | 'monad' | 'tempo'>,
+  Extract<TestOnlyWormholeLaneKey, 'bnb' | 'polygon' | 'avalanche' | 'celo' | 'monad' | 'tempo'>,
   LiveWormholeLaneValidationTargets
 > = {
   bnb: {
@@ -47,6 +47,11 @@ export const LIVE_WORMHOLE_LANE_VALIDATION_TARGETS: Record<
   },
   avalanche: {
     v2Factory: getAddress('0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C'),
+  },
+  celo: {
+    v2Factory: getAddress('0x79a530c8e2fA8748B7B40dd3629C0520c2cCf03f'),
+    v3Factory: getAddress('0xAfE208a311B21f13EF87E33A90049fC17A7acDEc'),
+    v4PoolManager: getAddress('0x288dc841A52FCA2707c6947B3A777c5E56cd87BC'),
   },
   monad: {
     v2Factory: getAddress('0x182a927119d56008d921126764bf884221b10f59'),
