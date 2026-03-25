@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseAbi } from 'viem';
+import { encodeAbiParameters, keccak256, parseAbi } from 'viem';
 import { config as proposal94TestConfig } from '../../sims/94-test.sim';
 import { config as proposal95TestConfig } from '../../sims/95-test.sim';
 import {
@@ -14,7 +14,11 @@ import {
 } from '../../tests/fixtures/test-only-wormhole-lane-state';
 import type { SimulationConfigNew, SimulationResult } from '../../types';
 import { getWormholeLaneCapabilities } from '../../utils/bridges/wormhole';
-import { WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT } from '../../utils/bridges/wormhole-runtime-state';
+import {
+  LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION,
+  LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
+} from '../../utils/bridges/wormhole-runtime-state';
+import { BlockExplorerFactory } from '../../utils/clients/block-explorers/factory';
 import { getClientForChain } from '../../utils/clients/client';
 import type { SimulationExecutionOptions } from '../../utils/clients/tenderly';
 import { handleCrossChainSimulations, simulateNew } from '../../utils/clients/tenderly';
@@ -29,11 +33,60 @@ import type { DerivedStateByChain } from '../../utils/derived-state';
 const OWNER_ABI = parseAbi(['function owner() view returns (address)']);
 const V2_FACTORY_ABI = parseAbi(['function feeToSetter() view returns (address)']);
 const EXTERNAL_API_TIMEOUT_MS = 180000;
+const RUN_LIVE_BNB_LEGACY_VALIDATION = process.env.RUN_LIVE_BNB_LEGACY_VALIDATION === '1';
+const maybeLiveBnbLegacy = RUN_LIVE_BNB_LEGACY_VALIDATION ? test : test.skip;
+const BNB_SOURCIFY_SOURCE_BASE_URL =
+  'https://repo.sourcify.dev/contracts/full_match/56/0x341c1511141022cf8eE20824Ae0fFA3491F1302b/sources';
+const LEGACY_BNB_WORMHOLE_PAYLOAD_DESCRIPTOR =
+  'UniswapWormholeMessageSenderV1 (bytes32 receivedMessagePayloadVersion, address[] memory targets, uint256[] memory values, bytes[] memory datas, address messageReceiver, uint16 receiverChainId)';
 
 type LaneKey = Extract<
   TestOnlyWormholeLaneKey,
   'bnb' | 'polygon' | 'avalanche' | 'celo' | 'monad' | 'tempo'
 >;
+
+async function expectLiveGovernanceAuthorityMatchesLane(laneKey: LaneKey): Promise<void> {
+  const lane = TEST_ONLY_WORMHOLE_LANES[laneKey];
+  const validationTargets = LIVE_WORMHOLE_LANE_VALIDATION_TARGETS[laneKey];
+  const client = getClientForChain(lane.chainId);
+
+  const feeToSetter = await client.readContract({
+    address: validationTargets.v2Factory,
+    abi: V2_FACTORY_ABI,
+    functionName: 'feeToSetter',
+  });
+
+  expect(feeToSetter.toLowerCase()).toBe(lane.l2FromAddress.toLowerCase());
+
+  if (validationTargets.v3Factory) {
+    const owner = await client.readContract({
+      address: validationTargets.v3Factory,
+      abi: OWNER_ABI,
+      functionName: 'owner',
+    });
+    expect(owner.toLowerCase()).toBe(lane.l2FromAddress.toLowerCase());
+  }
+
+  if (validationTargets.v4PoolManager) {
+    const owner = await client.readContract({
+      address: validationTargets.v4PoolManager,
+      abi: OWNER_ABI,
+      functionName: 'owner',
+    });
+    expect(owner.toLowerCase()).toBe(lane.l2FromAddress.toLowerCase());
+  }
+}
+
+async function fetchLegacyBnbVerifiedSource(relativePath: string): Promise<string> {
+  const response = await fetch(`${BNB_SOURCIFY_SOURCE_BASE_URL}/${relativePath}`);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch legacy BNB verified source ${relativePath}: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return await response.text();
+}
 
 function buildExecutionOptions(
   config: SimulationConfigNew,
@@ -95,34 +148,9 @@ describe('Wormhole lane live authority validation', () => {
     'confirms the configured $chainName lane authority matches live destination governance state',
     async ({ laneKey }) => {
       const lane = TEST_ONLY_WORMHOLE_LANES[laneKey];
-      const validationTargets = LIVE_WORMHOLE_LANE_VALIDATION_TARGETS[laneKey];
       const client = getClientForChain(lane.chainId);
 
-      const feeToSetter = await client.readContract({
-        address: validationTargets.v2Factory,
-        abi: V2_FACTORY_ABI,
-        functionName: 'feeToSetter',
-      });
-
-      expect(feeToSetter.toLowerCase()).toBe(lane.l2FromAddress.toLowerCase());
-
-      if (validationTargets.v3Factory) {
-        const owner = await client.readContract({
-          address: validationTargets.v3Factory,
-          abi: OWNER_ABI,
-          functionName: 'owner',
-        });
-        expect(owner.toLowerCase()).toBe(lane.l2FromAddress.toLowerCase());
-      }
-
-      if (validationTargets.v4PoolManager) {
-        const owner = await client.readContract({
-          address: validationTargets.v4PoolManager,
-          abi: OWNER_ABI,
-          functionName: 'owner',
-        });
-        expect(owner.toLowerCase()).toBe(lane.l2FromAddress.toLowerCase());
-      }
+      await expectLiveGovernanceAuthorityMatchesLane(laneKey);
 
       const code = await client.getCode({ address: lane.l2FromAddress });
       expect(code).toBeDefined();
@@ -164,7 +192,7 @@ describe('Wormhole lane live authority validation', () => {
 
           const storedSequence = await client.getStorageAt({
             address: lane.l2FromAddress,
-            slot: WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT,
+            slot: LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
           });
           expect(storedSequence).toBeDefined();
         } else {
@@ -192,6 +220,81 @@ describe('Wormhole lane live authority validation', () => {
           }),
         ).rejects.toThrow();
       }
+    },
+    EXTERNAL_API_TIMEOUT_MS,
+  );
+});
+
+describe('BNB legacy Wormhole live validation', () => {
+  maybeLiveBnbLegacy(
+    'confirms the legacy BNB receiver assumptions against live chain state',
+    async () => {
+      const lane = TEST_ONLY_WORMHOLE_LANES.bnb;
+      const client = getClientForChain(lane.chainId);
+      const laneCapabilities = getWormholeLaneCapabilities(lane.wormholeChainId);
+
+      await expectLiveGovernanceAuthorityMatchesLane('bnb');
+      if (laneCapabilities.kind !== 'legacy') {
+        throw new Error('Expected BNB to remain on the legacy Wormhole receiver path');
+      }
+
+      const verification = await BlockExplorerFactory.getContractVerification(
+        lane.l2FromAddress,
+        lane.chainId,
+      );
+      const contractName = await BlockExplorerFactory.fetchContractName(
+        lane.l2FromAddress,
+        lane.chainId,
+      );
+      const verifiedSource = await fetchLegacyBnbVerifiedSource(
+        'contracts/UniswapWormholeMessageReceiver.sol',
+      );
+      const externallyDerivedPayloadVersion = keccak256(
+        encodeAbiParameters([{ type: 'string' }], [LEGACY_BNB_WORMHOLE_PAYLOAD_DESCRIPTOR]),
+      );
+
+      expect(verification.status).toBe('verified');
+      expect(verification.source).toBe('sourcify');
+      expect(verification.sourcifyMatch).toBe('exact_match');
+      expect(contractName).toBe('UniswapWormholeMessageReceiver');
+      expect(verifiedSource).toContain(LEGACY_BNB_WORMHOLE_PAYLOAD_DESCRIPTOR);
+      expect(verifiedSource).toContain('uint64 nextMinimumSequence = 0;');
+      expect(verifiedSource).not.toContain('function nextMinimumSequence()');
+      expect(verifiedSource).not.toContain('EXPECTED_MESSAGE_PAYLOAD_VERSION');
+      expect(laneCapabilities.payloadVersion).toBe(LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION);
+      expect(externallyDerivedPayloadVersion).toBe(LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION);
+      expect(laneCapabilities.nextSequenceStorageSlot).toBe(
+        LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
+      );
+
+      await expect(
+        client.readContract({
+          address: lane.l2FromAddress,
+          abi: WORMHOLE_RECEIVER_ABI,
+          functionName: 'EXPECTED_MESSAGE_PAYLOAD_VERSION',
+        }),
+      ).rejects.toThrow();
+      await expect(
+        client.readContract({
+          address: lane.l2FromAddress,
+          abi: WORMHOLE_RECEIVER_ABI,
+          functionName: 'nextMinimumSequence',
+        }),
+      ).rejects.toThrow();
+
+      const storedSequence = await client.getStorageAt({
+        address: lane.l2FromAddress,
+        slot: laneCapabilities.nextSequenceStorageSlot,
+      });
+
+      expect(storedSequence).toBeDefined();
+      if (!storedSequence) {
+        throw new Error('Expected BNB legacy receiver sequence slot to be readable');
+      }
+      expect(storedSequence).toMatch(/^0x[0-9a-fA-F]{64}$/);
+      const parsedSequence = BigInt(storedSequence);
+      expect(parsedSequence).toBeGreaterThanOrEqual(0n);
+      expect(parsedSequence).toBeLessThanOrEqual(2n ** 64n - 1n);
     },
     EXTERNAL_API_TIMEOUT_MS,
   );

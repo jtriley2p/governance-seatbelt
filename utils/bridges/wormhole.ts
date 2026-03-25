@@ -2,8 +2,8 @@ import { decodeFunctionData, getAddress, isHex, parseAbi, slice, toFunctionSelec
 import { avalanche, bsc, celo, monad, polygon, tempo } from 'viem/chains';
 import type { CrossChainExecutionCall, CrossChainExecutionJob } from '../../types.d';
 import {
-  DEFAULT_WORMHOLE_MESSAGE_PAYLOAD_VERSION,
-  WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT,
+  LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION,
+  LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
 } from './wormhole-runtime-state';
 
 export const WORMHOLE_SEND_MESSAGE_ABI = parseAbi([
@@ -35,8 +35,8 @@ type LegacyReceiverWormholeLaneMetadata = DirectWormholeLaneMetadata & {
   receiverRuntimeState: {
     kind: 'legacy';
     receiverCoreAddress: `0x${string}`;
-    payloadVersion: typeof DEFAULT_WORMHOLE_MESSAGE_PAYLOAD_VERSION;
-    nextSequenceStorageSlot: typeof WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT;
+    payloadVersion: typeof LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION;
+    nextSequenceStorageSlot: typeof LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT;
   };
 };
 
@@ -57,8 +57,8 @@ export type WormholeLaneCapabilities =
   | {
       kind: 'legacy';
       receiverCoreAddress: `0x${string}`;
-      payloadVersion: typeof DEFAULT_WORMHOLE_MESSAGE_PAYLOAD_VERSION;
-      nextSequenceStorageSlot: typeof WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT;
+      payloadVersion: typeof LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION;
+      nextSequenceStorageSlot: typeof LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT;
     };
 
 export const SUPPORTED_WORMHOLE_CHAIN_IDS = [4, 5, 6, 14, 48, 68] as const;
@@ -75,9 +75,12 @@ const WORMHOLE_CHAIN_ID_TO_LANE_METADATA: Record<number, WormholeLaneMetadata> =
     receiverRuntimeState: {
       kind: 'legacy',
       receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
-      // BNB still uses an older receiver shape that does not expose the modern runtime-state getters.
-      payloadVersion: DEFAULT_WORMHOLE_MESSAGE_PAYLOAD_VERSION,
-      nextSequenceStorageSlot: WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT,
+      // BNB still uses an older receiver shape that does not expose the modern runtime-state
+      // getters. We therefore keep the payload version and sequence slot as explicit metadata,
+      // with provenance documented in `wormhole-runtime-state.ts` and guarded by the opt-in
+      // live BNB validation test added for issue #238.
+      payloadVersion: LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION,
+      nextSequenceStorageSlot: LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
     },
   },
   5: {

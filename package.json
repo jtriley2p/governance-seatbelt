@@ -17,6 +17,7 @@
     "check": "bun run typecheck && biome check",
     "check:fix": "bun run typecheck && biome check --write",
     "test": "bun test",
+    "test:wormhole:bnb-legacy:live": "RUN_LIVE_BNB_LEGACY_VALIDATION=1 bun test checks/tests/wormhole-lane-validation.test.ts -t 'BNB legacy Wormhole live validation'",
     "test:verifiers:live": "bun test tests/verifier-live-smoke.test.ts",
     "contract:check": "bun test checks/tests/report-json-contract.test.ts",
     "check-proposal": "bun run-checks.ts",

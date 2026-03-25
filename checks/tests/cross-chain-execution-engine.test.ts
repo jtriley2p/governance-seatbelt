@@ -11,8 +11,8 @@ import { bsc, mainnet, monad, polygon, tempo } from 'viem/chains';
 import type { TenderlySimulation } from '../../types.d';
 import { WORMHOLE_SEND_MESSAGE_ABI } from '../../utils/bridges/wormhole';
 import {
-  DEFAULT_WORMHOLE_MESSAGE_PAYLOAD_VERSION,
-  WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT,
+  LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION,
+  LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
 } from '../../utils/bridges/wormhole-runtime-state';
 import { createMockSimulation } from './test-utils';
 
@@ -25,7 +25,7 @@ process.env.ARBITRUM_RPC_URL ??= 'http://localhost:8545';
 
 const actualClientModule = await import('../../utils/clients/client');
 
-const RECEIVER_PAYLOAD_VERSION = DEFAULT_WORMHOLE_MESSAGE_PAYLOAD_VERSION;
+const RECEIVER_PAYLOAD_VERSION = LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION;
 const TEMPO_RECEIVER = getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b');
 const CELO_RECEIVER = getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071');
 const MONAD_RECEIVER = getAddress('0xe783de89a7f0408687f051e3e6d0beb62719ebad');
@@ -86,7 +86,7 @@ type ReceiverStorageRequest = {
 async function resolveMockedGetStorageAt(
   request: ReceiverStorageRequest,
 ): Promise<Hex | undefined> {
-  expect(request.slot).toBe(WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT);
+  expect(request.slot).toBe(LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT);
   if (getAddress(request.address) === BNB_RECEIVER) {
     return '0x0b';
   }
@@ -608,7 +608,7 @@ describe('cross-chain destination execution engine', () => {
         stateDiff: [
           {
             address: BNB_RECEIVER,
-            key: WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT,
+            key: LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
             dirty: '0x0c',
           },
         ],
@@ -624,7 +624,7 @@ describe('cross-chain destination execution engine', () => {
     expect(mockedGetClientForChain).toHaveBeenCalledWith(bsc.id);
     expect(mockedGetStorageAt).toHaveBeenCalledWith({
       address: BNB_RECEIVER,
-      slot: WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT,
+      slot: LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
       blockNumber: 100n,
     });
     expect(transportCalls[0]).toMatchObject({
@@ -671,7 +671,7 @@ describe('cross-chain destination execution engine', () => {
     expect(result.destinationJobResults[0]?.status).toBe('success');
     expect(
       result.destinationStateByChain[bsc.id]?.[BNB_RECEIVER]?.storage?.[
-        WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT
+        LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT
       ],
     ).toBe('0x0c');
   });
@@ -705,7 +705,7 @@ describe('cross-chain destination execution engine', () => {
           stateDiff: [
             {
               address: receiver,
-              key: WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT,
+              key: LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
               dirty: '0x01',
             },
           ],
@@ -815,7 +815,7 @@ describe('cross-chain destination execution engine', () => {
         throw new Error('receiver storage unavailable');
       }
 
-      expect(request.slot).toBe(WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT);
+      expect(request.slot).toBe(LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT);
       return undefined;
     });
 
@@ -894,7 +894,7 @@ describe('cross-chain destination execution engine', () => {
         stateDiff: [
           {
             address: TEMPO_RECEIVER,
-            key: WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT,
+            key: LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
             dirty: '0x01',
           },
         ],
@@ -939,7 +939,7 @@ describe('cross-chain destination execution engine', () => {
     const calldata = makeWormholeCalldata([{ target: bnbTarget, data: '0x8da5cb5b' }], 4);
 
     mockedGetStorageAt.mockImplementation(async (request) => {
-      expect(request.slot).toBe(WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT);
+      expect(request.slot).toBe(LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT);
       return undefined;
     });
 
@@ -959,7 +959,7 @@ describe('cross-chain destination execution engine', () => {
     const calldata = makeWormholeCalldata([{ target: bnbTarget, data: '0x8da5cb5b' }], 4);
 
     mockedGetStorageAt.mockImplementation(async (request) => {
-      expect(request.slot).toBe(WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT);
+      expect(request.slot).toBe(LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT);
       return '0x';
     });
 
