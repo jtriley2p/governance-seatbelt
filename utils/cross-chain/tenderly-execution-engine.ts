@@ -72,7 +72,6 @@ type DestinationJobExecutionOutcome =
 const DEFAULT_CROSS_CHAIN_SIMULATION_SENDER = getAddress(
   '0x0000000000000000000000000000000000001234',
 );
-
 function extractDestinationJobs(
   targets: readonly string[],
   calldatas: readonly string[],

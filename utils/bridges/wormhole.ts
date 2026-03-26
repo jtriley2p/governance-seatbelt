@@ -1,6 +1,12 @@
 import { decodeFunctionData, getAddress, isHex, parseAbi, slice, toFunctionSelector } from 'viem';
 import type { CrossChainExecutionCall, CrossChainExecutionJob } from '../../types.d';
 import {
+  LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION,
+  LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
+} from './wormhole-runtime-state';
+import {
+  SUPPORTED_WORMHOLE_LANE_KEYS,
+  WORMHOLE_LANE_SUPPORT_MATRIX,
   getAllSupportedWormholeSenderTargets,
   getWormholeLaneByChainId,
 } from './wormhole-support';
@@ -11,6 +17,28 @@ export const WORMHOLE_SEND_MESSAGE_ABI = parseAbi([
 
 const WORMHOLE_SEND_MESSAGE_SELECTOR = toFunctionSelector(
   'function sendMessage(address[] targets, uint256[] values, bytes[] datas, address wormhole, uint16 chainId)',
+);
+
+export type WormholeLaneCapabilities =
+  | {
+      kind: 'direct';
+      receiverCoreAddress: null;
+    }
+  | {
+      kind: 'modern';
+      receiverCoreAddress: `0x${string}`;
+    }
+  | {
+      kind: 'legacy';
+      receiverCoreAddress: `0x${string}`;
+      payloadVersion: typeof LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION;
+      nextSequenceStorageSlot: typeof LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT;
+    };
+
+export const SUPPORTED_WORMHOLE_CHAIN_IDS = Object.freeze(
+  SUPPORTED_WORMHOLE_LANE_KEYS.map(
+    (laneKey) => WORMHOLE_LANE_SUPPORT_MATRIX[laneKey].wormholeChainId,
+  ),
 );
 
 const KNOWN_WORMHOLE_SENDER_TARGETS = new Set(
@@ -129,6 +157,8 @@ function tryDecodeWormholeBatch(data: string): WormholeBatch | null {
  * Extract wormhole destination calls from proposal calldata.
  *
  * Current coverage: BNB (4), Polygon (5), Avalanche (6), Celo (14), Monad (48), and Tempo (68).
+ * Receiver-mode is enabled where the destination authority is a Wormhole receiver; other lanes
+ * continue to use direct-mode simulation until their live destination contracts match that path.
  */
 export function extractWormholeExecutionJobsFromProposal(
   targets: readonly string[],
@@ -163,9 +193,105 @@ export function extractWormholeExecutionJobsFromProposal(
   return jobs;
 }
 
+export function getWormholeLaneCapabilities(
+  wormholeChainId: number | undefined,
+): WormholeLaneCapabilities {
+  if (wormholeChainId === undefined) {
+    return assertValidWormholeLaneCapabilities(wormholeChainId, {
+      kind: 'direct',
+      receiverCoreAddress: null,
+    });
+  }
+
+  const lane = getWormholeLaneByChainId(wormholeChainId);
+  if (!lane) {
+    throw new Error(`Unsupported Wormhole chain id ${wormholeChainId}`);
+  }
+
+  if (lane.executionMode === 'direct') {
+    return assertValidWormholeLaneCapabilities(wormholeChainId, {
+      kind: 'direct',
+      receiverCoreAddress: null,
+    });
+  }
+
+  if (!lane.wormholeReceiverCoreAddress) {
+    throw new Error(`Wormhole lane ${wormholeChainId} missing wormholeReceiverCoreAddress`);
+  }
+
+  if (lane.executionMode === 'receiver-legacy') {
+    if (!lane.legacyPayloadVersion || !lane.legacyNextSequenceStorageSlot) {
+      throw new Error(`Wormhole lane ${wormholeChainId} missing legacy receiver metadata`);
+    }
+
+    return assertValidWormholeLaneCapabilities(wormholeChainId, {
+      kind: 'legacy',
+      receiverCoreAddress: lane.wormholeReceiverCoreAddress,
+      payloadVersion: lane.legacyPayloadVersion,
+      nextSequenceStorageSlot: lane.legacyNextSequenceStorageSlot,
+    });
+  }
+
+  return assertValidWormholeLaneCapabilities(wormholeChainId, {
+    kind: 'modern',
+    receiverCoreAddress: lane.wormholeReceiverCoreAddress,
+  });
+}
+
+export function assertValidWormholeLaneCapabilities(
+  wormholeChainId: number | undefined,
+  capabilities: WormholeLaneCapabilities,
+): WormholeLaneCapabilities {
+  if (capabilities.kind === 'direct') {
+    if (capabilities.receiverCoreAddress !== null) {
+      throw new Error(
+        `Direct Wormhole lane ${String(wormholeChainId)} has inconsistent receiver config`,
+      );
+    }
+    return capabilities;
+  }
+
+  if (capabilities.kind === 'modern') {
+    if (
+      typeof capabilities.receiverCoreAddress !== 'string' ||
+      !isHex(capabilities.receiverCoreAddress) ||
+      capabilities.receiverCoreAddress.length !== 42
+    ) {
+      throw new Error(
+        `Modern Wormhole lane ${String(wormholeChainId)} has invalid receiverCoreAddress`,
+      );
+    }
+    return capabilities;
+  }
+
+  if (
+    typeof capabilities.receiverCoreAddress !== 'string' ||
+    capabilities.receiverCoreAddress.length === 0 ||
+    !isHex(capabilities.receiverCoreAddress) ||
+    capabilities.receiverCoreAddress.length !== 42
+  ) {
+    throw new Error(
+      `Legacy Wormhole lane ${String(wormholeChainId)} has invalid receiverCoreAddress`,
+    );
+  }
+  if (!isHex(capabilities.payloadVersion) || capabilities.payloadVersion.length !== 66) {
+    throw new Error(`Legacy Wormhole lane ${String(wormholeChainId)} has invalid payloadVersion`);
+  }
+  if (
+    !isHex(capabilities.nextSequenceStorageSlot) ||
+    capabilities.nextSequenceStorageSlot.length !== 66
+  ) {
+    throw new Error(
+      `Legacy Wormhole lane ${String(wormholeChainId)} has invalid nextSequenceStorageSlot`,
+    );
+  }
+
+  return capabilities;
+}
+
 export function getWormholeReceiverCoreAddressForChain(
   wormholeChainId: number | undefined,
 ): `0x${string}` | null {
-  if (wormholeChainId === undefined) return null;
-  return getWormholeLaneByChainId(wormholeChainId)?.wormholeReceiverCoreAddress ?? null;
+  return getWormholeLaneCapabilities(wormholeChainId).receiverCoreAddress;
 }
+

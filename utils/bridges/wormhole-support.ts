@@ -1,5 +1,9 @@
 import { getAddress } from 'viem';
 import { avalanche, bsc, celo, monad, polygon, tempo } from 'viem/chains';
+import {
+  LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION,
+  LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
+} from './wormhole-runtime-state';
 
 export type WormholeLaneKey = 'bnb' | 'polygon' | 'avalanche' | 'celo' | 'monad' | 'tempo';
 
@@ -9,7 +13,7 @@ export type WormholeLaneValidationTargets = {
   v4PoolManager?: `0x${string}`;
 };
 
-export type WormholeLaneExecutionMode = 'direct' | 'receiver';
+export type WormholeLaneExecutionMode = 'direct' | 'receiver-modern' | 'receiver-legacy';
 
 export type WormholeLaneSupport = {
   key: WormholeLaneKey;
@@ -20,6 +24,8 @@ export type WormholeLaneSupport = {
   l2FromAddress: `0x${string}`;
   senderTargets: readonly `0x${string}`[];
   wormholeReceiverCoreAddress?: `0x${string}`;
+  legacyPayloadVersion?: typeof LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION;
+  legacyNextSequenceStorageSlot?: typeof LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT;
   validationTargets: WormholeLaneValidationTargets;
 };
 
@@ -31,9 +37,12 @@ export const WORMHOLE_LANE_SUPPORT_MATRIX: Record<WormholeLaneKey, WormholeLaneS
     chainName: 'BNB Smart Chain',
     destinationChainId: bsc.id,
     wormholeChainId: 4,
-    executionMode: 'direct',
+    executionMode: 'receiver-legacy',
     l2FromAddress: getAddress('0x341c1511141022cf8eE20824Ae0fFA3491F1302b'),
     senderTargets: [UNISWAP_WORMHOLE_SENDER],
+    wormholeReceiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
+    legacyPayloadVersion: LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION,
+    legacyNextSequenceStorageSlot: LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
     validationTargets: {
       v2Factory: getAddress('0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6'),
     },
@@ -67,9 +76,10 @@ export const WORMHOLE_LANE_SUPPORT_MATRIX: Record<WormholeLaneKey, WormholeLaneS
     chainName: 'Celo',
     destinationChainId: celo.id,
     wormholeChainId: 14,
-    executionMode: 'direct',
+    executionMode: 'receiver-modern',
     l2FromAddress: getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071'),
     senderTargets: [UNISWAP_WORMHOLE_SENDER],
+    wormholeReceiverCoreAddress: getAddress('0xa321448d90d4e5b0A732867c18eA198e75CAC48E'),
     validationTargets: {
       v2Factory: getAddress('0x79a530c8e2fA8748B7B40dd3629C0520c2cCf03f'),
       v3Factory: getAddress('0xAfE208a311B21f13EF87E33A90049fC17A7acDEc'),
@@ -81,9 +91,10 @@ export const WORMHOLE_LANE_SUPPORT_MATRIX: Record<WormholeLaneKey, WormholeLaneS
     chainName: 'Monad',
     destinationChainId: monad.id,
     wormholeChainId: 48,
-    executionMode: 'direct',
+    executionMode: 'receiver-modern',
     l2FromAddress: getAddress('0xe783de89a7f0408687f051e3e6d0beb62719ebad'),
     senderTargets: [UNISWAP_WORMHOLE_SENDER],
+    wormholeReceiverCoreAddress: getAddress('0x194B123c5E96B9B2e49763619985790Dc241CAC0'),
     validationTargets: {
       v2Factory: getAddress('0x182a927119d56008d921126764bf884221b10f59'),
       v3Factory: getAddress('0x204faca1764b154221e35c0d20abb3c525710498'),
@@ -95,7 +106,7 @@ export const WORMHOLE_LANE_SUPPORT_MATRIX: Record<WormholeLaneKey, WormholeLaneS
     chainName: 'Tempo Mainnet',
     destinationChainId: tempo.id,
     wormholeChainId: 68,
-    executionMode: 'receiver',
+    executionMode: 'receiver-modern',
     l2FromAddress: getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b'),
     senderTargets: [UNISWAP_WORMHOLE_SENDER],
     wormholeReceiverCoreAddress: getAddress('0xbebdb6C8ddC678FfA9f8748f85C815C556Dd8ac6'),
@@ -132,7 +143,9 @@ export function getWormholeLaneByKey(laneKey: WormholeLaneKey): WormholeLaneSupp
 export function getAllSupportedWormholeSenderTargets(): readonly `0x${string}`[] {
   return Array.from(
     new Set(
-      SUPPORTED_WORMHOLE_LANE_KEYS.flatMap((laneKey) => WORMHOLE_LANE_SUPPORT_MATRIX[laneKey].senderTargets),
+      SUPPORTED_WORMHOLE_LANE_KEYS.flatMap(
+        (laneKey) => WORMHOLE_LANE_SUPPORT_MATRIX[laneKey].senderTargets,
+      ),
     ),
   );
 }
@@ -164,8 +177,24 @@ export function getWormholeSupportMatrixIssues(
       issues.push(`Lane ${lane.key} is missing required v2 validation target`);
     }
 
-    if (lane.executionMode === 'receiver' && !lane.wormholeReceiverCoreAddress) {
-      issues.push(`Lane ${lane.key} uses receiver mode but is missing wormhole receiver core`);
+    if (lane.executionMode === 'receiver-modern' && !lane.wormholeReceiverCoreAddress) {
+      issues.push(`Lane ${lane.key} uses modern receiver mode but is missing wormhole receiver core`);
+    }
+
+    if (lane.executionMode === 'receiver-legacy') {
+      if (!lane.wormholeReceiverCoreAddress) {
+        issues.push(
+          `Lane ${lane.key} uses legacy receiver mode but is missing wormhole receiver core`,
+        );
+      }
+      if (!lane.legacyPayloadVersion) {
+        issues.push(`Lane ${lane.key} uses legacy receiver mode but is missing payload version`);
+      }
+      if (!lane.legacyNextSequenceStorageSlot) {
+        issues.push(
+          `Lane ${lane.key} uses legacy receiver mode but is missing next sequence storage slot`,
+        );
+      }
     }
   }
 

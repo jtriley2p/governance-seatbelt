@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { encodeFunctionData, getAddress } from 'viem';
 import {
+  SUPPORTED_WORMHOLE_CHAIN_IDS,
   WORMHOLE_SEND_MESSAGE_ABI,
+  assertValidWormholeLaneCapabilities,
   extractWormholeExecutionJobsFromProposal,
+  getWormholeLaneCapabilities,
 } from '../utils/bridges/wormhole';
 import {
   SUPPORTED_WORMHOLE_LANE_KEYS,
@@ -112,8 +115,8 @@ describe('wormhole proposal parser', () => {
     expect(jobs).toHaveLength(0);
   });
 
-  test('does not parse wormhole messages for unsupported wormhole chain ids', () => {
-    const calldata = encodeFunctionData({
+  test('ignores unsupported wormhole chain ids without dropping later valid jobs', () => {
+    const unsupportedCalldata = encodeFunctionData({
       abi: WORMHOLE_SEND_MESSAGE_ABI,
       functionName: 'sendMessage',
       args: [
@@ -124,13 +127,28 @@ describe('wormhole proposal parser', () => {
         999,
       ],
     });
+    const calldata = encodeFunctionData({
+      abi: WORMHOLE_SEND_MESSAGE_ABI,
+      functionName: 'sendMessage',
+      args: [
+        [getAddress('0xAfE208a311B21f13EF87E33A90049fC17A7acDEc')],
+        [0n],
+        ['0x13af4035000000000000000000000000044aaf330d7fd6ae683eec5c1c1d1fff5196b6b7'],
+        getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
+        14,
+      ],
+    });
 
     const jobs = extractWormholeExecutionJobsFromProposal(
-      [getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a')],
-      [calldata],
+      [
+        getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a'),
+        getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a'),
+      ],
+      [unsupportedCalldata, calldata],
     );
 
-    expect(jobs).toHaveLength(0);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.wormholeChainId).toBe(14);
   });
 
   test('does not parse wormhole messages when sendMessage array lengths are inconsistent', () => {
@@ -158,5 +176,103 @@ describe('wormhole proposal parser', () => {
     );
 
     expect(jobs).toHaveLength(0);
+  });
+
+  test('reports the expected wormhole lane capabilities', () => {
+    expect([...SUPPORTED_WORMHOLE_CHAIN_IDS]).toEqual([4, 5, 6, 14, 48, 68]);
+
+    expect(getWormholeLaneCapabilities(4)).toEqual({
+      kind: 'legacy',
+      receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
+      payloadVersion: '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b',
+      nextSequenceStorageSlot: '0x0000000000000000000000000000000000000000000000000000000000000000',
+    });
+    expect(getWormholeLaneCapabilities(14)).toEqual({
+      kind: 'modern',
+      receiverCoreAddress: getAddress('0xa321448d90d4e5b0A732867c18eA198e75CAC48E'),
+    });
+    expect(getWormholeLaneCapabilities(48)).toEqual({
+      kind: 'modern',
+      receiverCoreAddress: getAddress('0x194B123c5E96B9B2e49763619985790Dc241CAC0'),
+    });
+    expect(getWormholeLaneCapabilities(68)).toEqual({
+      kind: 'modern',
+      receiverCoreAddress: getAddress('0xbebdb6C8ddC678FfA9f8748f85C815C556Dd8ac6'),
+    });
+    expect(getWormholeLaneCapabilities(5)).toEqual({
+      kind: 'direct',
+      receiverCoreAddress: null,
+    });
+    expect(getWormholeLaneCapabilities(6)).toEqual({
+      kind: 'direct',
+      receiverCoreAddress: null,
+    });
+    expect(() => getWormholeLaneCapabilities(999)).toThrow('Unsupported Wormhole chain id 999');
+    expect(getWormholeLaneCapabilities(undefined)).toEqual({
+      kind: 'direct',
+      receiverCoreAddress: null,
+    });
+  });
+
+  test('rejects malformed legacy wormhole lane capabilities before execution', () => {
+    expect(() =>
+      assertValidWormholeLaneCapabilities(5, {
+        kind: 'direct',
+        // @ts-expect-error Intentional malformed config for runtime validation.
+        receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
+      }),
+    ).toThrow('inconsistent receiver config');
+
+    expect(() =>
+      assertValidWormholeLaneCapabilities(14, {
+        kind: 'modern',
+        // @ts-expect-error Intentional malformed config for runtime validation.
+        receiverCoreAddress: '',
+      }),
+    ).toThrow('invalid receiverCoreAddress');
+
+    expect(() =>
+      assertValidWormholeLaneCapabilities(4, {
+        kind: 'legacy',
+        // @ts-expect-error Intentional malformed config for runtime validation.
+        receiverCoreAddress: '',
+        payloadVersion: '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b',
+        nextSequenceStorageSlot:
+          '0x0000000000000000000000000000000000000000000000000000000000000000',
+      }),
+    ).toThrow('invalid receiverCoreAddress');
+
+    expect(() =>
+      assertValidWormholeLaneCapabilities(4, {
+        kind: 'legacy',
+        // @ts-expect-error Intentional malformed config for runtime validation.
+        receiverCoreAddress: undefined,
+        // @ts-expect-error Intentional malformed config for runtime validation.
+        payloadVersion: '0x1234',
+        nextSequenceStorageSlot:
+          '0x0000000000000000000000000000000000000000000000000000000000000000',
+      }),
+    ).toThrow('invalid receiverCoreAddress');
+
+    expect(() =>
+      assertValidWormholeLaneCapabilities(4, {
+        kind: 'legacy',
+        receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
+        // @ts-expect-error Intentional malformed config for runtime validation.
+        payloadVersion: '0x1234',
+        nextSequenceStorageSlot:
+          '0x0000000000000000000000000000000000000000000000000000000000000000',
+      }),
+    ).toThrow('invalid payloadVersion');
+
+    expect(() =>
+      assertValidWormholeLaneCapabilities(4, {
+        kind: 'legacy',
+        receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
+        payloadVersion: '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b',
+        // @ts-expect-error Intentional malformed config for runtime validation.
+        nextSequenceStorageSlot: '0x1234',
+      }),
+    ).toThrow('invalid nextSequenceStorageSlot');
   });
 });
