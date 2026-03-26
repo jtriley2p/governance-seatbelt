@@ -21,6 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Testing:**
 - `cd checks && bun test` - Run all tests in checks directory
 - `cd checks && bun test <test-file>` - Run specific test file
+- `bun run test:wormhole:bnb-legacy:live` - Opt-in live validation for the legacy BNB Wormhole receiver assumptions
 
 **Running Specific Proposals:**
 - `bun run check-proposal <proposal-id>` - Run checks on specific proposal using environment variables

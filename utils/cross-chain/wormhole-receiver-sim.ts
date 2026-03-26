@@ -1,6 +1,6 @@
 import { type Address, type Hex, encodeAbiParameters, encodeFunctionData, parseAbi } from 'viem';
 import type { CrossChainExecutionJob } from '../../types.d';
-import { WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT } from '../bridges/wormhole-runtime-state';
+import { LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT } from '../bridges/wormhole-runtime-state';
 import type { SimulationStateObjects } from '../derived-state';
 
 export { WORMHOLE_CORE_STUB_RUNTIME_BYTECODE } from './wormhole-core-stub-bytecode';
@@ -23,7 +23,7 @@ export function getOverriddenWormholeReceiverSequence(
   receiverAddress: Address,
 ): bigint | null {
   const overriddenSequence =
-    workingState?.[receiverAddress]?.storage?.[WORMHOLE_RECEIVER_NEXT_MINIMUM_SEQUENCE_SLOT];
+    workingState?.[receiverAddress]?.storage?.[LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT];
   if (overriddenSequence === undefined) return null;
   return BigInt(overriddenSequence);
 }

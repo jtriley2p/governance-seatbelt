@@ -26,6 +26,20 @@ SIM_NAME=uni-transfer bun start
 
 Reports are saved to `reports/` folder.
 
+### 2a. Run the opt-in live BNB legacy Wormhole validation
+
+```bash
+# Load local RPC / explorer env first if your shell has not already done so
+set -a; source .env; set +a
+
+# Confirm the legacy BNB Wormhole receiver assumptions still match live chain state
+bun run test:wormhole:bnb-legacy:live
+```
+
+This check is intentionally opt-in. It validates the BNB authority ownership, confirms the
+modern receiver getters still revert, and verifies the legacy sequence storage slot remains
+readable onchain.
+
 ### 3. View results in the frontend
 
 ```bash
