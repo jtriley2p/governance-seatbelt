@@ -460,6 +460,13 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
+function readOptionalString(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function mergeTrustMetadata(
   structuredReport: Record<string, unknown>,
   additions: { warningReasons?: string[]; blockingReasons?: string[] },
@@ -496,6 +503,46 @@ function attachPublishMetadata(
     if (!isPlainRecord(structuredReport)) continue;
     const metadata = structuredReport.metadata;
     if (!isPlainRecord(metadata)) continue;
+
+    if (publishMetadata) {
+      const bindingBlockingReasons: string[] = [];
+      const bindingWarningReasons: string[] = [];
+
+      const metadataPublishId = readOptionalString(publishMetadata, 'publish_id');
+      const metadataArtifactHash = readOptionalString(publishMetadata, 'artifact_hash');
+      const metadataPublishedAt = readOptionalString(publishMetadata, 'published_at');
+
+      if (publishLookup.publishId) {
+        if (!metadataPublishId) {
+          bindingWarningReasons.push('Publish metadata is missing publish_id.');
+        } else if (metadataPublishId !== publishLookup.publishId) {
+          bindingBlockingReasons.push('Publish metadata publish_id does not match relay lookup.');
+        }
+      }
+
+      if (publishLookup.artifactHash) {
+        if (!metadataArtifactHash) {
+          bindingWarningReasons.push('Publish metadata is missing artifact_hash.');
+        } else if (metadataArtifactHash !== publishLookup.artifactHash) {
+          bindingBlockingReasons.push('Publish metadata artifact_hash does not match relay lookup.');
+        }
+      }
+
+      if (publishLookup.publishedAt) {
+        if (!metadataPublishedAt) {
+          bindingWarningReasons.push('Publish metadata is missing published_at.');
+        } else if (metadataPublishedAt !== publishLookup.publishedAt) {
+          bindingWarningReasons.push('Publish metadata published_at differs from relay lookup.');
+        }
+      }
+
+      if (bindingBlockingReasons.length > 0) {
+        mergeTrustMetadata(structuredReport, { blockingReasons: bindingBlockingReasons });
+      }
+      if (bindingWarningReasons.length > 0) {
+        mergeTrustMetadata(structuredReport, { warningReasons: bindingWarningReasons });
+      }
+    }
 
     const publish = {
       publishId: publishLookup.publishId,

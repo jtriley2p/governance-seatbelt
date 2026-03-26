@@ -423,6 +423,78 @@ describe('/api/simulation-results', () => {
     );
     expect(requests).toContain('https://seatbelt-publish.vercel.app/simulation-results.json');
   });
+
+  it('blocks when publish-metadata.json does not match relay lookup fields', async () => {
+    process.env.SEATBELT_RELAY_URL = 'https://seatbelt-relay-beta.vercel.app';
+
+    globalThis.fetch = createMockFetch(async (input: RequestInfo | URL): Promise<Response> => {
+      const requestUrl = readFetchRequestUrl(input);
+
+      if (requestUrl.includes('/api/v1/publishes/')) {
+        return new Response(
+          JSON.stringify({
+            publishId: '11111111-1111-4111-8111-111111111111',
+            artifactUrl: 'https://seatbelt-publish.vercel.app/simulation-results.json',
+            metadataUrl: 'https://seatbelt-publish.vercel.app/publish-metadata.json',
+            artifactHash: 'hash-from-relay',
+            publishedAt: '2026-03-26T00:00:00.000Z',
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (requestUrl.endsWith('/simulation-results.json')) {
+        return new Response(VALID_SIMULATION_RESULTS_WITH_STRUCTURED_REPORT_JSON, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      if (requestUrl.endsWith('/publish-metadata.json')) {
+        return new Response(
+          JSON.stringify({
+            publish_id: '00000000-0000-4000-8000-000000000000',
+            published_at: '2026-03-27T00:00:00.000Z',
+            artifact_hash: 'hash-from-metadata',
+            relay_version: 'test-relay',
+            authenticity: {
+              algorithm: 'hmac-sha256',
+              key_id: 'k1',
+              signature: '00',
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+
+      return new Response('{}', { status: 404 });
+    });
+
+    const response = await getSimulationResults(
+      new Request(
+        'http://localhost/api/simulation-results?publishId=11111111-1111-4111-8111-111111111111',
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const payload: unknown = await response.json();
+
+    const metadata = readStructuredReportMetadata(payload);
+    expect(metadata).not.toBeNull();
+    const trust = metadata ? Reflect.get(metadata, 'trust') : null;
+    expect(trust).not.toBeNull();
+
+    expect(Reflect.get(trust, 'level')).toBe('blocked');
+    expect(Reflect.get(trust, 'blockingReasons')).toEqual(
+      expect.arrayContaining([
+        'Publish metadata publish_id does not match relay lookup.',
+        'Publish metadata artifact_hash does not match relay lookup.',
+      ]),
+    );
+  });
 });
 
 describe('/api/share-link', () => {
