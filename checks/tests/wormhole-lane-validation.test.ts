@@ -27,7 +27,7 @@ const EXTERNAL_API_TIMEOUT_MS = 180000;
 
 type LaneKey = Extract<
   TestOnlyWormholeLaneKey,
-  'bnb' | 'polygon' | 'avalanche' | 'monad' | 'tempo'
+  'bnb' | 'polygon' | 'avalanche' | 'celo' | 'monad' | 'tempo'
 >;
 
 function buildExecutionOptions(
@@ -64,6 +64,7 @@ describe('Wormhole lane live authority validation', () => {
     { laneKey: 'bnb', chainName: 'BNB' },
     { laneKey: 'polygon', chainName: 'Polygon' },
     { laneKey: 'avalanche', chainName: 'Avalanche' },
+    { laneKey: 'celo', chainName: 'Celo' },
     { laneKey: 'monad', chainName: 'Monad' },
     { laneKey: 'tempo', chainName: 'Tempo' },
   ];

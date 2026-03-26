@@ -1,50 +1,38 @@
 import { getAddress, pad, toHex } from 'viem';
 import type { Address } from 'viem';
-import { avalanche, bsc, celo, monad, polygon, tempo } from 'viem/chains';
 import type { SimulationConfigNew } from '../../types';
+import {
+  type WormholeLaneKey,
+  WORMHOLE_LANE_SUPPORT_MATRIX,
+} from '../../utils/bridges/wormhole-support';
 
 export const TEST_ONLY_CELO_PRE_94_OWNER = getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071');
 
-export const TEST_ONLY_WORMHOLE_LANES = {
-  bnb: {
-    chainId: bsc.id,
-    wormholeChainId: 4,
-    l2FromAddress: getAddress('0x341c1511141022cf8eE20824Ae0fFA3491F1302b'),
-    name: 'BNB Smart Chain',
-  },
-  polygon: {
-    chainId: polygon.id,
-    wormholeChainId: 5,
-    l2FromAddress: getAddress('0x8a1B966aC46F42275860f905dbC75EfBfDC12374'),
-    name: 'Polygon',
-  },
-  avalanche: {
-    chainId: avalanche.id,
-    wormholeChainId: 6,
-    l2FromAddress: getAddress('0xeb0BCF27D1Fb4b25e708fBB815c421Aeb51eA9fc'),
-    name: 'Avalanche',
-  },
-  celo: {
-    chainId: celo.id,
-    wormholeChainId: 14,
-    l2FromAddress: TEST_ONLY_CELO_PRE_94_OWNER,
-    name: 'Celo',
-  },
-  monad: {
-    chainId: monad.id,
-    wormholeChainId: 48,
-    l2FromAddress: getAddress('0xe783de89a7f0408687f051e3e6d0beb62719ebad'),
-    name: 'Monad',
-  },
-  tempo: {
-    chainId: tempo.id,
-    wormholeChainId: 68,
-    l2FromAddress: getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b'),
-    name: 'Tempo Mainnet',
-  },
-} as const;
+export const TEST_ONLY_WORMHOLE_LANES = Object.fromEntries(
+  (Object.keys(WORMHOLE_LANE_SUPPORT_MATRIX) as WormholeLaneKey[]).map((laneKey) => {
+    const lane = WORMHOLE_LANE_SUPPORT_MATRIX[laneKey];
+    return [
+      laneKey,
+      {
+        chainId: lane.destinationChainId,
+        wormholeChainId: lane.wormholeChainId,
+        l2FromAddress:
+          laneKey === 'celo' ? TEST_ONLY_CELO_PRE_94_OWNER : lane.l2FromAddress,
+        name: lane.chainName,
+      },
+    ];
+  }),
+) as Record<
+  WormholeLaneKey,
+  {
+    chainId: number;
+    wormholeChainId: number;
+    l2FromAddress: Address;
+    name: string;
+  }
+>;
 
-export type TestOnlyWormholeLaneKey = keyof typeof TEST_ONLY_WORMHOLE_LANES;
+export type TestOnlyWormholeLaneKey = WormholeLaneKey;
 
 // Runtime bytecode for a tiny owner-gated test-only fixture contract. We keep it
 // inline because Tenderly state seeding needs raw runtime code and these

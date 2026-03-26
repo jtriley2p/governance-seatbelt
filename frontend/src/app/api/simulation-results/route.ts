@@ -3,6 +3,7 @@ import path from 'node:path';
 import { normalizePublishId } from '@/lib/share-link';
 import { SimulationResultsParseError, parseSimulationResultsJson } from '@/lib/simulation-results';
 import { NextResponse } from 'next/server';
+import { verifyPublishMetadataSignature } from '../../../../../utils/publish/publish-authenticity';
 
 const DEFAULT_MAX_SIMULATION_RESULTS_BYTES = 25 * 1024 * 1024; // 25MB
 const DEFAULT_ARTIFACT_FETCH_TIMEOUT_MS = 15_000;
@@ -21,6 +22,14 @@ type SimulationResultsSourceError = {
   status: number;
   fileSizeBytes?: number;
   maxBytes?: number;
+};
+
+type PublishLookupRecord = {
+  publishId: string;
+  artifactUrl: string;
+  metadataUrl?: string;
+  artifactHash?: string;
+  publishedAt?: string;
 };
 
 function isSimulationResultsSourceError(value: unknown): value is SimulationResultsSourceError {
@@ -158,9 +167,9 @@ function readSimulationResultsFromLocalFile(
   }
 }
 
-async function resolveArtifactUrlFromPublishId(
+async function resolvePublishLookupFromPublishId(
   publishId: string,
-): Promise<string | SimulationResultsSourceError> {
+): Promise<PublishLookupRecord | SimulationResultsSourceError> {
   const relayEndpoint = `${getRelayUrl()}/api/v1/publishes/${encodeURIComponent(publishId)}`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), getRelayTimeoutMs());
@@ -192,7 +201,17 @@ async function resolveArtifactUrlFromPublishId(
       return { error: 'Relay publish lookup is missing artifactUrl', status: 502 };
     }
 
-    return artifactUrl;
+    const metadataUrl = Reflect.get(payload, 'metadataUrl');
+    const artifactHash = Reflect.get(payload, 'artifactHash');
+    const publishedAt = Reflect.get(payload, 'publishedAt');
+
+    return {
+      publishId,
+      artifactUrl,
+      metadataUrl: typeof metadataUrl === 'string' ? metadataUrl : undefined,
+      artifactHash: typeof artifactHash === 'string' ? artifactHash : undefined,
+      publishedAt: typeof publishedAt === 'string' ? publishedAt : undefined,
+    };
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       return { error: 'Publish lookup timed out', status: 504 };
@@ -202,6 +221,18 @@ async function resolveArtifactUrlFromPublishId(
     return { error: 'Failed to resolve publish', status: 502 };
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+function inferMetadataUrlFromArtifactUrl(artifactUrl: string): string | null {
+  try {
+    const parsed = new URL(artifactUrl);
+    if (!parsed.pathname.endsWith(`/${SIMULATION_RESULTS_FILENAME}`)) return null;
+    parsed.pathname = parsed.pathname.replace(/\/simulation-results\.json$/, '/publish-metadata.json');
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return null;
   }
 }
 
@@ -377,6 +408,124 @@ async function readSimulationResultsFromArtifactUrl(
   }
 }
 
+async function readPublishMetadataFromUrl(
+  metadataUrl: string,
+  maxBytes: number,
+): Promise<Record<string, unknown> | SimulationResultsSourceError> {
+  const parsedMetadataUrl = parseArtifactUrl(metadataUrl.replace(/\/publish-metadata\.json$/, '/simulation-results.json'));
+  if (isSimulationResultsSourceError(parsedMetadataUrl)) {
+    return parsedMetadataUrl;
+  }
+
+  const trustedMetadataUrl = parsedMetadataUrl.replace(
+    /\/simulation-results\.json$/,
+    '/publish-metadata.json',
+  );
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), getArtifactFetchTimeoutMs());
+
+  try {
+    const response = await fetch(trustedMetadataUrl, {
+      cache: 'no-store',
+      redirect: 'manual',
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      return { error: `Failed to fetch publish metadata (HTTP ${response.status})`, status: 502 };
+    }
+
+    const responseBody = await readResponseTextWithByteLimit(response, maxBytes);
+    if (isSimulationResultsSourceError(responseBody)) {
+      return responseBody;
+    }
+
+    const parsedBody: unknown = JSON.parse(responseBody.bodyText);
+    if (!parsedBody || typeof parsedBody !== 'object' || Array.isArray(parsedBody)) {
+      return { error: 'Publish metadata payload is invalid', status: 502 };
+    }
+
+    return parsedBody as Record<string, unknown>;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      return { error: 'Publish metadata fetch timed out', status: 504 };
+    }
+    return { error: 'Failed to fetch publish metadata', status: 502 };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function mergeTrustMetadata(
+  structuredReport: Record<string, unknown>,
+  additions: { warningReasons?: string[]; blockingReasons?: string[] },
+) {
+  const metadata = Reflect.get(structuredReport, 'metadata');
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return;
+
+  const existingTrust = Reflect.get(metadata, 'trust');
+  const existingBlocking =
+    existingTrust && typeof existingTrust === 'object' && Array.isArray(Reflect.get(existingTrust, 'blockingReasons'))
+      ? [...(Reflect.get(existingTrust, 'blockingReasons') as string[])]
+      : [];
+  const existingWarnings =
+    existingTrust && typeof existingTrust === 'object' && Array.isArray(Reflect.get(existingTrust, 'warningReasons'))
+      ? [...(Reflect.get(existingTrust, 'warningReasons') as string[])]
+      : [];
+
+  const blockingReasons = [...existingBlocking, ...(additions.blockingReasons ?? [])];
+  const warningReasons = [...existingWarnings, ...(additions.warningReasons ?? [])];
+  const nextTrust = {
+    level: blockingReasons.length > 0 ? 'blocked' : warningReasons.length > 0 ? 'warning' : 'ready',
+    blockingReasons: blockingReasons.length > 0 ? Array.from(new Set(blockingReasons)) : undefined,
+    warningReasons: warningReasons.length > 0 ? Array.from(new Set(warningReasons)) : undefined,
+  };
+
+  Reflect.set(metadata, 'trust', nextTrust);
+}
+
+function attachPublishMetadata(
+  normalizedResults: Record<string, unknown>[],
+  publishLookup: PublishLookupRecord | null,
+  publishMetadata: Record<string, unknown> | null,
+) {
+  for (const result of normalizedResults) {
+    const report = Reflect.get(result, 'report');
+    const structuredReport = report && typeof report === 'object' ? Reflect.get(report, 'structuredReport') : null;
+    if (!structuredReport || typeof structuredReport !== 'object' || Array.isArray(structuredReport)) {
+      continue;
+    }
+
+    const metadata = Reflect.get(structuredReport, 'metadata');
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      continue;
+    }
+
+    const publish = {
+      publishId: publishLookup?.publishId,
+      artifactHash: publishLookup?.artifactHash,
+      artifactUrl: publishLookup?.artifactUrl,
+      metadataUrl: publishLookup?.metadataUrl,
+      publishedAt: publishLookup?.publishedAt,
+      authenticity: publishMetadata
+        ? verifyPublishMetadataSignature(publishMetadata, process.env)
+        : { status: 'unsigned', reason: 'No publish metadata available for authenticity verification.' },
+    };
+
+    Reflect.set(metadata, 'publish', publish);
+
+    if (publish.authenticity.status === 'invalid') {
+      mergeTrustMetadata(structuredReport as Record<string, unknown>, {
+        blockingReasons: ['Publish authenticity verification failed.'],
+      });
+    } else if (publish.authenticity.status === 'unsigned' || publish.authenticity.status === 'unconfigured') {
+      mergeTrustMetadata(structuredReport as Record<string, unknown>, {
+        warningReasons: [publish.authenticity.reason ?? 'Publish authenticity could not be verified.'],
+      });
+    }
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const requestUrl = new URL(request.url);
@@ -384,6 +533,8 @@ export async function GET(request: Request) {
     const artifactParam = requestUrl.searchParams.get('artifact');
     const publishIdParam = normalizePublishId(requestUrl.searchParams.get('publishId'));
     const maxBytes = getMaxSimulationResultsBytes();
+    let publishLookup: PublishLookupRecord | null = null;
+    let publishMetadata: Record<string, unknown> | null = null;
 
     let results: unknown | SimulationResultsSourceError;
 
@@ -394,20 +545,33 @@ export async function GET(request: Request) {
       }
 
       results = await readSimulationResultsFromArtifactUrl(artifactUrl, maxBytes);
+      const metadataUrl = inferMetadataUrlFromArtifactUrl(artifactUrl);
+      if (metadataUrl) {
+        const metadataResponse = await readPublishMetadataFromUrl(metadataUrl, maxBytes);
+        if (!isSimulationResultsSourceError(metadataResponse)) {
+          publishLookup = {
+            publishId: publishIdParam ?? '',
+            artifactUrl,
+            metadataUrl,
+          };
+          publishMetadata = metadataResponse;
+        }
+      }
     } else if (requestUrl.searchParams.has('publishId')) {
       if (!publishIdParam) {
         return NextResponse.json({ error: 'Invalid publishId' }, { status: 400 });
       }
 
-      const resolvedArtifactUrl = await resolveArtifactUrlFromPublishId(publishIdParam);
-      if (isSimulationResultsSourceError(resolvedArtifactUrl)) {
+      const resolvedPublishLookup = await resolvePublishLookupFromPublishId(publishIdParam);
+      if (isSimulationResultsSourceError(resolvedPublishLookup)) {
         return NextResponse.json(
-          { error: resolvedArtifactUrl.error },
-          { status: resolvedArtifactUrl.status },
+          { error: resolvedPublishLookup.error },
+          { status: resolvedPublishLookup.status },
         );
       }
+      publishLookup = resolvedPublishLookup;
 
-      const trustedArtifactUrl = parseArtifactUrl(resolvedArtifactUrl);
+      const trustedArtifactUrl = parseArtifactUrl(resolvedPublishLookup.artifactUrl);
       if (isSimulationResultsSourceError(trustedArtifactUrl)) {
         return NextResponse.json(
           { error: trustedArtifactUrl.error },
@@ -416,6 +580,15 @@ export async function GET(request: Request) {
       }
 
       results = await readSimulationResultsFromArtifactUrl(trustedArtifactUrl, maxBytes);
+      if (resolvedPublishLookup.metadataUrl) {
+        const metadataResponse = await readPublishMetadataFromUrl(
+          resolvedPublishLookup.metadataUrl,
+          maxBytes,
+        );
+        if (!isSimulationResultsSourceError(metadataResponse)) {
+          publishMetadata = metadataResponse;
+        }
+      }
     } else {
       results = readSimulationResultsFromLocalFile(maxBytes);
     }
@@ -433,6 +606,11 @@ export async function GET(request: Request) {
     if (normalizedResults.length === 0) {
       return NextResponse.json({ error: 'No simulation results found' }, { status: 404 });
     }
+    attachPublishMetadata(
+      normalizedResults as unknown as Record<string, unknown>[],
+      publishLookup,
+      publishMetadata,
+    );
 
     if (includeMarkdown) {
       return NextResponse.json(normalizedResults);

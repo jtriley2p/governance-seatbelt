@@ -7,6 +7,7 @@ import {
   type PublishableSimulationResult,
   validatePublishArtifact,
 } from '../utils/publish/artifact-validator.js';
+import { signPublishMetadata } from '../utils/publish/publish-authenticity.js';
 import { computeArtifactHash, createPublishMetadata } from '../utils/publish/publish-metadata.js';
 
 type OpenJsonObject = Record<string, unknown>;
@@ -24,6 +25,12 @@ type RelayPublishLogEntry = {
   source_publish_id?: string;
   source_published_at?: string;
   provenance?: OpenJsonObject;
+  authenticity?: {
+    algorithm: 'hmac-sha256';
+    key_id: string;
+    signature: string;
+    signed_fields: readonly ['publish_id', 'published_at', 'artifact_hash', 'relay_version'];
+  };
 };
 
 type RelaySuccessResponse = {
@@ -1125,6 +1132,7 @@ function buildRelayPublishLogEntry(input: {
   relayVersion: string;
   sourcePublishMetadata?: OpenJsonObject;
   provenance?: OpenJsonObject;
+  env?: Record<string, string | undefined>;
 }): RelayPublishLogEntry {
   const sourcePublishId = input.sourcePublishMetadata
     ? readOptionalString(input.sourcePublishMetadata, 'publish_id')
@@ -1136,7 +1144,7 @@ function buildRelayPublishLogEntry(input: {
   const metadata = input.validatedArtifact.report.structuredReport.metadata;
   const publishMetadata = createPublishMetadata(input.artifactHash);
 
-  return {
+  const publishLogEntry: RelayPublishLogEntry = {
     ...publishMetadata,
     schema_version: metadata.schemaVersion,
     simulation_type: metadata.simulationType,
@@ -1148,6 +1156,13 @@ function buildRelayPublishLogEntry(input: {
     source_published_at: sourcePublishedAt,
     provenance: input.provenance,
   };
+
+  const authenticity = signPublishMetadata(publishLogEntry, input.env ?? {});
+  if (authenticity) {
+    publishLogEntry.authenticity = authenticity;
+  }
+
+  return publishLogEntry;
 }
 
 function buildHealthResponse(input: {
@@ -1493,6 +1508,7 @@ export function createRelayFetchHandler(
         relayVersion: config.relayVersion,
         sourcePublishMetadata: payload.publishMetadata,
         provenance: payload.provenance,
+        env,
       });
 
       const publishResult = await publisher({

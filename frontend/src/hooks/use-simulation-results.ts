@@ -202,6 +202,32 @@ export interface DerivedSimulationDependency {
   }>;
 }
 
+export type ReportTrustLevel = 'ready' | 'warning' | 'blocked';
+
+export interface ReportTrustMetadata {
+  level: ReportTrustLevel;
+  warningReasons?: string[];
+  blockingReasons?: string[];
+}
+
+export type PublishAuthenticityStatus = 'verified' | 'unsigned' | 'invalid' | 'unconfigured';
+
+export interface PublishAuthenticityMetadata {
+  status: PublishAuthenticityStatus;
+  reason?: string;
+  keyId?: string;
+  algorithm?: string;
+}
+
+export interface PublishArtifactMetadata {
+  publishId?: string;
+  artifactHash?: string;
+  artifactUrl?: string;
+  metadataUrl?: string;
+  publishedAt?: string;
+  authenticity?: PublishAuthenticityMetadata;
+}
+
 export interface StructuredSimulationReport {
   title: string;
   proposalText: string;
@@ -249,6 +275,8 @@ export interface StructuredSimulationReport {
     proposalState?: string;
     // Dependency provenance for derived-state simulation chains
     dependency?: DerivedSimulationDependency;
+    trust?: ReportTrustMetadata;
+    publish?: PublishArtifactMetadata;
   };
 }
 

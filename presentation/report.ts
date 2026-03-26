@@ -20,6 +20,7 @@ import type {
   DerivedSimulationDependency,
   GenerateReportsParams,
   GovernorType,
+  ReportTrustMetadata,
   PermissionsDiffItem,
   ProposalEvent,
   SimulationBlock,
@@ -749,6 +750,45 @@ function inferSimulationTypeFromProposalState(
   return 'new';
 }
 
+function buildReportTrustMetadata(input: {
+  status: StructuredSimulationReport['status'];
+  checks: SimulationCheck[];
+  chainReports: NonNullable<StructuredSimulationReport['chainReports']>;
+  provenance?: DerivedSimulationDependency;
+}): ReportTrustMetadata {
+  const blockingReasons: string[] = [];
+  const warningReasons: string[] = [];
+
+  if (input.status === 'error') {
+    blockingReasons.push('One or more simulation checks failed.');
+  }
+
+  if (input.chainReports.some((chainReport) => chainReport.status === 'error')) {
+    blockingReasons.push('At least one destination chain report failed.');
+  }
+
+  if (input.status === 'warning' || input.status === 'inconclusive') {
+    warningReasons.push('Simulation completed with warnings or inconclusive checks.');
+  }
+
+  if (input.checks.some((check) => check.status === 'skipped')) {
+    warningReasons.push('Some checks were skipped and should be reviewed.');
+  }
+
+  if (input.provenance && input.provenance.status !== 'passed') {
+    warningReasons.push(
+      `Derived-state dependency status is ${input.provenance.status}${input.provenance.reason ? `: ${input.provenance.reason}` : ''}.`,
+    );
+  }
+
+  return {
+    level:
+      blockingReasons.length > 0 ? 'blocked' : warningReasons.length > 0 ? 'warning' : 'ready',
+    blockingReasons: blockingReasons.length > 0 ? blockingReasons : undefined,
+    warningReasons: warningReasons.length > 0 ? warningReasons : undefined,
+  };
+}
+
 /**
  * Generate a structured report from the check results
  */
@@ -863,6 +903,13 @@ function generateStructuredReport(
     }),
   ];
 
+  const trust = buildReportTrustMetadata({
+    status,
+    checks: formattedChecks,
+    chainReports,
+    provenance,
+  });
+
   return {
     title,
     proposalText,
@@ -902,6 +949,7 @@ function generateStructuredReport(
       proposalState,
       // Dependency provenance for derived-state simulations
       dependency: provenance,
+      trust,
     },
   };
 }

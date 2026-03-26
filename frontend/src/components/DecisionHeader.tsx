@@ -11,6 +11,7 @@ import {
   CheckCircleIcon,
   ClockIcon,
   ExternalLinkIcon,
+  FileJsonIcon,
   GithubIcon,
   GlobeIcon,
   HelpCircleIcon,
@@ -49,6 +50,8 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
   const repoCommit = report.metadata.repoCommit;
   const repoUrl = report.metadata.repoUrl;
   const tenderlyUrl = report.metadata.tenderlyUrl;
+  const trust = report.metadata.trust;
+  const publish = report.metadata.publish;
 
   const repoName = repoUrl ? repoUrl.split('/').slice(-2).join('/') : 'Repository';
 
@@ -147,12 +150,66 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
                 </Tooltip>
               </TooltipProvider>
             ) : null}
+            {(trust || publish) && (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {trust && (
+                  <Badge
+                    variant="outline"
+                    className={
+                      trust.level === 'blocked'
+                        ? 'border-red-200 bg-red-50 text-red-700'
+                        : trust.level === 'warning'
+                          ? 'border-yellow-200 bg-yellow-50 text-yellow-700'
+                          : 'border-green-200 bg-green-50 text-green-700'
+                    }
+                  >
+                    Trust: {trust.level}
+                  </Badge>
+                )}
+                {publish?.authenticity && (
+                  <Badge
+                    variant="outline"
+                    className={
+                      publish.authenticity.status === 'verified'
+                        ? 'border-green-200 bg-green-50 text-green-700'
+                        : publish.authenticity.status === 'invalid'
+                          ? 'border-red-200 bg-red-50 text-red-700'
+                          : 'border-slate-200 bg-slate-50 text-slate-700'
+                    }
+                  >
+                    Authenticity: {publish.authenticity.status}
+                  </Badge>
+                )}
+                {publish?.artifactUrl && (
+                  <a
+                    href={publish.artifactUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
+                  >
+                    <FileJsonIcon className="h-3.5 w-3.5" />
+                    Raw artifact
+                  </a>
+                )}
+                {publish?.metadataUrl && (
+                  <a
+                    href={publish.metadataUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
+                  >
+                    <ExternalLinkIcon className="h-3.5 w-3.5" />
+                    Publish metadata
+                  </a>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* Stats grid - responsive: 2 cols on mobile, 4 cols on lg+ */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-border/60">
+      <div className="grid grid-cols-2 lg:grid-cols-5 divide-y lg:divide-y-0 lg:divide-x divide-border/60">
         {/* Checks */}
         <StatItem icon={<ShieldCheckIcon className="h-4 w-4" />} label="Checks">
           <span className="text-sm font-medium">{ranChecks} executed</span>
@@ -231,6 +288,23 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
             </Button>
           ) : (
             <span className="text-sm text-muted-foreground">Not available</span>
+          )}
+        </StatItem>
+
+        <StatItem icon={<CheckCircleIcon className="h-4 w-4" />} label="Publish">
+          {publish?.publishId ? (
+            <span className="text-sm font-medium font-mono">{publish.publishId.slice(0, 8)}…</span>
+          ) : (
+            <span className="text-sm font-medium">Local only</span>
+          )}
+          {publish?.artifactHash ? (
+            <span className="text-xs text-muted-foreground font-mono">
+              {publish.artifactHash.slice(0, 10)}…
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">
+              {publish?.authenticity?.reason ?? 'No publish provenance'}
+            </span>
           )}
         </StatItem>
       </div>

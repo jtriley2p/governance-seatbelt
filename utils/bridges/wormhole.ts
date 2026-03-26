@@ -1,6 +1,9 @@
 import { decodeFunctionData, getAddress, isHex, parseAbi, slice, toFunctionSelector } from 'viem';
-import { avalanche, bsc, celo, monad, polygon, tempo } from 'viem/chains';
 import type { CrossChainExecutionCall, CrossChainExecutionJob } from '../../types.d';
+import {
+  getAllSupportedWormholeSenderTargets,
+  getWormholeLaneByChainId,
+} from './wormhole-support';
 
 export const WORMHOLE_SEND_MESSAGE_ABI = parseAbi([
   'function sendMessage(address[] targets, uint256[] values, bytes[] datas, address wormhole, uint16 chainId)',
@@ -10,46 +13,9 @@ const WORMHOLE_SEND_MESSAGE_SELECTOR = toFunctionSelector(
   'function sendMessage(address[] targets, uint256[] values, bytes[] datas, address wormhole, uint16 chainId)',
 );
 
-const KNOWN_WORMHOLE_SENDER_TARGETS = new Set([
-  // Governor action target used by Uniswap governance for Wormhole handoff messages.
-  getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a').toLowerCase(),
-]);
-
-type WormholeLaneMetadata = {
-  destinationChainId: number;
-  l2FromAddress: `0x${string}`;
-  wormholeReceiverCoreAddress?: `0x${string}`;
-};
-
-const WORMHOLE_CHAIN_ID_TO_LANE_METADATA: Record<number, WormholeLaneMetadata> = {
-  // Live Uniswap governance authority values are sourced from the current destination-chain
-  // factory/pool-manager owner fields as of 2026-03-19.
-  4: {
-    destinationChainId: bsc.id,
-    l2FromAddress: getAddress('0x341c1511141022cf8eE20824Ae0fFA3491F1302b'),
-  },
-  5: {
-    destinationChainId: polygon.id,
-    l2FromAddress: getAddress('0x8a1B966aC46F42275860f905dbC75EfBfDC12374'),
-  },
-  6: {
-    destinationChainId: avalanche.id,
-    l2FromAddress: getAddress('0xeb0BCF27D1Fb4b25e708fBB815c421Aeb51eA9fc'),
-  },
-  14: {
-    destinationChainId: celo.id,
-    l2FromAddress: getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071'),
-  },
-  48: {
-    destinationChainId: monad.id,
-    l2FromAddress: getAddress('0xe783de89a7f0408687f051e3e6d0beb62719ebad'),
-  },
-  68: {
-    destinationChainId: tempo.id,
-    l2FromAddress: getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b'),
-    wormholeReceiverCoreAddress: getAddress('0xbebdb6C8ddC678FfA9f8748f85C815C556Dd8ac6'),
-  },
-};
+const KNOWN_WORMHOLE_SENDER_TARGETS = new Set(
+  getAllSupportedWormholeSenderTargets().map((target) => target.toLowerCase()),
+);
 
 function hasMatchingLengths(
   targets: readonly unknown[],
@@ -93,12 +59,12 @@ function isKnownWormholeProposalCall(target: string, data: string): boolean {
 function resolveWormholeDestinationContext(
   wormholeChainId: number,
 ): WormholeDestinationContext | null {
-  const metadata = WORMHOLE_CHAIN_ID_TO_LANE_METADATA[wormholeChainId];
-  if (!metadata) return null;
+  const lane = getWormholeLaneByChainId(wormholeChainId);
+  if (!lane) return null;
 
   return {
-    destinationChainId: metadata.destinationChainId,
-    l2FromAddress: metadata.l2FromAddress,
+    destinationChainId: lane.destinationChainId,
+    l2FromAddress: lane.l2FromAddress,
     wormholeChainId,
   };
 }
@@ -201,5 +167,5 @@ export function getWormholeReceiverCoreAddressForChain(
   wormholeChainId: number | undefined,
 ): `0x${string}` | null {
   if (wormholeChainId === undefined) return null;
-  return WORMHOLE_CHAIN_ID_TO_LANE_METADATA[wormholeChainId]?.wormholeReceiverCoreAddress ?? null;
+  return getWormholeLaneByChainId(wormholeChainId)?.wormholeReceiverCoreAddress ?? null;
 }

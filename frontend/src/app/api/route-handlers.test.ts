@@ -196,11 +196,11 @@ describe('/api/simulation-results', () => {
   });
 
   it('normalizes base deployment artifact urls to simulation-results.json before fetch', async () => {
-    let requestedUrl = '';
+    const requestedUrls: string[] = [];
 
     globalThis.fetch = createMockFetch(
       async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-        requestedUrl = readFetchRequestUrl(input);
+        requestedUrls.push(readFetchRequestUrl(input));
         return new Response(VALID_SIMULATION_RESULTS_JSON, {
           status: 200,
           headers: {
@@ -217,9 +217,10 @@ describe('/api/simulation-results', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(requestedUrl).toBe(
+    expect(requestedUrls).toEqual([
       'https://seatbelt-publish.vercel.app/deployment/xyz/simulation-results.json',
-    );
+      'https://seatbelt-publish.vercel.app/deployment/xyz/publish-metadata.json',
+    ]);
   });
 
   it('rejects private-network artifact targets', async () => {

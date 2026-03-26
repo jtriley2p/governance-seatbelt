@@ -7,6 +7,11 @@ import {
   type TestOnlyWormholeLaneKey,
   buildTestOnlyWormholeLaneState,
 } from './test-only-wormhole-lane-state';
+import {
+  SUPPORTED_WORMHOLE_LANE_KEYS,
+  type WormholeLaneValidationTargets,
+  WORMHOLE_LANE_SUPPORT_MATRIX,
+} from '../../utils/bridges/wormhole-support';
 
 const WORMHOLE_SENDER = getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a');
 const WORMHOLE_BRIDGE = getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B');
@@ -29,36 +34,15 @@ export const REPRESENTATIVE_WORMHOLE_ROLLOUT_LANE_KEYS = [
   Extract<TestOnlyWormholeLaneKey, 'bnb' | 'polygon' | 'avalanche' | 'monad' | 'tempo'>
 >;
 
-export type LiveWormholeLaneValidationTargets = {
-  v2Factory: `0x${string}`;
-  v3Factory?: `0x${string}`;
-  v4PoolManager?: `0x${string}`;
-};
-
 export const LIVE_WORMHOLE_LANE_VALIDATION_TARGETS: Record<
-  Extract<TestOnlyWormholeLaneKey, 'bnb' | 'polygon' | 'avalanche' | 'monad' | 'tempo'>,
-  LiveWormholeLaneValidationTargets
-> = {
-  bnb: {
-    v2Factory: getAddress('0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6'),
-  },
-  polygon: {
-    v2Factory: getAddress('0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C'),
-  },
-  avalanche: {
-    v2Factory: getAddress('0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C'),
-  },
-  monad: {
-    v2Factory: getAddress('0x182a927119d56008d921126764bf884221b10f59'),
-    v3Factory: getAddress('0x204faca1764b154221e35c0d20abb3c525710498'),
-    v4PoolManager: getAddress('0x188d586ddcf52439676ca21a244753fa19f9ea8e'),
-  },
-  tempo: {
-    v2Factory: getAddress('0xf9EC577a4E45B5278BB7Cf60FCBc20c3acAef68f'),
-    v3Factory: getAddress('0x24a3d4757E330890A8b8978028c9e58E04611fd6'),
-    v4PoolManager: getAddress('0x33620f62C5b9B2086dD6b62F4A297A9f30347029'),
-  },
-};
+  (typeof SUPPORTED_WORMHOLE_LANE_KEYS)[number],
+  WormholeLaneValidationTargets
+> = Object.fromEntries(
+  SUPPORTED_WORMHOLE_LANE_KEYS.map((laneKey) => [
+    laneKey,
+    WORMHOLE_LANE_SUPPORT_MATRIX[laneKey].validationTargets,
+  ]),
+) as Record<(typeof SUPPORTED_WORMHOLE_LANE_KEYS)[number], WormholeLaneValidationTargets>;
 
 function buildWormholeProposalCall(
   laneKey: TestOnlyWormholeLaneKey,
@@ -185,8 +169,8 @@ function buildRepresentativeWormholeRolloutConfig(kind: 'setup' | 'followup'): S
   const actions = buildRepresentativeWormholeRolloutActions(kind);
   const description =
     kind === 'setup'
-      ? `# Representative Wormhole rollout setup (test only)\n\nThis representative multi-lane setup proposal uses the live Wormhole authorities for ${buildRepresentativeLaneSummary()} as the destination senders and hands ownership of fresh fake V2/V3/V4 targets to fresh fake CrossChainAccounts. It exists to model the kind of consolidated rollout proposal governance would likely use across multiple lanes.`
-      : `# Representative Wormhole rollout follow-up (test only)\n\nThis representative multi-lane follow-up proposal mirrors the derived dependency pattern from the Celo 94 -> 95 story. A plain run should fail because the fresh fake targets are still owned by the live Wormhole authorities, while the fake CrossChainAccounts are not yet the owners. Running this proposal derived from the matching setup proposal should pass after the ownership handoff for ${buildRepresentativeLaneSummary()}.`;
+      ? `# Representative Wormhole rollout setup (test only)\n\nThis representative multi-lane setup proposal uses the live Wormhole authorities for ${buildRepresentativeLaneSummary()} as the destination senders and hands ownership of fresh fake V2/V3/V4 targets to fresh fake CrossChainAccounts. It exists to model the kind of consolidated rollout proposal governance would likely use across upcoming lanes without bundling historical Celo-only migration steps.`
+      : `# Representative Wormhole rollout follow-up (test only)\n\nThis representative multi-lane follow-up proposal mirrors the same derived dependency pattern used in the historical Celo 94 -> 95 story without including Celo itself. A plain run should fail because the fresh fake targets are still owned by the live Wormhole authorities, while the fake CrossChainAccounts are not yet the owners. Running this proposal derived from the matching setup proposal should pass after the ownership handoff for ${buildRepresentativeLaneSummary()}.`;
 
   return {
     type: 'new',

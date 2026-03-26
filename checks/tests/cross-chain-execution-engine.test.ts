@@ -18,8 +18,6 @@ process.env.TENDERLY_PROJECT_SLUG ??= 'test-project';
 process.env.MAINNET_RPC_URL ??= 'http://localhost:8545';
 process.env.ARBITRUM_RPC_URL ??= 'http://localhost:8545';
 
-const actualClientModule = await import('../../utils/clients/client');
-
 async function defaultReceiverReadContract(request: {
   address: `0x${string}`;
   functionName: string;
@@ -56,8 +54,37 @@ const mockedGetClientForChain = mock(() => ({
 }));
 
 mock.module('../../utils/clients/client', () => ({
-  ...actualClientModule,
+  BlockExplorerSource: {
+    Blockscout: 'blockscout',
+    Etherscan: 'etherscan',
+  },
+  VerificationBackend: {
+    EtherscanV2: 'etherscan-v2',
+    Blockscout: 'blockscout',
+    Tempo: 'tempo',
+    SourcifyOnly: 'sourcify-only',
+  },
+  formatVerificationBackend: (backend: string) => backend,
+  getBlockExplorerBaseUrlForChain: () => 'https://etherscan.io',
   getClientForChain: mockedGetClientForChain,
+  getChainConfig: () => ({
+    chainId: mainnet.id,
+    blockExplorer: { baseUrl: 'https://etherscan.io' },
+    rpcUrl: 'http://localhost:8545',
+  }),
+  resolveVerificationConfig: () => ({
+    backend: 'etherscan-v2',
+    apiUrl: 'https://api.etherscan.io/v2/api',
+    apiKey: 'test-etherscan-key',
+    degradedReason: undefined,
+  }),
+  CHAIN_CONFIGS: {
+    [mainnet.id]: {
+      chainId: mainnet.id,
+      blockExplorer: { baseUrl: 'https://etherscan.io' },
+      rpcUrl: 'http://localhost:8545',
+    },
+  },
   publicClient: {
     getChainId: async () => mainnet.id,
     getBlock: async () => ({
