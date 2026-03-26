@@ -28,3 +28,7 @@ new-response.json
 .context/
 .seatbelt/
 .vercel/
+
+# test artifacts
+tests/test-output*/
+tests/test-reports-*/

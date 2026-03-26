@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'bun:test';
-import { mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { GenerateReportsParams } from '../types';
 
@@ -35,21 +36,17 @@ const mockChecks = {
 };
 
 describe('proposalState metadata', () => {
-  const testOutputDir = join(__dirname, 'test-output-proposal-state');
+  let testOutputDir: string;
 
-  // Clean up before and after tests
-  const cleanup = () => {
-    try {
-      rmSync(testOutputDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
-  };
+  beforeEach(() => {
+    testOutputDir = mkdtempSync(join(tmpdir(), 'seatbelt-proposal-state-'));
+  });
+
+  afterEach(() => {
+    rmSync(testOutputDir, { recursive: true, force: true });
+  });
 
   it('should include proposalState in metadata when provided', async () => {
-    cleanup();
-    mkdirSync(testOutputDir, { recursive: true });
-
     // Import dynamically to avoid issues with module resolution
     const { generateAndSaveReports } = await import('../presentation/report');
 
@@ -72,14 +69,9 @@ describe('proposalState metadata', () => {
 
     expect(jsonContent.metadata).toBeDefined();
     expect(jsonContent.metadata.proposalState).toBe('Queued');
-
-    cleanup();
   });
 
   it('should omit proposalState from metadata when not provided', async () => {
-    cleanup();
-    mkdirSync(testOutputDir, { recursive: true });
-
     const { generateAndSaveReports } = await import('../presentation/report');
 
     const params: GenerateReportsParams = {
@@ -101,14 +93,9 @@ describe('proposalState metadata', () => {
 
     expect(jsonContent.metadata).toBeDefined();
     expect(jsonContent.metadata.proposalState).toBeUndefined();
-
-    cleanup();
   });
 
   it('should include proposalState in simulation-results.json when provided', async () => {
-    cleanup();
-    mkdirSync(testOutputDir, { recursive: true });
-
     const { writeSimulationResultsJson } = await import('../presentation/report');
 
     const outputPath = join(testOutputDir, 'simulation-results.json');
@@ -131,8 +118,6 @@ describe('proposalState metadata', () => {
     expect(jsonContent.report.structuredReport).toBeDefined();
     expect(jsonContent.report.structuredReport.metadata).toBeDefined();
     expect(jsonContent.report.structuredReport.metadata.proposalState).toBe('Active');
-
-    cleanup();
   });
 
   it('should handle all valid proposal states', async () => {
@@ -148,9 +133,6 @@ describe('proposalState metadata', () => {
     ];
 
     for (const state of validStates) {
-      cleanup();
-      mkdirSync(testOutputDir, { recursive: true });
-
       const { writeSimulationResultsJson } = await import('../presentation/report');
 
       const outputPath = join(testOutputDir, 'simulation-results.json');
@@ -170,7 +152,5 @@ describe('proposalState metadata', () => {
       const jsonContent = JSON.parse(readFileSync(outputPath, 'utf-8'));
       expect(jsonContent.report.structuredReport.metadata.proposalState).toBe(state);
     }
-
-    cleanup();
   });
 });

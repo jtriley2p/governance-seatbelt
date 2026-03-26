@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getAddress } from 'viem';
 import type {
@@ -34,21 +35,14 @@ const mockChecks: AllCheckResults = {
 };
 
 describe('Placeholder Address Detection and Labeling', () => {
-  const testOutputDir = join(__dirname, 'test-output');
+  let testOutputDir: string;
 
   beforeEach(() => {
-    // Clean up any existing test files
-    if (existsSync(testOutputDir)) {
-      rmSync(testOutputDir, { recursive: true });
-    }
-    mkdirSync(testOutputDir, { recursive: true });
+    testOutputDir = mkdtempSync(join(tmpdir(), 'seatbelt-placeholder-'));
   });
 
   afterEach(() => {
-    // Clean up test files
-    if (existsSync(testOutputDir)) {
-      rmSync(testOutputDir, { recursive: true });
-    }
+    rmSync(testOutputDir, { recursive: true, force: true });
   });
 
   test('should detect placeholder address and set proposerIsPlaceholder flag', async () => {

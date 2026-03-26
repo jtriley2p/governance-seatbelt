@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type {
   AllCheckResults,
@@ -46,21 +47,14 @@ const mockChecks: AllCheckResults = {
 };
 
 describe('Simulation Results Metadata', () => {
-  const testOutputDir = join(__dirname, 'test-output');
+  let testOutputDir: string;
 
   beforeEach(() => {
-    // Clean up any existing test files
-    if (existsSync(testOutputDir)) {
-      rmSync(testOutputDir, { recursive: true });
-    }
-    mkdirSync(testOutputDir, { recursive: true });
+    testOutputDir = mkdtempSync(join(tmpdir(), 'seatbelt-simulation-results-metadata-'));
   });
 
   afterEach(() => {
-    // Clean up test files
-    if (existsSync(testOutputDir)) {
-      rmSync(testOutputDir, { recursive: true });
-    }
+    rmSync(testOutputDir, { recursive: true, force: true });
   });
 
   test('should generate structured report with governorAddress in metadata', async () => {
@@ -247,19 +241,14 @@ describe('Simulation Results Metadata', () => {
 });
 
 describe('File Generation Tests', () => {
-  const testOutputDir = join(__dirname, 'test-output');
+  let testOutputDir: string;
 
   beforeEach(() => {
-    if (existsSync(testOutputDir)) {
-      rmSync(testOutputDir, { recursive: true });
-    }
-    mkdirSync(testOutputDir, { recursive: true });
+    testOutputDir = mkdtempSync(join(tmpdir(), 'seatbelt-file-generation-'));
   });
 
   afterEach(() => {
-    if (existsSync(testOutputDir)) {
-      rmSync(testOutputDir, { recursive: true });
-    }
+    rmSync(testOutputDir, { recursive: true, force: true });
   });
 
   test('should generate all expected report files', async () => {
