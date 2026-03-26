@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { normalizePublishId } from '@/lib/share-link';
@@ -30,6 +31,11 @@ type PublishLookupRecord = {
   metadataUrl?: string;
   artifactHash?: string;
   publishedAt?: string;
+};
+
+type ParsedSimulationResults = {
+  parsedBody: unknown;
+  rawBodyHash: string;
 };
 
 function isSimulationResultsSourceError(value: unknown): value is SimulationResultsSourceError {
@@ -354,7 +360,7 @@ async function readResponseTextWithByteLimit(
 async function readSimulationResultsFromArtifactUrl(
   artifactUrl: string,
   maxBytes: number,
-): Promise<unknown | SimulationResultsSourceError> {
+): Promise<ParsedSimulationResults | SimulationResultsSourceError> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), getArtifactFetchTimeoutMs());
 
@@ -397,8 +403,9 @@ async function readSimulationResultsFromArtifactUrl(
       return responseBody;
     }
 
+    const rawBodyHash = createHash('sha256').update(responseBody.bodyText).digest('hex');
     const parsedBody: unknown = JSON.parse(responseBody.bodyText);
-    return parsedBody;
+    return { parsedBody, rawBodyHash };
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       return { error: 'Artifact fetch timed out', status: 504 };
@@ -506,12 +513,25 @@ function attachPublishMetadata(
   normalizedResults: ReturnType<typeof parseSimulationResultsJson>,
   publishLookup: PublishLookupRecord,
   publishMetadata: Record<string, unknown> | null,
+  artifactHashFromFetch?: string,
 ): void {
   for (const result of normalizedResults) {
     const structuredReport = result.report.structuredReport;
     if (!isPlainRecord(structuredReport)) continue;
     const metadata = structuredReport.metadata;
     if (!isPlainRecord(metadata)) continue;
+
+    if (
+      publishLookup.artifactHash &&
+      artifactHashFromFetch &&
+      artifactHashFromFetch !== publishLookup.artifactHash
+    ) {
+      mergeTrustMetadata(structuredReport, {
+        blockingReasons: [
+          'Published artifact hash does not match fetched simulation-results.json.',
+        ],
+      });
+    }
 
     if (publishMetadata) {
       const bindingBlockingReasons: string[] = [];
@@ -597,6 +617,7 @@ export async function GET(request: Request) {
     const maxBytes = getMaxSimulationResultsBytes();
     let publishLookup: PublishLookupRecord | null = null;
     let publishMetadata: Record<string, unknown> | null = null;
+    let artifactHashFromFetch: string | undefined;
 
     let results: unknown | SimulationResultsSourceError;
 
@@ -606,7 +627,13 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: artifactUrl.error }, { status: artifactUrl.status });
       }
 
-      results = await readSimulationResultsFromArtifactUrl(artifactUrl, maxBytes);
+      const artifactResults = await readSimulationResultsFromArtifactUrl(artifactUrl, maxBytes);
+      if (isSimulationResultsSourceError(artifactResults)) {
+        results = artifactResults;
+      } else {
+        results = artifactResults.parsedBody;
+        artifactHashFromFetch = artifactResults.rawBodyHash;
+      }
       const metadataUrl = inferMetadataUrlFromArtifactUrl(artifactUrl);
       if (metadataUrl) {
         const metadataResponse = await readPublishMetadataFromUrl(metadataUrl, maxBytes);
@@ -641,7 +668,16 @@ export async function GET(request: Request) {
         );
       }
 
-      results = await readSimulationResultsFromArtifactUrl(trustedArtifactUrl, maxBytes);
+      const artifactResults = await readSimulationResultsFromArtifactUrl(
+        trustedArtifactUrl,
+        maxBytes,
+      );
+      if (isSimulationResultsSourceError(artifactResults)) {
+        results = artifactResults;
+      } else {
+        results = artifactResults.parsedBody;
+        artifactHashFromFetch = artifactResults.rawBodyHash;
+      }
       if (resolvedPublishLookup.metadataUrl) {
         const metadataResponse = await readPublishMetadataFromUrl(
           resolvedPublishLookup.metadataUrl,
@@ -669,7 +705,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'No simulation results found' }, { status: 404 });
     }
     if (publishLookup) {
-      attachPublishMetadata(normalizedResults, publishLookup, publishMetadata);
+      attachPublishMetadata(
+        normalizedResults,
+        publishLookup,
+        publishMetadata,
+        artifactHashFromFetch,
+      );
     }
 
     if (includeMarkdown) {

@@ -501,6 +501,56 @@ describe('/api/simulation-results', () => {
       ]),
     );
   });
+
+  it('blocks when fetched simulation-results.json does not match relay artifactHash', async () => {
+    process.env.SEATBELT_RELAY_URL = 'https://seatbelt-relay-beta.vercel.app';
+
+    globalThis.fetch = createMockFetch(async (input: RequestInfo | URL): Promise<Response> => {
+      const requestUrl = readFetchRequestUrl(input);
+
+      if (requestUrl.includes('/api/v1/publishes/')) {
+        return new Response(
+          JSON.stringify({
+            publishId: '11111111-1111-4111-8111-111111111111',
+            artifactUrl: 'https://seatbelt-publish.vercel.app/simulation-results.json',
+            artifactHash: 'not-the-real-hash',
+            publishedAt: '2026-03-26T00:00:00.000Z',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+
+      if (requestUrl.endsWith('/simulation-results.json')) {
+        return new Response(VALID_SIMULATION_RESULTS_WITH_STRUCTURED_REPORT_JSON, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      return new Response('{}', { status: 404 });
+    });
+
+    const response = await getSimulationResults(
+      new Request(
+        'http://localhost/api/simulation-results?publishId=11111111-1111-4111-8111-111111111111',
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const payload: unknown = await response.json();
+
+    const metadata = readStructuredReportMetadata(payload);
+    expect(metadata).not.toBeNull();
+    const trust = metadata ? Reflect.get(metadata, 'trust') : null;
+    expect(trust).not.toBeNull();
+
+    expect(Reflect.get(trust, 'level')).toBe('blocked');
+    expect(Reflect.get(trust, 'blockingReasons')).toEqual(
+      expect.arrayContaining([
+        'Published artifact hash does not match fetched simulation-results.json.',
+      ]),
+    );
+  });
 });
 
 describe('/api/share-link', () => {
