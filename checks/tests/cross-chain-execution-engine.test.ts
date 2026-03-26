@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
   type Hex,
   decodeAbiParameters,
@@ -181,6 +181,10 @@ afterEach(() => {
   mockedReceiverReadContract.mockImplementation(resolveMockedReceiverReadContract);
   mockedGetStorageAt.mockClear();
   mockedGetStorageAt.mockImplementation(resolveMockedGetStorageAt);
+});
+
+afterAll(() => {
+  mock.restore();
 });
 
 function enqueueSimulation(sim: TenderlySimulation) {
