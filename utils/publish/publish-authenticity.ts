@@ -88,14 +88,24 @@ export function verifyPublishMetadataSignature(
 
   if (signedFields !== undefined) {
     if (!Array.isArray(signedFields)) {
-      return { status: 'invalid', keyId, algorithm, reason: 'Publish signed_fields payload is malformed.' };
+      return {
+        status: 'invalid',
+        keyId,
+        algorithm,
+        reason: 'Publish signed_fields payload is malformed.',
+      };
     }
 
     if (
       signedFields.length !== SIGNED_FIELDS.length ||
       !SIGNED_FIELDS.every((field, index) => signedFields[index] === field)
     ) {
-      return { status: 'invalid', keyId, algorithm, reason: 'Unsupported signed_fields in authenticity payload.' };
+      return {
+        status: 'invalid',
+        keyId,
+        algorithm,
+        reason: 'Unsupported signed_fields in authenticity payload.',
+      };
     }
   }
 
@@ -108,7 +118,12 @@ export function verifyPublishMetadataSignature(
   }
 
   if (!timingSafeEqual(providedSignature, expectedSignature)) {
-    return { status: 'invalid', keyId, algorithm, reason: 'Publish signature verification failed.' };
+    return {
+      status: 'invalid',
+      keyId,
+      algorithm,
+      reason: 'Publish signature verification failed.',
+    };
   }
 
   return { status: 'verified', keyId, algorithm };

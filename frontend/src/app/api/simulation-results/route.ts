@@ -228,7 +228,10 @@ function inferMetadataUrlFromArtifactUrl(artifactUrl: string): string | null {
   try {
     const parsed = new URL(artifactUrl);
     if (!parsed.pathname.endsWith(`/${SIMULATION_RESULTS_FILENAME}`)) return null;
-    parsed.pathname = parsed.pathname.replace(/\/simulation-results\.json$/, '/publish-metadata.json');
+    parsed.pathname = parsed.pathname.replace(
+      /\/simulation-results\.json$/,
+      '/publish-metadata.json',
+    );
     parsed.hash = '';
     return parsed.toString();
   } catch {
@@ -412,7 +415,9 @@ async function readPublishMetadataFromUrl(
   metadataUrl: string,
   maxBytes: number,
 ): Promise<Record<string, unknown> | SimulationResultsSourceError> {
-  const parsedMetadataUrl = parseArtifactUrl(metadataUrl.replace(/\/publish-metadata\.json$/, '/simulation-results.json'));
+  const parsedMetadataUrl = parseArtifactUrl(
+    metadataUrl.replace(/\/publish-metadata\.json$/, '/simulation-results.json'),
+  );
   if (isSimulationResultsSourceError(parsedMetadataUrl)) {
     return parsedMetadataUrl;
   }
@@ -476,10 +481,14 @@ function mergeTrustMetadata(
 
   const existingTrust = metadata.trust;
   const existingBlocking = isPlainRecord(existingTrust)
-    ? (existingTrust.blockingReasons ?? []).filter((reason): reason is string => typeof reason === 'string')
+    ? (existingTrust.blockingReasons ?? []).filter(
+        (reason): reason is string => typeof reason === 'string',
+      )
     : [];
   const existingWarnings = isPlainRecord(existingTrust)
-    ? (existingTrust.warningReasons ?? []).filter((reason): reason is string => typeof reason === 'string')
+    ? (existingTrust.warningReasons ?? []).filter(
+        (reason): reason is string => typeof reason === 'string',
+      )
     : [];
 
   const blockingReasons = [...existingBlocking, ...(additions.blockingReasons ?? [])];
@@ -524,7 +533,9 @@ function attachPublishMetadata(
         if (!metadataArtifactHash) {
           bindingWarningReasons.push('Publish metadata is missing artifact_hash.');
         } else if (metadataArtifactHash !== publishLookup.artifactHash) {
-          bindingBlockingReasons.push('Publish metadata artifact_hash does not match relay lookup.');
+          bindingBlockingReasons.push(
+            'Publish metadata artifact_hash does not match relay lookup.',
+          );
         }
       }
 
@@ -552,7 +563,10 @@ function attachPublishMetadata(
       publishedAt: publishLookup.publishedAt,
       authenticity: publishMetadata
         ? verifyPublishMetadataSignature(publishMetadata, process.env)
-        : { status: 'unsigned', reason: 'No publish metadata available for authenticity verification.' },
+        : {
+            status: 'unsigned',
+            reason: 'No publish metadata available for authenticity verification.',
+          },
     };
 
     metadata.publish = publish;
@@ -561,9 +575,14 @@ function attachPublishMetadata(
       mergeTrustMetadata(structuredReport, {
         blockingReasons: ['Publish authenticity verification failed.'],
       });
-    } else if (publish.authenticity.status === 'unsigned' || publish.authenticity.status === 'unconfigured') {
+    } else if (
+      publish.authenticity.status === 'unsigned' ||
+      publish.authenticity.status === 'unconfigured'
+    ) {
       mergeTrustMetadata(structuredReport, {
-        warningReasons: [publish.authenticity.reason ?? 'Publish authenticity could not be verified.'],
+        warningReasons: [
+          publish.authenticity.reason ?? 'Publish authenticity could not be verified.',
+        ],
       });
     }
   }

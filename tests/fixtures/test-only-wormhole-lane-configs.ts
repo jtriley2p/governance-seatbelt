@@ -1,17 +1,17 @@
 import { encodeFunctionData, getAddress, parseAbi } from 'viem';
 import type { SimulationConfigNew } from '../../types';
 import {
+  SUPPORTED_WORMHOLE_LANE_KEYS,
+  WORMHOLE_LANE_SUPPORT_MATRIX,
+  type WormholeLaneValidationTargets,
+} from '../../utils/bridges/wormhole-support';
+import {
   TEST_ONLY_WORMHOLE_LANES,
   TEST_ONLY_WORMHOLE_LANE_ARTIFACTS,
   type TestOnlyLaneArtifacts,
   type TestOnlyWormholeLaneKey,
   buildTestOnlyWormholeLaneState,
 } from './test-only-wormhole-lane-state';
-import {
-  SUPPORTED_WORMHOLE_LANE_KEYS,
-  type WormholeLaneValidationTargets,
-  WORMHOLE_LANE_SUPPORT_MATRIX,
-} from '../../utils/bridges/wormhole-support';
 
 const WORMHOLE_SENDER = getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a');
 const WORMHOLE_BRIDGE = getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B');

@@ -3,8 +3,8 @@ import type { BridgeType, CrossChainExecutionJob } from '../../types.d';
 import type { SimulationStateObjects } from '../derived-state';
 import { extractArbitrumL1L2JobsFromProposal } from './arbitrum';
 import { extractOptimismL1L2JobsFromProposal } from './optimism';
-import { prepareWormholeExecution } from './wormhole-execution';
 import { extractWormholeExecutionJobsFromProposal } from './wormhole';
+import { prepareWormholeExecution } from './wormhole-execution';
 
 export type CrossChainProposalExtractionContext = {
   targets: readonly string[];

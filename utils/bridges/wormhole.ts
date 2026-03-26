@@ -1,6 +1,6 @@
 import { decodeFunctionData, getAddress, isHex, parseAbi, slice, toFunctionSelector } from 'viem';
 import type { CrossChainExecutionCall, CrossChainExecutionJob } from '../../types.d';
-import {
+import type {
   LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION,
   LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
 } from './wormhole-runtime-state';
@@ -294,4 +294,3 @@ export function getWormholeReceiverCoreAddressForChain(
 ): `0x${string}` | null {
   return getWormholeLaneCapabilities(wormholeChainId).receiverCoreAddress;
 }
-

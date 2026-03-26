@@ -20,9 +20,9 @@ import type {
   DerivedSimulationDependency,
   GenerateReportsParams,
   GovernorType,
-  ReportTrustMetadata,
   PermissionsDiffItem,
   ProposalEvent,
+  ReportTrustMetadata,
   SimulationBlock,
   SimulationBlocks,
   SimulationCalldata,
@@ -782,8 +782,7 @@ function buildReportTrustMetadata(input: {
   }
 
   return {
-    level:
-      blockingReasons.length > 0 ? 'blocked' : warningReasons.length > 0 ? 'warning' : 'ready',
+    level: blockingReasons.length > 0 ? 'blocked' : warningReasons.length > 0 ? 'warning' : 'ready',
     blockingReasons: blockingReasons.length > 0 ? blockingReasons : undefined,
     warningReasons: warningReasons.length > 0 ? warningReasons : undefined,
   };

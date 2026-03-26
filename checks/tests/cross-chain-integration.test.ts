@@ -247,98 +247,107 @@ describe('Cross-Chain Integration Tests', () => {
     integrationTest(
       'should return no destination job results when no cross-chain jobs are present',
       async () => {
-      // Mock a network failure scenario by trying to run cross-chain with minimal data
-      const partialSourceResult: CrossChainSourceResult = {
-        sim: {
-          transaction: {
-            transaction_info: {
-              call_trace: {
-                from: '0x0000000000000000000000000000000000000000',
-                input: '0x',
-                calls: [],
+        // Mock a network failure scenario by trying to run cross-chain with minimal data
+        const partialSourceResult: CrossChainSourceResult = {
+          sim: {
+            transaction: {
+              transaction_info: {
+                call_trace: {
+                  from: '0x0000000000000000000000000000000000000000',
+                  input: '0x',
+                  calls: [],
+                },
               },
+              status: true,
             },
-            status: true,
           },
-        },
-        proposal: {
-          id: 999n,
-          proposalId: 999n,
-          proposer: '0x0000000000000000000000000000000000000000',
-          targets: [],
-          values: [],
-          signatures: [],
-          calldatas: [],
-          startBlock: 1000n,
-          endBlock: 2000n,
-          description: 'Test proposal',
-        },
-        deps: {
-          governor: null,
-          timelock: { address: '0x0000000000000000000000000000000000000000' },
-          publicClient: null,
-          chainConfig: getChainConfig(mainnet.id),
-          targets: [],
-          touchedContracts: [],
-        },
-        latestBlock: {
-          number: 1500n,
-          timestamp: 1600000000n,
-        },
-      };
+          proposal: {
+            id: 999n,
+            proposalId: 999n,
+            proposer: '0x0000000000000000000000000000000000000000',
+            targets: [],
+            values: [],
+            signatures: [],
+            calldatas: [],
+            startBlock: 1000n,
+            endBlock: 2000n,
+            description: 'Test proposal',
+          },
+          deps: {
+            governor: null,
+            timelock: { address: '0x0000000000000000000000000000000000000000' },
+            publicClient: null,
+            chainConfig: getChainConfig(mainnet.id),
+            targets: [],
+            touchedContracts: [],
+          },
+          latestBlock: {
+            number: 1500n,
+            timestamp: 1600000000n,
+          },
+        };
 
-      const crossChainResult = await handleCrossChainSimulations(partialSourceResult);
+        const crossChainResult = await handleCrossChainSimulations(partialSourceResult);
 
-      // With no call-trace bridge calls and no proposal calldata, no destination sims should be produced.
-      expect(crossChainResult).toBeDefined();
-      expect(crossChainResult.destinationJobResults).toEqual([]);
-      expect(crossChainResult.crossChainFailure).toBe(false);
-    });
+        // With no call-trace bridge calls and no proposal calldata, no destination sims should be produced.
+        expect(crossChainResult).toBeDefined();
+        expect(crossChainResult.destinationJobResults).toEqual([]);
+        expect(crossChainResult.crossChainFailure).toBe(false);
+      },
+    );
   });
 
   describe('Cross-Chain Check Integration', () => {
-    integrationTest('should run all checks on cross-chain simulations', async () => {
-      const crossChainResult = await getArbDistroCrossChainResult();
+    integrationTest(
+      'should run all checks on cross-chain simulations',
+      async () => {
+        const crossChainResult = await getArbDistroCrossChainResult();
 
-      const results = await runChecksForChain(
-        crossChainResult.proposal,
-        crossChainResult.sim,
-        crossChainResult.deps,
-        1,
-        crossChainResult.destinationJobResults,
-      );
+        const results = await runChecksForChain(
+          crossChainResult.proposal,
+          crossChainResult.sim,
+          crossChainResult.deps,
+          1,
+          crossChainResult.destinationJobResults,
+        );
 
-      // Verify that all expected checks ran
-      expect(typeof results).toBe('object');
+        // Verify that all expected checks ran
+        expect(typeof results).toBe('object');
 
-      // Check that key check types are present
-      const checkNames = Object.keys(results);
-      expect(checkNames.length).toBeGreaterThan(0);
+        // Check that key check types are present
+        const checkNames = Object.keys(results);
+        expect(checkNames.length).toBeGreaterThan(0);
 
-      // Verify each check result has the expected structure
-      for (const [_checkName, result] of Object.entries(results)) {
-        expect(result).toBeDefined();
-        expect(result).toHaveProperty('result');
-        expect(result.result).toHaveProperty('info');
-        expect(result.result).toHaveProperty('warnings');
-        expect(result.result).toHaveProperty('errors');
-        expect(Array.isArray(result.result.info)).toBe(true);
-        expect(Array.isArray(result.result.warnings)).toBe(true);
-        expect(Array.isArray(result.result.errors)).toBe(true);
-      }
-    }, 120000); // External API calls can be slow/rate-limited in CI
+        // Verify each check result has the expected structure
+        for (const [_checkName, result] of Object.entries(results)) {
+          expect(result).toBeDefined();
+          expect(result).toHaveProperty('result');
+          expect(result.result).toHaveProperty('info');
+          expect(result.result).toHaveProperty('warnings');
+          expect(result.result).toHaveProperty('errors');
+          expect(Array.isArray(result.result.info)).toBe(true);
+          expect(Array.isArray(result.result.warnings)).toBe(true);
+          expect(Array.isArray(result.result.errors)).toBe(true);
+        }
+      },
+      120000,
+    ); // External API calls can be slow/rate-limited in CI
 
-    integrationTest('should include cross-chain information in check results', async () => {
-      const crossChainResult = await getArbDistroCrossChainResult();
+    integrationTest(
+      'should include cross-chain information in check results',
+      async () => {
+        const crossChainResult = await getArbDistroCrossChainResult();
 
-      // Only run checks if we have destination job results
-      // Ensure destinations (when present) don't break checks
-      if (
-        crossChainResult.destinationJobResults &&
-        crossChainResult.destinationJobResults.length > 0
-      ) {
-        expect(crossChainResult.destinationJobResults.length).toBeGreaterThan(0);
-      }
-    }, 120000); // External API calls can be slow/rate-limited in CI
+        // Only run checks if we have destination job results
+        // Ensure destinations (when present) don't break checks
+        if (
+          crossChainResult.destinationJobResults &&
+          crossChainResult.destinationJobResults.length > 0
+        ) {
+          expect(crossChainResult.destinationJobResults.length).toBeGreaterThan(0);
+        }
+      },
+      120000,
+    ); // External API calls can be slow/rate-limited in CI
   });
 });

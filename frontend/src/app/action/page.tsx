@@ -157,7 +157,11 @@ function ActionSection({ isConnected }: { isConnected: boolean }) {
 
       {(trust || publish) && (
         <Alert
-          variant={trust?.level === 'blocked' || publish?.authenticity?.status === 'invalid' ? 'destructive' : 'default'}
+          variant={
+            trust?.level === 'blocked' || publish?.authenticity?.status === 'invalid'
+              ? 'destructive'
+              : 'default'
+          }
         >
           <AlertTriangleIcon className="h-4 w-4" />
           <AlertTitle>
@@ -174,8 +178,12 @@ function ActionSection({ isConnected }: { isConnected: boolean }) {
               <p>{trust.warningReasons.join(' ')}</p>
             ) : null}
             <div className="flex flex-wrap gap-3 text-xs">
-              {publish?.artifactHash && <span className="font-mono">hash {publish.artifactHash.slice(0, 12)}…</span>}
-              {publish?.publishedAt && <span>published {new Date(publish.publishedAt).toLocaleString()}</span>}
+              {publish?.artifactHash && (
+                <span className="font-mono">hash {publish.artifactHash.slice(0, 12)}…</span>
+              )}
+              {publish?.publishedAt && (
+                <span>published {new Date(publish.publishedAt).toLocaleString()}</span>
+              )}
               {publish?.authenticity && <span>authenticity {publish.authenticity.status}</span>}
               {publish?.artifactUrl && (
                 <a

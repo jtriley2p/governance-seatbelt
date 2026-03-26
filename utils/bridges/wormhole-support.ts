@@ -128,12 +128,10 @@ function getWormholeLaneKeys(
   return Object.keys(supportMatrix) as WormholeLaneKey[];
 }
 
-export function getWormholeLaneByChainId(
-  wormholeChainId: number,
-): WormholeLaneSupport | undefined {
-  return SUPPORTED_WORMHOLE_LANE_KEYS
-    .map((laneKey) => WORMHOLE_LANE_SUPPORT_MATRIX[laneKey])
-    .find((lane) => lane.wormholeChainId === wormholeChainId);
+export function getWormholeLaneByChainId(wormholeChainId: number): WormholeLaneSupport | undefined {
+  return SUPPORTED_WORMHOLE_LANE_KEYS.map((laneKey) => WORMHOLE_LANE_SUPPORT_MATRIX[laneKey]).find(
+    (lane) => lane.wormholeChainId === wormholeChainId,
+  );
 }
 
 export function getWormholeLaneByKey(laneKey: WormholeLaneKey): WormholeLaneSupport {
@@ -178,7 +176,9 @@ export function getWormholeSupportMatrixIssues(
     }
 
     if (lane.executionMode === 'receiver-modern' && !lane.wormholeReceiverCoreAddress) {
-      issues.push(`Lane ${lane.key} uses modern receiver mode but is missing wormhole receiver core`);
+      issues.push(
+        `Lane ${lane.key} uses modern receiver mode but is missing wormhole receiver core`,
+      );
     }
 
     if (lane.executionMode === 'receiver-legacy') {

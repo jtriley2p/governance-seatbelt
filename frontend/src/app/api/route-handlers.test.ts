@@ -136,7 +136,11 @@ function readStructuredReportMetadata(payload: unknown): Record<string, unknown>
   if (!report || typeof report !== 'object') return null;
 
   const structuredReport = Reflect.get(report, 'structuredReport');
-  if (!structuredReport || typeof structuredReport !== 'object' || Array.isArray(structuredReport)) {
+  if (
+    !structuredReport ||
+    typeof structuredReport !== 'object' ||
+    Array.isArray(structuredReport)
+  ) {
     return null;
   }
 
@@ -254,7 +258,9 @@ describe('/api/simulation-results', () => {
 
     writeSimulationResultsFile(VALID_SIMULATION_RESULTS_WITH_STRUCTURED_REPORT_JSON);
 
-    const response = await getSimulationResults(new Request('http://localhost/api/simulation-results'));
+    const response = await getSimulationResults(
+      new Request('http://localhost/api/simulation-results'),
+    );
 
     expect(response.status).toBe(200);
 

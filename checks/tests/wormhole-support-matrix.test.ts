@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'bun:test';
+import { REPRESENTATIVE_WORMHOLE_ROLLOUT_LANE_KEYS } from '../../tests/fixtures/test-only-wormhole-lane-configs';
+import {
+  TEST_ONLY_WORMHOLE_LANES,
+  TEST_ONLY_WORMHOLE_LANE_ARTIFACTS,
+} from '../../tests/fixtures/test-only-wormhole-lane-state';
 import {
   SUPPORTED_WORMHOLE_LANE_KEYS,
   WORMHOLE_LANE_SUPPORT_MATRIX,
   getWormholeSupportMatrixIssues,
 } from '../../utils/bridges/wormhole-support';
-import { REPRESENTATIVE_WORMHOLE_ROLLOUT_LANE_KEYS } from '../../tests/fixtures/test-only-wormhole-lane-configs';
-import {
-  TEST_ONLY_WORMHOLE_LANE_ARTIFACTS,
-  TEST_ONLY_WORMHOLE_LANES,
-} from '../../tests/fixtures/test-only-wormhole-lane-state';
 
 describe('Wormhole support matrix', () => {
   test('has no internal consistency issues', () => {

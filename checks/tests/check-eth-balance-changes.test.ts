@@ -5,71 +5,78 @@ import { simulateNew as simulate } from '../../utils/clients/tenderly';
 import { checkEthBalanceChanges } from '../check-eth-balance-changes';
 
 describe('checkEthBalanceChanges', () => {
-  const integrationTest =
-    process.env.RUN_TENDERLY_INTEGRATION_TESTS === '1' ? test : test.skip;
+  const integrationTest = process.env.RUN_TENDERLY_INTEGRATION_TESTS === '1' ? test : test.skip;
 
-  integrationTest('should correctly handle ETH and ERC20 transfers to the same address', async () => {
-    const simResult = await simulate(simConfig);
+  integrationTest(
+    'should correctly handle ETH and ERC20 transfers to the same address',
+    async () => {
+      const simResult = await simulate(simConfig);
 
-    // Run the check
-    const result = await checkEthBalanceChanges.checkProposal(
-      simResult.proposal,
-      simResult.sim,
-      simResult.deps,
-    );
+      // Run the check
+      const result = await checkEthBalanceChanges.checkProposal(
+        simResult.proposal,
+        simResult.sim,
+        simResult.deps,
+      );
 
-    // Verify the results
-    expect(result.info.length).toBeGreaterThan(0);
+      // Verify the results
+      expect(result.info.length).toBeGreaterThan(0);
 
-    // Check that the output contains the ETH balance changes table
-    const tableHeader = result.info.find((msg) => msg.includes('ETH Balance Changes'));
-    expect(tableHeader).toBeDefined();
+      // Check that the output contains the ETH balance changes table
+      const tableHeader = result.info.find((msg) => msg.includes('ETH Balance Changes'));
+      expect(tableHeader).toBeDefined();
 
-    // Check that the table contains the recipient address with positive change
-    const recipientAddress = '0x0000000000000000000000000000000000000123';
-    const recipientRow = result.info.find(
-      (msg) =>
-        msg.includes(recipientAddress) &&
-        msg.includes('color:green') &&
-        msg.includes('+0.1000 ETH'),
-    );
-    expect(recipientRow).toBeDefined();
+      // Check that the table contains the recipient address with positive change
+      const recipientAddress = '0x0000000000000000000000000000000000000123';
+      const recipientRow = result.info.find(
+        (msg) =>
+          msg.includes(recipientAddress) &&
+          msg.includes('color:green') &&
+          msg.includes('+0.1000 ETH'),
+      );
+      expect(recipientRow).toBeDefined();
 
-    // Check that the table contains the proposer address with negative change
-    const proposerAddress = '0x0000000000000000000000000000000000001234';
-    const proposerRow = result.info.find(
-      (msg) =>
-        msg.includes(proposerAddress) && msg.includes('color:red') && msg.includes('-0.1000 ETH'),
-    );
-    expect(proposerRow).toBeDefined();
+      // Check that the table contains the proposer address with negative change
+      const proposerAddress = '0x0000000000000000000000000000000000001234';
+      const proposerRow = result.info.find(
+        (msg) =>
+          msg.includes(proposerAddress) && msg.includes('color:red') && msg.includes('-0.1000 ETH'),
+      );
+      expect(proposerRow).toBeDefined();
 
-    // Check that there's no mention of UNI tokens in the ETH balance changes
-    const uniTokenMessage = result.info.find((msg) => msg.includes('UNI'));
-    expect(uniTokenMessage).toBeUndefined();
+      // Check that there's no mention of UNI tokens in the ETH balance changes
+      const uniTokenMessage = result.info.find((msg) => msg.includes('UNI'));
+      expect(uniTokenMessage).toBeUndefined();
 
-    expect(result.warnings).toHaveLength(0);
-    expect(result.errors).toHaveLength(0);
-  }, 30000);
+      expect(result.warnings).toHaveLength(0);
+      expect(result.errors).toHaveLength(0);
+    },
+    30000,
+  );
 
-  integrationTest('should report no ETH transfers when none exist', async () => {
-    // Update the config to set the values to 0 so that no ETH transfers occur
-    const noEthTransferConfig: SimulationConfigNew = {
-      ...simConfig,
-      values: simConfig.targets.map(() => 0n),
-    };
+  integrationTest(
+    'should report no ETH transfers when none exist',
+    async () => {
+      // Update the config to set the values to 0 so that no ETH transfers occur
+      const noEthTransferConfig: SimulationConfigNew = {
+        ...simConfig,
+        values: simConfig.targets.map(() => 0n),
+      };
 
-    const simResult = await simulate(noEthTransferConfig);
+      const simResult = await simulate(noEthTransferConfig);
 
-    const result = await checkEthBalanceChanges.checkProposal(
-      simResult.proposal,
-      simResult.sim,
-      simResult.deps,
-    );
+      const result = await checkEthBalanceChanges.checkProposal(
+        simResult.proposal,
+        simResult.sim,
+        simResult.deps,
+      );
 
-    // Check passes with info message when no ETH transfers detected
-    expect(result.skipped).toBeUndefined();
-    expect(result.info).toContain('No ETH balance changes detected in this proposal.');
-    expect(result.warnings).toHaveLength(0);
-    expect(result.errors).toHaveLength(0);
-  }, 30000);
+      // Check passes with info message when no ETH transfers detected
+      expect(result.skipped).toBeUndefined();
+      expect(result.info).toContain('No ETH balance changes detected in this proposal.');
+      expect(result.warnings).toHaveLength(0);
+      expect(result.errors).toHaveLength(0);
+    },
+    30000,
+  );
 });

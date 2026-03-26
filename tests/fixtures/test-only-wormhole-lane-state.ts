@@ -2,8 +2,8 @@ import { getAddress, pad, toHex } from 'viem';
 import type { Address } from 'viem';
 import type { SimulationConfigNew } from '../../types';
 import {
-  type WormholeLaneKey,
   WORMHOLE_LANE_SUPPORT_MATRIX,
+  type WormholeLaneKey,
 } from '../../utils/bridges/wormhole-support';
 
 export const TEST_ONLY_CELO_PRE_94_OWNER = getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071');
@@ -16,8 +16,7 @@ export const TEST_ONLY_WORMHOLE_LANES = Object.fromEntries(
       {
         chainId: lane.destinationChainId,
         wormholeChainId: lane.wormholeChainId,
-        l2FromAddress:
-          laneKey === 'celo' ? TEST_ONLY_CELO_PRE_94_OWNER : lane.l2FromAddress,
+        l2FromAddress: laneKey === 'celo' ? TEST_ONLY_CELO_PRE_94_OWNER : lane.l2FromAddress,
         name: lane.chainName,
       },
     ];

@@ -11,13 +11,13 @@ import { bsc, celo, mainnet, monad, polygon, tempo } from 'viem/chains';
 import type { TenderlySimulation } from '../../types.d';
 import { WORMHOLE_SEND_MESSAGE_ABI } from '../../utils/bridges/wormhole';
 import {
-  SUPPORTED_WORMHOLE_LANE_KEYS,
-  getWormholeLaneByKey,
-} from '../../utils/bridges/wormhole-support';
-import {
   LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION,
   LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
 } from '../../utils/bridges/wormhole-runtime-state';
+import {
+  SUPPORTED_WORMHOLE_LANE_KEYS,
+  getWormholeLaneByKey,
+} from '../../utils/bridges/wormhole-support';
 import { createMockSimulation } from './test-utils';
 
 process.env.ETHERSCAN_API_KEY ??= 'test-etherscan-key';
@@ -398,8 +398,15 @@ describe('cross-chain destination execution engine', () => {
     expect(transportCalls[0]?.network_id).toBe('56');
     expect(transportCalls[1]?.network_id).toBe(String(CELO_CHAIN_ID));
 
-    const secondPayload = transportCalls[1] as any;
-    expect(secondPayload?.state_objects?.[bnbTarget]).toBeUndefined();
+    const secondPayload = transportCalls[1];
+    const secondStateObjectsRaw = secondPayload?.state_objects;
+    const secondStateObjects =
+      secondStateObjectsRaw &&
+      typeof secondStateObjectsRaw === 'object' &&
+      !Array.isArray(secondStateObjectsRaw)
+        ? (secondStateObjectsRaw as Record<string, unknown>)
+        : null;
+    expect(secondStateObjects?.[bnbTarget]).toBeUndefined();
     expect(result.destinationStateByChain[56]?.[bnbTarget]?.storage?.['0x01']).toBe('0xaa');
     expect(result.destinationStateByChain[CELO_CHAIN_ID]?.[celoTarget]?.storage?.['0x02']).toBe(
       '0xbb',

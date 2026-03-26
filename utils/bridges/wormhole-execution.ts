@@ -1,12 +1,6 @@
 import { type Address, type Hex, getAddress } from 'viem';
 import type { CrossChainExecutionJob } from '../../types.d';
 import { getClientForChain } from '../clients/client';
-import type { SimulationStateObjects } from '../derived-state';
-import { getWormholeLaneCapabilities } from './wormhole';
-import type {
-  CrossChainBridgeExecutionContext,
-  CrossChainBridgePreparedExecution,
-} from './adapter';
 import {
   WORMHOLE_CORE_STUB_RUNTIME_BYTECODE,
   WORMHOLE_RECEIVER_ABI,
@@ -16,6 +10,12 @@ import {
   getOverriddenWormholeReceiverSequence,
   getWormholeReceiverRuntimeStateKey,
 } from '../cross-chain/wormhole-receiver-sim';
+import type { SimulationStateObjects } from '../derived-state';
+import type {
+  CrossChainBridgeExecutionContext,
+  CrossChainBridgePreparedExecution,
+} from './adapter';
+import { getWormholeLaneCapabilities } from './wormhole';
 
 type WormholeReceiverRuntimeStateByKey = Record<
   WormholeReceiverRuntimeStateCacheKey,
@@ -138,7 +138,11 @@ async function resolveWormholeReceiverRuntimeState(
   const { job, workingState, sourceTimestamp } = context;
   const laneCapabilities = getWormholeLaneCapabilities(job.wormholeChainId);
   const wormholeCoreAddress = getWormholeReceiverCoreAddress(job);
-  if (!wormholeCoreAddress || job.wormholeChainId === undefined || laneCapabilities.kind === 'direct') {
+  if (
+    !wormholeCoreAddress ||
+    job.wormholeChainId === undefined ||
+    laneCapabilities.kind === 'direct'
+  ) {
     return null;
   }
 
