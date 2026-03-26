@@ -73,6 +73,7 @@ export function verifyPublishMetadataSignature(
   const signatureValue = Reflect.get(authenticity, 'signature');
   const keyId = Reflect.get(authenticity, 'key_id');
   const algorithm = Reflect.get(authenticity, 'algorithm');
+  const signedFields = Reflect.get(authenticity, 'signed_fields');
   if (
     typeof signatureValue !== 'string' ||
     typeof keyId !== 'string' ||
@@ -83,6 +84,19 @@ export function verifyPublishMetadataSignature(
 
   if (algorithm !== 'hmac-sha256') {
     return { status: 'invalid', keyId, algorithm, reason: 'Unsupported authenticity algorithm.' };
+  }
+
+  if (signedFields !== undefined) {
+    if (!Array.isArray(signedFields)) {
+      return { status: 'invalid', keyId, algorithm, reason: 'Publish signed_fields payload is malformed.' };
+    }
+
+    if (
+      signedFields.length !== SIGNED_FIELDS.length ||
+      !SIGNED_FIELDS.every((field, index) => signedFields[index] === field)
+    ) {
+      return { status: 'invalid', keyId, algorithm, reason: 'Unsupported signed_fields in authenticity payload.' };
+    }
   }
 
   const expectedSignature = createHmac('sha256', secret)

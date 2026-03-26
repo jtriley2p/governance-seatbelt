@@ -16,7 +16,7 @@ Cross-chain proposal support is intentionally lane-based. Seatbelt only guarante
 
 ## Bridge Adapter Architecture
 
-Cross-chain extraction and execution now flow through a shared bridge-adapter seam in [adapter.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/utils/bridges/adapter.ts).
+Cross-chain extraction and execution now flow through a shared bridge-adapter seam in [adapter.ts](../utils/bridges/adapter.ts).
 
 Each adapter is responsible for:
 
@@ -24,7 +24,7 @@ Each adapter is responsible for:
 - preparing any bridge-specific execution state before the destination simulation runs
 - keeping bridge-specific runtime behavior out of the main execution engine
 
-The execution engine in [tenderly-execution-engine.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/utils/cross-chain/tenderly-execution-engine.ts) orchestrates adapters. It should not be the place where bridge-specific support matrices or receiver-mode logic live.
+The execution engine in [tenderly-execution-engine.ts](../utils/cross-chain/tenderly-execution-engine.ts) orchestrates adapters. It should not be the place where bridge-specific support matrices or receiver-mode logic live.
 
 ### Supported Bridge Types
 
@@ -50,7 +50,7 @@ type BridgeType = 'ArbitrumL1L2' | 'OptimismL1L2' | 'WormholeL1L2';
 - Address model: destination execution uses an explicit lane-specific `l2FromAddress`
 - Main job: decode the Wormhole message, map it onto a supported lane, and prepare any receiver-mode runtime state required for simulation
 
-Wormhole support is defined by the support matrix in [wormhole-support.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/utils/bridges/wormhole-support.ts), not by scattered constants in parser or execution code.
+Wormhole support is defined by the support matrix in [wormhole-support.ts](../utils/bridges/wormhole-support.ts), not by scattered constants in parser or execution code.
 
 ## Wormhole Support Model
 
@@ -80,11 +80,11 @@ Unknown lanes, unknown sender targets, or partially configured lanes are treated
 
 These files should stay aligned:
 
-- support matrix: [wormhole-support.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/utils/bridges/wormhole-support.ts)
-- parser / extraction: [wormhole.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/utils/bridges/wormhole.ts)
-- execution prep: [wormhole-execution.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/utils/bridges/wormhole-execution.ts)
-- live validation: [wormhole-lane-validation.test.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/checks/tests/wormhole-lane-validation.test.ts)
-- support-matrix drift checks: [wormhole-support-matrix.test.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/checks/tests/wormhole-support-matrix.test.ts)
+- support matrix: [wormhole-support.ts](../utils/bridges/wormhole-support.ts)
+- parser / extraction: [wormhole.ts](../utils/bridges/wormhole.ts)
+- execution prep: [wormhole-execution.ts](../utils/bridges/wormhole-execution.ts)
+- live validation: [wormhole-lane-validation.test.ts](../checks/tests/wormhole-lane-validation.test.ts)
+- support-matrix drift checks: [wormhole-support-matrix.test.ts](../checks/tests/wormhole-support-matrix.test.ts)
 
 If a lane is declared supported, it should also have parser coverage, execution coverage, and validation coverage.
 
@@ -113,11 +113,11 @@ Structured reports may include:
 - publish metadata: `publishId`, `artifactHash`, `artifactUrl`, `metadataUrl`, `publishedAt`
 - authenticity metadata for published artifacts
 
-These values are defined in [types.d.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/types.d.ts) and surfaced in the hosted UI through:
+These values are defined in [types.d.ts](../types.d.ts) and surfaced in the hosted UI through:
 
-- [DecisionHeader.tsx](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/frontend/src/components/DecisionHeader.tsx)
-- [action/page.tsx](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/frontend/src/app/action/page.tsx)
-- [simulation-results/route.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/frontend/src/app/api/simulation-results/route.ts)
+- [DecisionHeader.tsx](../frontend/src/components/DecisionHeader.tsx)
+- [action/page.tsx](../frontend/src/app/action/page.tsx)
+- [simulation-results/route.ts](../frontend/src/app/api/simulation-results/route.ts)
 
 ### What Is Guaranteed
 
@@ -190,18 +190,18 @@ Solution:
 
 ## Adding A New Wormhole Lane
 
-1. Add the lane to [wormhole-support.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/utils/bridges/wormhole-support.ts).
-2. Add or update parser coverage in [wormhole.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/utils/bridges/wormhole.ts) and [wormhole-parser.test.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/tests/wormhole-parser.test.ts).
-3. Add execution coverage in [wormhole-execution.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/utils/bridges/wormhole-execution.ts) and [cross-chain-execution-engine.test.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/checks/tests/cross-chain-execution-engine.test.ts).
-4. Add live validation coverage in [wormhole-lane-validation.test.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/checks/tests/wormhole-lane-validation.test.ts).
+1. Add the lane to [wormhole-support.ts](../utils/bridges/wormhole-support.ts).
+2. Add or update parser coverage in [wormhole.ts](../utils/bridges/wormhole.ts) and [wormhole-parser.test.ts](../tests/wormhole-parser.test.ts).
+3. Add execution coverage in [wormhole-execution.ts](../utils/bridges/wormhole-execution.ts) and [cross-chain-execution-engine.test.ts](../checks/tests/cross-chain-execution-engine.test.ts).
+4. Add live validation coverage in [wormhole-lane-validation.test.ts](../checks/tests/wormhole-lane-validation.test.ts).
 5. Update representative rollout fixtures only if the lane belongs in the forward-looking rollout bundle.
 
 Do not claim support for a new lane until all of those steps are done.
 
 ## Adding A New OP Stack Chain
 
-1. Add the chain to [client.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/utils/clients/client.ts).
-2. Add the correct `L1CrossDomainMessenger` mapping in [optimism.ts](/Users/marcomariscal/.codex/worktrees/4f58/governance-seatbelt/utils/bridges/optimism.ts).
+1. Add the chain to [client.ts](../utils/clients/client.ts).
+2. Add the correct `L1CrossDomainMessenger` mapping in [optimism.ts](../utils/bridges/optimism.ts).
 3. Verify the messenger implements `sendMessage(address,bytes,uint32)`.
 4. Add extraction or execution coverage if the chain behaves differently from the existing OP-stack set.
 5. Validate the lane with a representative simulation before claiming support.

@@ -25,7 +25,7 @@ type SimulationResultsSourceError = {
 };
 
 type PublishLookupRecord = {
-  publishId: string;
+  publishId?: string;
   artifactUrl: string;
   metadataUrl?: string;
   artifactHash?: string;
@@ -486,9 +486,9 @@ function mergeTrustMetadata(
 
 function attachPublishMetadata(
   normalizedResults: Record<string, unknown>[],
-  publishLookup: PublishLookupRecord | null,
+  publishLookup: PublishLookupRecord,
   publishMetadata: Record<string, unknown> | null,
-) {
+): void {
   for (const result of normalizedResults) {
     const report = Reflect.get(result, 'report');
     const structuredReport = report && typeof report === 'object' ? Reflect.get(report, 'structuredReport') : null;
@@ -502,11 +502,11 @@ function attachPublishMetadata(
     }
 
     const publish = {
-      publishId: publishLookup?.publishId,
-      artifactHash: publishLookup?.artifactHash,
-      artifactUrl: publishLookup?.artifactUrl,
-      metadataUrl: publishLookup?.metadataUrl,
-      publishedAt: publishLookup?.publishedAt,
+      publishId: publishLookup.publishId,
+      artifactHash: publishLookup.artifactHash,
+      artifactUrl: publishLookup.artifactUrl,
+      metadataUrl: publishLookup.metadataUrl,
+      publishedAt: publishLookup.publishedAt,
       authenticity: publishMetadata
         ? verifyPublishMetadataSignature(publishMetadata, process.env)
         : { status: 'unsigned', reason: 'No publish metadata available for authenticity verification.' },
@@ -550,7 +550,7 @@ export async function GET(request: Request) {
         const metadataResponse = await readPublishMetadataFromUrl(metadataUrl, maxBytes);
         if (!isSimulationResultsSourceError(metadataResponse)) {
           publishLookup = {
-            publishId: publishIdParam ?? '',
+            publishId: publishIdParam ?? undefined,
             artifactUrl,
             metadataUrl,
           };
@@ -606,11 +606,13 @@ export async function GET(request: Request) {
     if (normalizedResults.length === 0) {
       return NextResponse.json({ error: 'No simulation results found' }, { status: 404 });
     }
-    attachPublishMetadata(
-      normalizedResults as unknown as Record<string, unknown>[],
-      publishLookup,
-      publishMetadata,
-    );
+    if (publishLookup) {
+      attachPublishMetadata(
+        normalizedResults as unknown as Record<string, unknown>[],
+        publishLookup,
+        publishMetadata,
+      );
+    }
 
     if (includeMarkdown) {
       return NextResponse.json(normalizedResults);

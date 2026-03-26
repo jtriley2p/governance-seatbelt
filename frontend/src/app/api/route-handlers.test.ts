@@ -41,6 +41,32 @@ const VALID_SIMULATION_RESULTS_JSON = JSON.stringify([
   },
 ]);
 
+const VALID_SIMULATION_RESULTS_WITH_STRUCTURED_REPORT_JSON = JSON.stringify([
+  {
+    proposalData: {
+      targets: [],
+      values: [],
+      signatures: [],
+      calldatas: [],
+      description: 'test proposal',
+    },
+    report: {
+      status: 'ok',
+      summary: 'summary',
+      markdownReport: '# report',
+      structuredReport: {
+        title: 'Test Report',
+        status: 'success',
+        metadata: {
+          trust: {
+            level: 'ready',
+          },
+        },
+      },
+    },
+  },
+]);
+
 function createMockFetch(
   handler: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
 ): typeof fetch {
@@ -98,6 +124,32 @@ function readMarkdownReport(payload: unknown): string | null {
 
   const markdownReport = Reflect.get(report, 'markdownReport');
   return typeof markdownReport === 'string' ? markdownReport : null;
+}
+
+function readStructuredReportMetadata(payload: unknown): Record<string, unknown> | null {
+  if (!Array.isArray(payload) || payload.length === 0) return null;
+
+  const firstItem = payload[0];
+  if (!firstItem || typeof firstItem !== 'object') return null;
+
+  const report = Reflect.get(firstItem, 'report');
+  if (!report || typeof report !== 'object') return null;
+
+  const structuredReport = Reflect.get(report, 'structuredReport');
+  if (!structuredReport || typeof structuredReport !== 'object' || Array.isArray(structuredReport)) {
+    return null;
+  }
+
+  const metadata = Reflect.get(structuredReport, 'metadata');
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+
+  return metadata as Record<string, unknown>;
+}
+
+function readStructuredReportPublishMetadata(payload: unknown): unknown | null {
+  const metadata = readStructuredReportMetadata(payload);
+  if (!metadata) return null;
+  return Reflect.get(metadata, 'publish') ?? null;
 }
 
 function readArtifactUrl(payload: unknown): string | null {
@@ -193,6 +245,21 @@ describe('/api/simulation-results', () => {
 
     const payload: unknown = await response.json();
     expect(readMarkdownReport(payload)).toBe('');
+  });
+
+  it('does not attach publish authenticity metadata for local simulation-results.json reads', async () => {
+    globalThis.fetch = createMockFetch(async (): Promise<Response> => {
+      throw new Error('Unexpected fetch call');
+    });
+
+    writeSimulationResultsFile(VALID_SIMULATION_RESULTS_WITH_STRUCTURED_REPORT_JSON);
+
+    const response = await getSimulationResults(new Request('http://localhost/api/simulation-results'));
+
+    expect(response.status).toBe(200);
+
+    const payload: unknown = await response.json();
+    expect(readStructuredReportPublishMetadata(payload)).toBeNull();
   });
 
   it('normalizes base deployment artifact urls to simulation-results.json before fetch', async () => {
