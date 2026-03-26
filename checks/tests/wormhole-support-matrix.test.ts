@@ -5,6 +5,10 @@ import {
   getWormholeSupportMatrixIssues,
 } from '../../utils/bridges/wormhole-support';
 import { REPRESENTATIVE_WORMHOLE_ROLLOUT_LANE_KEYS } from '../../tests/fixtures/test-only-wormhole-lane-configs';
+import {
+  TEST_ONLY_WORMHOLE_LANE_ARTIFACTS,
+  TEST_ONLY_WORMHOLE_LANES,
+} from '../../tests/fixtures/test-only-wormhole-lane-state';
 
 describe('Wormhole support matrix', () => {
   test('has no internal consistency issues', () => {
@@ -28,5 +32,54 @@ describe('Wormhole support matrix', () => {
         expect(lane.wormholeReceiverCoreAddress).toMatch(/^0x[a-fA-F0-9]{40}$/);
       }
     }
+  });
+
+  test('test-only fixtures remain aligned with every supported lane', () => {
+    for (const laneKey of SUPPORTED_WORMHOLE_LANE_KEYS) {
+      expect(TEST_ONLY_WORMHOLE_LANES[laneKey]).toBeDefined();
+      expect(TEST_ONLY_WORMHOLE_LANE_ARTIFACTS[laneKey]).toBeDefined();
+    }
+  });
+
+  test('flags duplicate Wormhole chain ids in the support matrix', () => {
+    const brokenMatrix = {
+      ...WORMHOLE_LANE_SUPPORT_MATRIX,
+      polygon: {
+        ...WORMHOLE_LANE_SUPPORT_MATRIX.polygon,
+        wormholeChainId: WORMHOLE_LANE_SUPPORT_MATRIX.bnb.wormholeChainId,
+      },
+    };
+
+    expect(getWormholeSupportMatrixIssues(brokenMatrix)).toContain(
+      `Duplicate Wormhole chain id ${WORMHOLE_LANE_SUPPORT_MATRIX.bnb.wormholeChainId} for lane polygon`,
+    );
+  });
+
+  test('flags lanes with no recognized sender targets', () => {
+    const brokenMatrix = {
+      ...WORMHOLE_LANE_SUPPORT_MATRIX,
+      bnb: {
+        ...WORMHOLE_LANE_SUPPORT_MATRIX.bnb,
+        senderTargets: [],
+      },
+    };
+
+    expect(getWormholeSupportMatrixIssues(brokenMatrix)).toContain(
+      'Lane bnb has no recognized Wormhole sender targets',
+    );
+  });
+
+  test('flags receiver-mode lanes missing the receiver core address', () => {
+    const brokenMatrix = {
+      ...WORMHOLE_LANE_SUPPORT_MATRIX,
+      tempo: {
+        ...WORMHOLE_LANE_SUPPORT_MATRIX.tempo,
+        wormholeReceiverCoreAddress: undefined,
+      },
+    };
+
+    expect(getWormholeSupportMatrixIssues(brokenMatrix)).toContain(
+      'Lane tempo uses receiver mode but is missing wormhole receiver core',
+    );
   });
 });

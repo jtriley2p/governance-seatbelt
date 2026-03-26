@@ -111,6 +111,12 @@ export const SUPPORTED_WORMHOLE_LANE_KEYS = Object.freeze(
   Object.keys(WORMHOLE_LANE_SUPPORT_MATRIX) as WormholeLaneKey[],
 );
 
+function getWormholeLaneKeys(
+  supportMatrix: Record<WormholeLaneKey, WormholeLaneSupport>,
+): WormholeLaneKey[] {
+  return Object.keys(supportMatrix) as WormholeLaneKey[];
+}
+
 export function getWormholeLaneByChainId(
   wormholeChainId: number,
 ): WormholeLaneSupport | undefined {
@@ -131,13 +137,15 @@ export function getAllSupportedWormholeSenderTargets(): readonly `0x${string}`[]
   );
 }
 
-export function getWormholeSupportMatrixIssues(): string[] {
+export function getWormholeSupportMatrixIssues(
+  supportMatrix: Record<WormholeLaneKey, WormholeLaneSupport> = WORMHOLE_LANE_SUPPORT_MATRIX,
+): string[] {
   const issues: string[] = [];
   const seenWormholeChainIds = new Set<number>();
   const seenDestinationChainIds = new Set<number>();
 
-  for (const laneKey of SUPPORTED_WORMHOLE_LANE_KEYS) {
-    const lane = WORMHOLE_LANE_SUPPORT_MATRIX[laneKey];
+  for (const laneKey of getWormholeLaneKeys(supportMatrix)) {
+    const lane = supportMatrix[laneKey];
     if (seenWormholeChainIds.has(lane.wormholeChainId)) {
       issues.push(`Duplicate Wormhole chain id ${lane.wormholeChainId} for lane ${lane.key}`);
     }
