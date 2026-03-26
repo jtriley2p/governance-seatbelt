@@ -9,6 +9,10 @@ import {
 import { mainnet, tempo } from 'viem/chains';
 import type { TenderlySimulation } from '../../types.d';
 import { WORMHOLE_SEND_MESSAGE_ABI } from '../../utils/bridges/wormhole';
+import {
+  SUPPORTED_WORMHOLE_LANE_KEYS,
+  getWormholeLaneByKey,
+} from '../../utils/bridges/wormhole-support';
 import { createMockSimulation } from './test-utils';
 
 process.env.ETHERSCAN_API_KEY ??= 'test-etherscan-key';
@@ -272,6 +276,38 @@ function makeSourceResult(
 }
 
 describe('cross-chain destination execution engine', () => {
+  test('executes one simulated destination job per supported Wormhole lane', async () => {
+    const calldatas = SUPPORTED_WORMHOLE_LANE_KEYS.map((laneKey) => {
+      const lane = getWormholeLaneByKey(laneKey);
+      const target = getAddress('0x00000000000000000000000000000000000000A1');
+      return makeWormholeCalldata([{ target, data: '0x11111111' }], lane.wormholeChainId);
+    });
+
+    for (const laneKey of SUPPORTED_WORMHOLE_LANE_KEYS) {
+      const lane = getWormholeLaneByKey(laneKey);
+      enqueueSimulation(
+        makeSimulation({
+          id: `${laneKey}-step-1`,
+          chainId: lane.destinationChainId,
+        }),
+      );
+    }
+
+    const result = await handleCrossChainSimulations(makeSourceResult(calldatas));
+
+    expect(mockedSendSimulation).toHaveBeenCalledTimes(SUPPORTED_WORMHOLE_LANE_KEYS.length);
+    expect(result.destinationJobResults).toHaveLength(SUPPORTED_WORMHOLE_LANE_KEYS.length);
+
+    for (const laneKey of SUPPORTED_WORMHOLE_LANE_KEYS) {
+      const lane = getWormholeLaneByKey(laneKey);
+      const jobResult = result.destinationJobResults.find(
+        (job) => job.chainId === lane.destinationChainId,
+      );
+      expect(jobResult?.bridgeType).toBe('WormholeL1L2');
+      expect(jobResult?.status).toBe('success');
+    }
+  });
+
   test('does not leak committed state across different destination chains', async () => {
     const bnbTarget = getAddress('0x0000000000000000000000000000000000000B56');
     const celoTarget = getAddress('0x0000000000000000000000000000000000000CE0');
