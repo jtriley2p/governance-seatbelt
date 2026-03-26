@@ -7,7 +7,7 @@ import {
   getAddress,
   parseAbi,
 } from 'viem';
-import { bsc, mainnet, monad, polygon, tempo } from 'viem/chains';
+import { bsc, celo, mainnet, monad, polygon, tempo } from 'viem/chains';
 import type { TenderlySimulation } from '../../types.d';
 import { WORMHOLE_SEND_MESSAGE_ABI } from '../../utils/bridges/wormhole';
 import {
@@ -182,6 +182,7 @@ mock.module('../../utils/clients/tenderly-api', () => ({
 const WORMHOLE_PROPOSAL_TARGET = '0xf5F4496219F31CDCBa6130B5402873624585615a' as const;
 const WORMHOLE_ADDRESS = '0x00000000000000000000000000000000000000AA' as const;
 const DIRECT_DESTINATION_CHAIN_ID = polygon.id;
+const CELO_CHAIN_ID = celo.id;
 const TIMELOCK_ADDRESS = '0x1a9C8182C09F50C8318d769245beA52c32BE35BC';
 
 type CrossChainHandler = typeof import('../../utils/clients/tenderly').handleCrossChainSimulations;

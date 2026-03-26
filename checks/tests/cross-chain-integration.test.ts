@@ -13,10 +13,11 @@ import {
 
 const EXTERNAL_API_TIMEOUT_MS = 120000;
 type CrossChainSourceResult = Parameters<typeof handleCrossChainSimulations>[0];
+const integrationTest = process.env.RUN_TENDERLY_INTEGRATION_TESTS === '1' ? test : test.skip;
 
 describe('Cross-Chain Integration Tests', () => {
   describe('Arbitrum Cross-Chain Integration', () => {
-    test(
+    integrationTest(
       'should complete full Arbitrum cross-chain simulation flow',
       async () => {
         // 1. Run source chain simulation
@@ -61,7 +62,7 @@ describe('Cross-Chain Integration Tests', () => {
       EXTERNAL_API_TIMEOUT_MS,
     );
 
-    test(
+    integrationTest(
       'should handle Arbitrum simulation failures gracefully',
       async () => {
         const { config: arbSimConfig } = await import('../../sims/arb-distro.sim.ts');
@@ -99,7 +100,7 @@ describe('Cross-Chain Integration Tests', () => {
   });
 
   describe('Optimism Cross-Chain Integration', () => {
-    test(
+    integrationTest(
       'should complete full Optimism cross-chain simulation flow',
       async () => {
         // 1. Run source chain simulation
@@ -148,7 +149,7 @@ describe('Cross-Chain Integration Tests', () => {
       EXTERNAL_API_TIMEOUT_MS,
     );
 
-    test(
+    integrationTest(
       'should handle multiple chain destinations correctly',
       async () => {
         const crossChainResult = await getOptimismBridgeCrossChainResult();
@@ -188,7 +189,7 @@ describe('Cross-Chain Integration Tests', () => {
       normalSimConfig = config;
     });
 
-    test(
+    integrationTest(
       'should handle non-cross-chain simulations normally',
       async () => {
         const sourceResult = await simulateNew(normalSimConfig);
@@ -217,7 +218,7 @@ describe('Cross-Chain Integration Tests', () => {
   });
 
   describe('Error Handling and Edge Cases', () => {
-    test('should handle missing simulation data gracefully', async () => {
+    integrationTest('should handle missing simulation data gracefully', async () => {
       const invalidConfig: SimulationConfigNew = {
         type: 'new',
         daoName: 'Test',
@@ -243,7 +244,9 @@ describe('Cross-Chain Integration Tests', () => {
       }
     });
 
-    test('should return no destination job results when no cross-chain jobs are present', async () => {
+    integrationTest(
+      'should return no destination job results when no cross-chain jobs are present',
+      async () => {
       // Mock a network failure scenario by trying to run cross-chain with minimal data
       const partialSourceResult: CrossChainSourceResult = {
         sim: {
@@ -294,7 +297,7 @@ describe('Cross-Chain Integration Tests', () => {
   });
 
   describe('Cross-Chain Check Integration', () => {
-    test('should run all checks on cross-chain simulations', async () => {
+    integrationTest('should run all checks on cross-chain simulations', async () => {
       const crossChainResult = await getArbDistroCrossChainResult();
 
       const results = await runChecksForChain(
@@ -325,7 +328,7 @@ describe('Cross-Chain Integration Tests', () => {
       }
     }, 120000); // External API calls can be slow/rate-limited in CI
 
-    test('should include cross-chain information in check results', async () => {
+    integrationTest('should include cross-chain information in check results', async () => {
       const crossChainResult = await getArbDistroCrossChainResult();
 
       // Only run checks if we have destination job results

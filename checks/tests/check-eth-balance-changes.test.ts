@@ -5,7 +5,10 @@ import { simulateNew as simulate } from '../../utils/clients/tenderly';
 import { checkEthBalanceChanges } from '../check-eth-balance-changes';
 
 describe('checkEthBalanceChanges', () => {
-  test('should correctly handle ETH and ERC20 transfers to the same address', async () => {
+  const integrationTest =
+    process.env.RUN_TENDERLY_INTEGRATION_TESTS === '1' ? test : test.skip;
+
+  integrationTest('should correctly handle ETH and ERC20 transfers to the same address', async () => {
     const simResult = await simulate(simConfig);
 
     // Run the check
@@ -48,7 +51,7 @@ describe('checkEthBalanceChanges', () => {
     expect(result.errors).toHaveLength(0);
   }, 30000);
 
-  test('should report no ETH transfers when none exist', async () => {
+  integrationTest('should report no ETH transfers when none exist', async () => {
     // Update the config to set the values to 0 so that no ETH transfers occur
     const noEthTransferConfig: SimulationConfigNew = {
       ...simConfig,

@@ -13,9 +13,12 @@ function firstCall(result: {
   return result.job.calls[0];
 }
 
+const shouldRunTenderlyIntegration = process.env.RUN_TENDERLY_INTEGRATION_TESTS === '1';
+const metadataTest = shouldRunTenderlyIntegration ? test : test.skip;
+
 describe('Cross-Chain Simulation Metadata Tests', () => {
   describe('Simulation Result Structure Validation', () => {
-    test('should contain valid metadata for Arbitrum cross-chain simulations', async () => {
+    metadataTest('should contain valid metadata for Arbitrum cross-chain simulations', async () => {
       const crossChainResult = await getArbDistroCrossChainResult();
 
       // Validate main simulation metadata
@@ -59,7 +62,7 @@ describe('Cross-Chain Simulation Metadata Tests', () => {
       }
     }, 90000); // Increased timeout for external API calls
 
-    test('should contain valid metadata for Optimism cross-chain simulations', async () => {
+    metadataTest('should contain valid metadata for Optimism cross-chain simulations', async () => {
       const crossChainResult = await getOptimismBridgeCrossChainResult();
 
       // Validate main simulation metadata
@@ -89,7 +92,7 @@ describe('Cross-Chain Simulation Metadata Tests', () => {
       }
     }, 90000); // Increased timeout for external API calls
 
-    test('should validate simulation timing and block metadata', async () => {
+    metadataTest('should validate simulation timing and block metadata', async () => {
       const crossChainResult = await getArbDistroCrossChainResult();
 
       // Validate block metadata
@@ -108,7 +111,7 @@ describe('Cross-Chain Simulation Metadata Tests', () => {
   });
 
   describe('Cross-Chain Simulation State Validation', () => {
-    test('should track simulation success/failure states', async () => {
+    metadataTest('should track simulation success/failure states', async () => {
       const crossChainResult = await getArbDistroCrossChainResult();
 
       // Validate main simulation state
@@ -135,7 +138,7 @@ describe('Cross-Chain Simulation Metadata Tests', () => {
       }
     }, 90000); // Increased timeout for external API calls
 
-    test('should handle missing or invalid simulation data gracefully', async () => {
+    metadataTest('should handle missing or invalid simulation data gracefully', async () => {
       const invalidConfig: SimulationConfigNew = {
         type: 'new',
         daoName: 'TestDAO',
@@ -165,7 +168,7 @@ describe('Cross-Chain Simulation Metadata Tests', () => {
   });
 
   describe('Cross-Chain Dependencies Validation', () => {
-    test('should validate dependency tracking in cross-chain simulations', async () => {
+    metadataTest('should validate dependency tracking in cross-chain simulations', async () => {
       try {
         const crossChainResult = await getArbDistroCrossChainResult();
 
@@ -195,7 +198,7 @@ describe('Cross-Chain Simulation Metadata Tests', () => {
   });
 
   describe('Cross-Chain Message Integrity', () => {
-    test('should maintain message integrity across simulation phases', async () => {
+    metadataTest('should maintain message integrity across simulation phases', async () => {
       const crossChainResult = await getArbDistroCrossChainResult();
 
       if (
@@ -217,7 +220,7 @@ describe('Cross-Chain Simulation Metadata Tests', () => {
       }
     }, 90000); // Increased timeout for external API calls
 
-    test('should validate L2 address aliasing for Arbitrum', async () => {
+    metadataTest('should validate L2 address aliasing for Arbitrum', async () => {
       const crossChainResult = await getArbDistroCrossChainResult();
 
       if (
@@ -240,7 +243,7 @@ describe('Cross-Chain Simulation Metadata Tests', () => {
       }
     }, 90000); // Increased timeout for external API calls
 
-    test('should validate L2 address preservation for Optimism', async () => {
+    metadataTest('should validate L2 address preservation for Optimism', async () => {
       const crossChainResult = await getOptimismBridgeCrossChainResult();
 
       if (
@@ -264,7 +267,7 @@ describe('Cross-Chain Simulation Metadata Tests', () => {
   });
 
   describe('Simulation Performance Metrics', () => {
-    const perfTest = process.env.CI ? test.skip : test;
+    const perfTest = shouldRunTenderlyIntegration && !process.env.CI ? test : test.skip;
 
     perfTest(
       'should track simulation execution times',

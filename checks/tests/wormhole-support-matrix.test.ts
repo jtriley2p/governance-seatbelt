@@ -28,8 +28,12 @@ describe('Wormhole support matrix', () => {
       const lane = WORMHOLE_LANE_SUPPORT_MATRIX[laneKey];
       expect(lane.senderTargets.length).toBeGreaterThan(0);
       expect(lane.validationTargets.v2Factory).toMatch(/^0x[a-fA-F0-9]{40}$/);
-      if (lane.executionMode === 'receiver') {
+      if (lane.executionMode !== 'direct') {
         expect(lane.wormholeReceiverCoreAddress).toMatch(/^0x[a-fA-F0-9]{40}$/);
+      }
+      if (lane.executionMode === 'receiver-legacy') {
+        expect(lane.legacyPayloadVersion).toMatch(/^0x[0-9a-fA-F]{64}$/);
+        expect(lane.legacyNextSequenceStorageSlot).toMatch(/^0x[0-9a-fA-F]{64}$/);
       }
     }
   });
@@ -79,7 +83,7 @@ describe('Wormhole support matrix', () => {
     };
 
     expect(getWormholeSupportMatrixIssues(brokenMatrix)).toContain(
-      'Lane tempo uses receiver mode but is missing wormhole receiver core',
+      'Lane tempo uses modern receiver mode but is missing wormhole receiver core',
     );
   });
 });

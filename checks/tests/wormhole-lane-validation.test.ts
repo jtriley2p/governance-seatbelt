@@ -35,6 +35,9 @@ const V2_FACTORY_ABI = parseAbi(['function feeToSetter() view returns (address)'
 const EXTERNAL_API_TIMEOUT_MS = 180000;
 const RUN_LIVE_BNB_LEGACY_VALIDATION = process.env.RUN_LIVE_BNB_LEGACY_VALIDATION === '1';
 const maybeLiveBnbLegacy = RUN_LIVE_BNB_LEGACY_VALIDATION ? test : test.skip;
+const tenderlyTest = process.env.RUN_TENDERLY_INTEGRATION_TESTS === '1' ? test : test.skip;
+const maybeLiveLaneValidation =
+  process.env.RUN_LIVE_WORMHOLE_LANE_VALIDATION === '1' ? test : test.skip;
 const BNB_SOURCIFY_SOURCE_BASE_URL =
   'https://repo.sourcify.dev/contracts/full_match/56/0x341c1511141022cf8eE20824Ae0fFA3491F1302b/sources';
 const LEGACY_BNB_WORMHOLE_PAYLOAD_DESCRIPTOR =
@@ -137,9 +140,10 @@ describe('Wormhole lane live authority validation', () => {
       chainName: TEST_ONLY_WORMHOLE_LANES[laneKey].name,
     }));
 
-  test.each(supportedLanes)(
-    'confirms the configured $chainName lane authority matches live destination governance state',
-    async ({ laneKey }) => {
+  for (const { laneKey, chainName } of supportedLanes) {
+    maybeLiveLaneValidation(
+      `confirms the configured ${chainName} lane authority matches live destination governance state`,
+      async () => {
       const lane = TEST_ONLY_WORMHOLE_LANES[laneKey];
       const client = getClientForChain(lane.chainId);
 
@@ -213,9 +217,10 @@ describe('Wormhole lane live authority validation', () => {
           }),
         ).rejects.toThrow();
       }
-    },
-    EXTERNAL_API_TIMEOUT_MS,
-  );
+      },
+      EXTERNAL_API_TIMEOUT_MS,
+    );
+  }
 });
 
 describe('BNB legacy Wormhole live validation', () => {
@@ -317,7 +322,7 @@ describe('Celo 94 -> 95 derived-state validation', () => {
     return derived95ResultPromise;
   }
 
-  test(
+  tenderlyTest(
     '94-test succeeds on the Celo Wormhole handoff lane',
     async () => {
       const proposal94Result = await getProposal94Result();
@@ -334,7 +339,7 @@ describe('Celo 94 -> 95 derived-state validation', () => {
     EXTERNAL_API_TIMEOUT_MS,
   );
 
-  test(
+  tenderlyTest(
     '95-test fails on Celo without the derived 94 baseline',
     async () => {
       const proposal95Result = await getStandalone95Result();
@@ -347,7 +352,7 @@ describe('Celo 94 -> 95 derived-state validation', () => {
     EXTERNAL_API_TIMEOUT_MS,
   );
 
-  test(
+  tenderlyTest(
     '95-test succeeds on Celo when derived from the 94 baseline',
     async () => {
       const proposal95Result = await getDerived95Result();
@@ -398,7 +403,7 @@ describe('Representative Wormhole rollout validation', () => {
     return derivedFollowupResultPromise;
   }
 
-  test(
+  tenderlyTest(
     'setup rollout succeeds on every representative lane',
     async () => {
       const setupResult = await getSetupResult();
@@ -416,7 +421,7 @@ describe('Representative Wormhole rollout validation', () => {
     EXTERNAL_API_TIMEOUT_MS,
   );
 
-  test(
+  tenderlyTest(
     'setup rollout produces derived baselines for mainnet and every representative lane',
     async () => {
       const setupResult = await getSetupResult();
@@ -439,7 +444,7 @@ describe('Representative Wormhole rollout validation', () => {
     EXTERNAL_API_TIMEOUT_MS,
   );
 
-  test(
+  tenderlyTest(
     'standalone follow-up rollout fails on every representative lane',
     async () => {
       const standaloneFollowupResult = await getStandaloneFollowupResult();
@@ -457,7 +462,7 @@ describe('Representative Wormhole rollout validation', () => {
     EXTERNAL_API_TIMEOUT_MS,
   );
 
-  test(
+  tenderlyTest(
     'derived follow-up rollout succeeds on every representative lane',
     async () => {
       const derivedFollowupResult = await getDerivedFollowupResult();

@@ -79,7 +79,7 @@ describe('Verification checks - placeholder labeling', () => {
 
       const output = res.info.join('\n');
       expect(output).toContain('(simulation placeholder)');
-      expect(output).toMatch(/Contract \(verified via/); // placeholder
+      expect(output).toMatch(/Contract \(verified\)/); // placeholder
       expect(output).toMatch(/Contract \(unverified; checked Sourcify \+/); // realContract
     } finally {
       BlockExplorerFactory.getContractVerification = original;
