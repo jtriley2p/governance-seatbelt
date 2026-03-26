@@ -441,11 +441,11 @@ async function readPublishMetadataFromUrl(
     }
 
     const parsedBody: unknown = JSON.parse(responseBody.bodyText);
-    if (!parsedBody || typeof parsedBody !== 'object' || Array.isArray(parsedBody)) {
+    if (!isPlainRecord(parsedBody)) {
       return { error: 'Publish metadata payload is invalid', status: 502 };
     }
 
-    return parsedBody as Record<string, unknown>;
+    return parsedBody;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       return { error: 'Publish metadata fetch timed out', status: 504 };
@@ -456,22 +456,24 @@ async function readPublishMetadataFromUrl(
   }
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 function mergeTrustMetadata(
   structuredReport: Record<string, unknown>,
   additions: { warningReasons?: string[]; blockingReasons?: string[] },
 ) {
-  const metadata = Reflect.get(structuredReport, 'metadata');
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return;
+  const metadata = structuredReport.metadata;
+  if (!isPlainRecord(metadata)) return;
 
-  const existingTrust = Reflect.get(metadata, 'trust');
-  const existingBlocking =
-    existingTrust && typeof existingTrust === 'object' && Array.isArray(Reflect.get(existingTrust, 'blockingReasons'))
-      ? [...(Reflect.get(existingTrust, 'blockingReasons') as string[])]
-      : [];
-  const existingWarnings =
-    existingTrust && typeof existingTrust === 'object' && Array.isArray(Reflect.get(existingTrust, 'warningReasons'))
-      ? [...(Reflect.get(existingTrust, 'warningReasons') as string[])]
-      : [];
+  const existingTrust = metadata.trust;
+  const existingBlocking = isPlainRecord(existingTrust)
+    ? (existingTrust.blockingReasons ?? []).filter((reason): reason is string => typeof reason === 'string')
+    : [];
+  const existingWarnings = isPlainRecord(existingTrust)
+    ? (existingTrust.warningReasons ?? []).filter((reason): reason is string => typeof reason === 'string')
+    : [];
 
   const blockingReasons = [...existingBlocking, ...(additions.blockingReasons ?? [])];
   const warningReasons = [...existingWarnings, ...(additions.warningReasons ?? [])];
@@ -481,25 +483,19 @@ function mergeTrustMetadata(
     warningReasons: warningReasons.length > 0 ? Array.from(new Set(warningReasons)) : undefined,
   };
 
-  Reflect.set(metadata, 'trust', nextTrust);
+  metadata.trust = nextTrust;
 }
 
 function attachPublishMetadata(
-  normalizedResults: Record<string, unknown>[],
+  normalizedResults: ReturnType<typeof parseSimulationResultsJson>,
   publishLookup: PublishLookupRecord,
   publishMetadata: Record<string, unknown> | null,
 ): void {
   for (const result of normalizedResults) {
-    const report = Reflect.get(result, 'report');
-    const structuredReport = report && typeof report === 'object' ? Reflect.get(report, 'structuredReport') : null;
-    if (!structuredReport || typeof structuredReport !== 'object' || Array.isArray(structuredReport)) {
-      continue;
-    }
-
-    const metadata = Reflect.get(structuredReport, 'metadata');
-    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
-      continue;
-    }
+    const structuredReport = result.report.structuredReport;
+    if (!isPlainRecord(structuredReport)) continue;
+    const metadata = structuredReport.metadata;
+    if (!isPlainRecord(metadata)) continue;
 
     const publish = {
       publishId: publishLookup.publishId,
@@ -512,14 +508,14 @@ function attachPublishMetadata(
         : { status: 'unsigned', reason: 'No publish metadata available for authenticity verification.' },
     };
 
-    Reflect.set(metadata, 'publish', publish);
+    metadata.publish = publish;
 
     if (publish.authenticity.status === 'invalid') {
-      mergeTrustMetadata(structuredReport as Record<string, unknown>, {
+      mergeTrustMetadata(structuredReport, {
         blockingReasons: ['Publish authenticity verification failed.'],
       });
     } else if (publish.authenticity.status === 'unsigned' || publish.authenticity.status === 'unconfigured') {
-      mergeTrustMetadata(structuredReport as Record<string, unknown>, {
+      mergeTrustMetadata(structuredReport, {
         warningReasons: [publish.authenticity.reason ?? 'Publish authenticity could not be verified.'],
       });
     }
@@ -607,11 +603,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'No simulation results found' }, { status: 404 });
     }
     if (publishLookup) {
-      attachPublishMetadata(
-        normalizedResults as unknown as Record<string, unknown>[],
-        publishLookup,
-        publishMetadata,
-      );
+      attachPublishMetadata(normalizedResults, publishLookup, publishMetadata);
     }
 
     if (includeMarkdown) {

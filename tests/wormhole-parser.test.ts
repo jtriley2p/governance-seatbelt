@@ -3,6 +3,7 @@ import { encodeFunctionData, getAddress } from 'viem';
 import {
   SUPPORTED_WORMHOLE_CHAIN_IDS,
   WORMHOLE_SEND_MESSAGE_ABI,
+  type WormholeLaneCapabilities,
   assertValidWormholeLaneCapabilities,
   extractWormholeExecutionJobsFromProposal,
   getWormholeLaneCapabilities,
@@ -215,64 +216,77 @@ describe('wormhole proposal parser', () => {
   });
 
   test('rejects malformed legacy wormhole lane capabilities before execution', () => {
-    expect(() =>
-      assertValidWormholeLaneCapabilities(5, {
-        kind: 'direct',
-        // @ts-expect-error Intentional malformed config for runtime validation.
-        receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
-      }),
-    ).toThrow('inconsistent receiver config');
+    expect(() => {
+      assertValidWormholeLaneCapabilities(
+        5,
+        {
+          kind: 'direct',
+          receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
+        } as unknown as WormholeLaneCapabilities,
+      );
+    }).toThrow('inconsistent receiver config');
 
-    expect(() =>
-      assertValidWormholeLaneCapabilities(14, {
-        kind: 'modern',
-        // @ts-expect-error Intentional malformed config for runtime validation.
-        receiverCoreAddress: '',
-      }),
-    ).toThrow('invalid receiverCoreAddress');
+    expect(() => {
+      assertValidWormholeLaneCapabilities(
+        14,
+        {
+          kind: 'modern',
+          receiverCoreAddress: '',
+        } as unknown as WormholeLaneCapabilities,
+      );
+    }).toThrow('invalid receiverCoreAddress');
 
-    expect(() =>
-      assertValidWormholeLaneCapabilities(4, {
-        kind: 'legacy',
-        // @ts-expect-error Intentional malformed config for runtime validation.
-        receiverCoreAddress: '',
-        payloadVersion: '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b',
-        nextSequenceStorageSlot:
-          '0x0000000000000000000000000000000000000000000000000000000000000000',
-      }),
-    ).toThrow('invalid receiverCoreAddress');
+    expect(() => {
+      assertValidWormholeLaneCapabilities(
+        4,
+        {
+          kind: 'legacy',
+          receiverCoreAddress: '',
+          payloadVersion:
+            '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b',
+          nextSequenceStorageSlot:
+            '0x0000000000000000000000000000000000000000000000000000000000000000',
+        } as unknown as WormholeLaneCapabilities,
+      );
+    }).toThrow('invalid receiverCoreAddress');
 
-    expect(() =>
-      assertValidWormholeLaneCapabilities(4, {
-        kind: 'legacy',
-        // @ts-expect-error Intentional malformed config for runtime validation.
-        receiverCoreAddress: undefined,
-        // @ts-expect-error Intentional malformed config for runtime validation.
-        payloadVersion: '0x1234',
-        nextSequenceStorageSlot:
-          '0x0000000000000000000000000000000000000000000000000000000000000000',
-      }),
-    ).toThrow('invalid receiverCoreAddress');
+    expect(() => {
+      assertValidWormholeLaneCapabilities(
+        4,
+        {
+          kind: 'legacy',
+          receiverCoreAddress: undefined,
+          payloadVersion: '0x1234',
+          nextSequenceStorageSlot:
+            '0x0000000000000000000000000000000000000000000000000000000000000000',
+        } as unknown as WormholeLaneCapabilities,
+      );
+    }).toThrow('invalid receiverCoreAddress');
 
-    expect(() =>
-      assertValidWormholeLaneCapabilities(4, {
-        kind: 'legacy',
-        receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
-        // @ts-expect-error Intentional malformed config for runtime validation.
-        payloadVersion: '0x1234',
-        nextSequenceStorageSlot:
-          '0x0000000000000000000000000000000000000000000000000000000000000000',
-      }),
-    ).toThrow('invalid payloadVersion');
+    expect(() => {
+      assertValidWormholeLaneCapabilities(
+        4,
+        {
+          kind: 'legacy',
+          receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
+          payloadVersion: '0x1234',
+          nextSequenceStorageSlot:
+            '0x0000000000000000000000000000000000000000000000000000000000000000',
+        } as unknown as WormholeLaneCapabilities,
+      );
+    }).toThrow('invalid payloadVersion');
 
-    expect(() =>
-      assertValidWormholeLaneCapabilities(4, {
-        kind: 'legacy',
-        receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
-        payloadVersion: '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b',
-        // @ts-expect-error Intentional malformed config for runtime validation.
-        nextSequenceStorageSlot: '0x1234',
-      }),
-    ).toThrow('invalid nextSequenceStorageSlot');
+    expect(() => {
+      assertValidWormholeLaneCapabilities(
+        4,
+        {
+          kind: 'legacy',
+          receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
+          payloadVersion:
+            '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b',
+          nextSequenceStorageSlot: '0x1234',
+        } as unknown as WormholeLaneCapabilities,
+      );
+    }).toThrow('invalid nextSequenceStorageSlot');
   });
 });
