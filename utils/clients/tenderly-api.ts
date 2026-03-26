@@ -17,6 +17,22 @@ const TENDERLY_FETCH_OPTIONS = {
   headers: { 'X-Access-Key': TENDERLY_ACCESS_TOKEN },
 };
 
+const DEFAULT_TENDERLY_REQUEST_TIMEOUT_MS = 15_000;
+const TENDERLY_REQUEST_TIMEOUT_MS = (() => {
+  const raw = process.env.TENDERLY_REQUEST_TIMEOUT_MS;
+  if (!raw) return DEFAULT_TENDERLY_REQUEST_TIMEOUT_MS;
+
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    console.warn(
+      `Invalid TENDERLY_REQUEST_TIMEOUT_MS="${raw}", using default ${DEFAULT_TENDERLY_REQUEST_TIMEOUT_MS}ms`,
+    );
+    return DEFAULT_TENDERLY_REQUEST_TIMEOUT_MS;
+  }
+
+  return parsed;
+})();
+
 const tenderlyBlockNumberSchema = z
   .object({
     block_number: z.number(),
@@ -108,6 +124,34 @@ type TenderlyError = {
   statusCode?: number;
 };
 
+function makeTenderlyTimeoutError(label: string): Error {
+  const error = new Error(`${label} timed out after ${TENDERLY_REQUEST_TIMEOUT_MS}ms`);
+  error.name = 'TenderlyTimeoutError';
+  return error;
+}
+
+function isTenderlyTimeoutError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'TenderlyTimeoutError';
+}
+
+async function fetchUrlWithTimeout<T>(label: string, url: string, options: Partial<FETCH_OPT>) {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race<T>([
+      fetchUrl(url, options) as Promise<T>,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(makeTenderlyTimeoutError(label)),
+          TENDERLY_REQUEST_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 export type StateOverridesPayload = {
   networkID: string;
   stateOverrides: Record<string, { value: Record<string, string> }>;
@@ -137,7 +181,11 @@ export async function getLatestBlock(chainId: number): Promise<number> {
       method: 'GET',
       ...TENDERLY_FETCH_OPTIONS,
     };
-    const rawRes = await fetchUrl(url, fetchOptions);
+    const rawRes = await fetchUrlWithTimeout(
+      `Tenderly getLatestBlock(${chainId})`,
+      url,
+      fetchOptions,
+    );
     const res = parseWithSchema(
       tenderlyBlockNumberSchema,
       rawRes,
@@ -160,7 +208,11 @@ export async function sendEncodeRequest(
       data: payload,
       ...TENDERLY_FETCH_OPTIONS,
     };
-    const rawResponse = await fetchUrl(TENDERLY_ENCODE_URL, fetchOptions);
+    const rawResponse = await fetchUrlWithTimeout(
+      `Tenderly sendEncodeRequest(${payload.networkID})`,
+      TENDERLY_ENCODE_URL,
+      fetchOptions,
+    );
     const response = parseWithSchema(
       tenderlyStorageEncodingSchema,
       rawResponse,
@@ -194,7 +246,11 @@ export async function sendSimulation(
     ...TENDERLY_FETCH_OPTIONS,
   };
   try {
-    const rawSim = await fetchUrl(TENDERLY_SIM_URL, fetchOptions);
+    const rawSim = await fetchUrlWithTimeout(
+      `Tenderly sendSimulation(${payload.network_id})`,
+      TENDERLY_SIM_URL,
+      fetchOptions,
+    );
     const sim = parseWithSchema(tenderlySimulationSchema, rawSim, 'Tenderly simulate response');
 
     sim.transaction.addresses = sim.transaction.addresses.map(getAddress);
@@ -206,7 +262,8 @@ export async function sendSimulation(
   } catch (err) {
     console.log('err in sendSimulation: ', JSON.stringify(err));
     const is429 = (err as TenderlyError)?.statusCode === 429;
-    if (delay > 8000 || !is429) {
+    const isTimeout = isTenderlyTimeoutError(err);
+    if (delay > 8000 || (!is429 && !isTimeout)) {
       console.warn('Simulation request failed with the below request payload and error');
       console.log(JSON.stringify(fetchOptions));
       throw err;
