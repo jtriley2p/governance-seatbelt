@@ -132,4 +132,31 @@ describe('wormhole proposal parser', () => {
 
     expect(jobs).toHaveLength(0);
   });
+
+  test('does not parse wormhole messages when sendMessage array lengths are inconsistent', () => {
+    const targetA = getAddress('0xAfE208a311B21f13EF87E33A90049fC17A7acDEc');
+    const targetB = getAddress('0x79a530c8e2fA8748B7B40dd3629C0520c2cCf03f');
+
+    const calldata = encodeFunctionData({
+      abi: WORMHOLE_SEND_MESSAGE_ABI,
+      functionName: 'sendMessage',
+      args: [
+        [targetA, targetB],
+        [0n],
+        [
+          '0x13af4035000000000000000000000000044aaf330d7fd6ae683eec5c1c1d1fff5196b6b7',
+          '0xa2e74af6000000000000000000000000044aaf330d7fd6ae683eec5c1c1d1fff5196b6b7',
+        ],
+        getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
+        14,
+      ],
+    });
+
+    const jobs = extractWormholeExecutionJobsFromProposal(
+      [getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a')],
+      [calldata],
+    );
+
+    expect(jobs).toHaveLength(0);
+  });
 });

@@ -272,6 +272,44 @@ function makeSourceResult(
 }
 
 describe('cross-chain destination execution engine', () => {
+  test('does not leak committed state across different destination chains', async () => {
+    const bnbTarget = getAddress('0x0000000000000000000000000000000000000B56');
+    const celoTarget = getAddress('0x0000000000000000000000000000000000000CE0');
+
+    const bnbCalldata = makeWormholeCalldata([{ target: bnbTarget, data: '0x11111111' }], 4);
+    const celoCalldata = makeWormholeCalldata([{ target: celoTarget, data: '0x22222222' }], 14);
+
+    enqueueSimulation(
+      makeSimulation({
+        id: 'bnb-step-1',
+        chainId: 56,
+        stateDiff: [{ address: bnbTarget, key: '0x01', dirty: '0xaa' }],
+      }),
+    );
+    enqueueSimulation(
+      makeSimulation({
+        id: 'celo-step-1',
+        chainId: CELO_CHAIN_ID,
+        stateDiff: [{ address: celoTarget, key: '0x02', dirty: '0xbb' }],
+      }),
+    );
+
+    const result = await handleCrossChainSimulations(
+      makeSourceResult([bnbCalldata, celoCalldata], { simulationTimestamp: 1_600_000_321n }),
+    );
+
+    expect(mockedSendSimulation).toHaveBeenCalledTimes(2);
+    expect(transportCalls[0]?.network_id).toBe('56');
+    expect(transportCalls[1]?.network_id).toBe(String(CELO_CHAIN_ID));
+
+    const secondPayload = transportCalls[1] as any;
+    expect(secondPayload?.state_objects?.[bnbTarget]).toBeUndefined();
+    expect(result.destinationStateByChain[56]?.[bnbTarget]?.storage?.['0x01']).toBe('0xaa');
+    expect(result.destinationStateByChain[CELO_CHAIN_ID]?.[celoTarget]?.storage?.['0x02']).toBe(
+      '0xbb',
+    );
+  });
+
   test('keeps step results and commits merged state for a successful multi-step job', async () => {
     const firstTarget = getAddress('0x00000000000000000000000000000000000000A1');
     const secondTarget = getAddress('0x00000000000000000000000000000000000000A2');

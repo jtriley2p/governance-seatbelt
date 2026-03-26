@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { parseAbi } from 'viem';
+import { SUPPORTED_WORMHOLE_LANE_KEYS } from '../../utils/bridges/wormhole-support';
 import {
   LIVE_WORMHOLE_LANE_VALIDATION_TARGETS,
   REPRESENTATIVE_WORMHOLE_ROLLOUT_LANE_KEYS,
@@ -8,7 +9,6 @@ import {
 } from '../../tests/fixtures/test-only-wormhole-lane-configs';
 import {
   TEST_ONLY_WORMHOLE_LANES,
-  type TestOnlyWormholeLaneKey,
 } from '../../tests/fixtures/test-only-wormhole-lane-state';
 import type { SimulationConfigNew, SimulationResult } from '../../types';
 import { getClientForChain } from '../../utils/clients/client';
@@ -24,11 +24,6 @@ import type { DerivedStateByChain } from '../../utils/derived-state';
 const OWNER_ABI = parseAbi(['function owner() view returns (address)']);
 const V2_FACTORY_ABI = parseAbi(['function feeToSetter() view returns (address)']);
 const EXTERNAL_API_TIMEOUT_MS = 180000;
-
-type LaneKey = Extract<
-  TestOnlyWormholeLaneKey,
-  'bnb' | 'polygon' | 'avalanche' | 'celo' | 'monad' | 'tempo'
->;
 
 function buildExecutionOptions(
   config: SimulationConfigNew,
@@ -60,14 +55,10 @@ async function runRepresentativeLaneSimulation(
 }
 
 describe('Wormhole lane live authority validation', () => {
-  const supportedLanes: Array<{ laneKey: LaneKey; chainName: string }> = [
-    { laneKey: 'bnb', chainName: 'BNB' },
-    { laneKey: 'polygon', chainName: 'Polygon' },
-    { laneKey: 'avalanche', chainName: 'Avalanche' },
-    { laneKey: 'celo', chainName: 'Celo' },
-    { laneKey: 'monad', chainName: 'Monad' },
-    { laneKey: 'tempo', chainName: 'Tempo' },
-  ];
+  const supportedLanes = SUPPORTED_WORMHOLE_LANE_KEYS.map((laneKey) => ({
+    laneKey,
+    chainName: TEST_ONLY_WORMHOLE_LANES[laneKey].name,
+  }));
 
   test.each(supportedLanes)(
     'confirms the configured $chainName lane authority matches live destination governance state',
