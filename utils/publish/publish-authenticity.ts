@@ -1,6 +1,6 @@
 import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
 import { isHex } from 'viem';
-import { readNonEmptyEnv } from '../env';
+import { readNonEmptyEnv } from '../env.js';
 
 type OpenJsonObject = Record<string, unknown>;
 
