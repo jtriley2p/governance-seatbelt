@@ -54,7 +54,11 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
   const publish = report.metadata.publish;
   const publishedAtLabel = publish?.publishedAt ? formatIsoLocalTime(publish.publishedAt) : null;
   const authenticityLabel = publish?.authenticity
-    ? formatAuthenticityLabel(publish.authenticity.algorithm, publish.authenticity.keyId)
+    ? formatAuthenticityLabel(
+        publish.authenticity.status,
+        publish.authenticity.algorithm,
+        publish.authenticity.keyId,
+      )
     : null;
 
   const repoName = repoUrl ? repoUrl.split('/').slice(-2).join('/') : 'Repository';
@@ -394,10 +398,18 @@ function formatIsoLocalTime(timestamp: string): string {
   });
 }
 
-function formatAuthenticityLabel(algorithm?: string, keyId?: string): string | null {
+function formatAuthenticityLabel(
+  status: 'verified' | 'unsigned' | 'invalid' | 'unconfigured',
+  algorithm?: string,
+  keyId?: string,
+): string | null {
   if (!algorithm && !keyId) return null;
-  if (algorithm && keyId) return `Verified via ${algorithm} / ${keyId}`;
-  if (algorithm) return `Verified via ${algorithm}`;
+  if (status === 'verified') {
+    if (algorithm && keyId) return `Verified via ${algorithm} / ${keyId}`;
+    if (algorithm) return `Verified via ${algorithm}`;
+  }
+  if (algorithm && keyId) return `Signature ${algorithm} / ${keyId}`;
+  if (algorithm) return `Signature ${algorithm}`;
   return `Verification key ${keyId}`;
 }
 
