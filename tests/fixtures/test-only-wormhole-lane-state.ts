@@ -8,20 +8,44 @@ import {
 
 export const TEST_ONLY_CELO_PRE_94_OWNER = getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071');
 
-export const TEST_ONLY_WORMHOLE_LANES = Object.fromEntries(
-  (Object.keys(WORMHOLE_LANE_SUPPORT_MATRIX) as WormholeLaneKey[]).map((laneKey) => {
-    const lane = WORMHOLE_LANE_SUPPORT_MATRIX[laneKey];
-    return [
-      laneKey,
-      {
-        chainId: lane.destinationChainId,
-        wormholeChainId: lane.wormholeChainId,
-        l2FromAddress: laneKey === 'celo' ? TEST_ONLY_CELO_PRE_94_OWNER : lane.l2FromAddress,
-        name: lane.chainName,
-      },
-    ];
-  }),
-) as Record<
+export const TEST_ONLY_WORMHOLE_LANES = {
+  bnb: {
+    chainId: WORMHOLE_LANE_SUPPORT_MATRIX.bnb.destinationChainId,
+    wormholeChainId: WORMHOLE_LANE_SUPPORT_MATRIX.bnb.wormholeChainId,
+    l2FromAddress: WORMHOLE_LANE_SUPPORT_MATRIX.bnb.l2FromAddress,
+    name: WORMHOLE_LANE_SUPPORT_MATRIX.bnb.chainName,
+  },
+  polygon: {
+    chainId: WORMHOLE_LANE_SUPPORT_MATRIX.polygon.destinationChainId,
+    wormholeChainId: WORMHOLE_LANE_SUPPORT_MATRIX.polygon.wormholeChainId,
+    l2FromAddress: WORMHOLE_LANE_SUPPORT_MATRIX.polygon.l2FromAddress,
+    name: WORMHOLE_LANE_SUPPORT_MATRIX.polygon.chainName,
+  },
+  avalanche: {
+    chainId: WORMHOLE_LANE_SUPPORT_MATRIX.avalanche.destinationChainId,
+    wormholeChainId: WORMHOLE_LANE_SUPPORT_MATRIX.avalanche.wormholeChainId,
+    l2FromAddress: WORMHOLE_LANE_SUPPORT_MATRIX.avalanche.l2FromAddress,
+    name: WORMHOLE_LANE_SUPPORT_MATRIX.avalanche.chainName,
+  },
+  celo: {
+    chainId: WORMHOLE_LANE_SUPPORT_MATRIX.celo.destinationChainId,
+    wormholeChainId: WORMHOLE_LANE_SUPPORT_MATRIX.celo.wormholeChainId,
+    l2FromAddress: TEST_ONLY_CELO_PRE_94_OWNER,
+    name: WORMHOLE_LANE_SUPPORT_MATRIX.celo.chainName,
+  },
+  monad: {
+    chainId: WORMHOLE_LANE_SUPPORT_MATRIX.monad.destinationChainId,
+    wormholeChainId: WORMHOLE_LANE_SUPPORT_MATRIX.monad.wormholeChainId,
+    l2FromAddress: WORMHOLE_LANE_SUPPORT_MATRIX.monad.l2FromAddress,
+    name: WORMHOLE_LANE_SUPPORT_MATRIX.monad.chainName,
+  },
+  tempo: {
+    chainId: WORMHOLE_LANE_SUPPORT_MATRIX.tempo.destinationChainId,
+    wormholeChainId: WORMHOLE_LANE_SUPPORT_MATRIX.tempo.wormholeChainId,
+    l2FromAddress: WORMHOLE_LANE_SUPPORT_MATRIX.tempo.l2FromAddress,
+    name: WORMHOLE_LANE_SUPPORT_MATRIX.tempo.chainName,
+  },
+} satisfies Record<
   WormholeLaneKey,
   {
     chainId: number;

@@ -29,9 +29,15 @@ export type WormholeLaneSupport = {
   validationTargets: WormholeLaneValidationTargets;
 };
 
+// Mainnet sender reference:
+// https://etherscan.io/address/0xf5F4496219F31CDCBa6130B5402873624585615a
 const UNISWAP_WORMHOLE_SENDER = getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a');
 
 export const WORMHOLE_LANE_SUPPORT_MATRIX: Record<WormholeLaneKey, WormholeLaneSupport> = {
+  // BNB Smart Chain references:
+  // - receiver: https://bscscan.com/address/0x341c1511141022cf8eE20824Ae0fFA3491F1302b
+  // - wormhole core: https://bscscan.com/address/0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B
+  // - validation target (v2): https://bscscan.com/address/0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6
   bnb: {
     key: 'bnb',
     chainName: 'BNB Smart Chain',
@@ -47,6 +53,9 @@ export const WORMHOLE_LANE_SUPPORT_MATRIX: Record<WormholeLaneKey, WormholeLaneS
       v2Factory: getAddress('0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6'),
     },
   },
+  // Polygon references:
+  // - executor: https://polygonscan.com/address/0x8a1B966aC46F42275860f905dbC75EfBfDC12374
+  // - validation target (v2): https://polygonscan.com/address/0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C
   polygon: {
     key: 'polygon',
     chainName: 'Polygon',
@@ -59,6 +68,9 @@ export const WORMHOLE_LANE_SUPPORT_MATRIX: Record<WormholeLaneKey, WormholeLaneS
       v2Factory: getAddress('0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C'),
     },
   },
+  // Avalanche references:
+  // - executor: https://snowtrace.io/address/0xeb0BCF27D1Fb4b25e708fBB815c421Aeb51eA9fc
+  // - validation target (v2): https://snowtrace.io/address/0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C
   avalanche: {
     key: 'avalanche',
     chainName: 'Avalanche',
@@ -71,6 +83,12 @@ export const WORMHOLE_LANE_SUPPORT_MATRIX: Record<WormholeLaneKey, WormholeLaneS
       v2Factory: getAddress('0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C'),
     },
   },
+  // Celo references:
+  // - receiver: https://celoscan.io/address/0x0Eb863541278308c3A64F8E908BC646e27BFD071
+  // - wormhole core: https://celoscan.io/address/0xa321448d90d4e5b0A732867c18eA198e75CAC48E
+  // - validation target (v2): https://celoscan.io/address/0x79a530c8e2fA8748B7B40dd3629C0520c2cCf03f
+  // - validation target (v3): https://celoscan.io/address/0xAfE208a311B21f13EF87E33A90049fC17A7acDEc
+  // - validation target (v4): https://celoscan.io/address/0x288dc841A52FCA2707c6947B3A777c5E56cd87BC
   celo: {
     key: 'celo',
     chainName: 'Celo',
@@ -86,6 +104,12 @@ export const WORMHOLE_LANE_SUPPORT_MATRIX: Record<WormholeLaneKey, WormholeLaneS
       v4PoolManager: getAddress('0x288dc841A52FCA2707c6947B3A777c5E56cd87BC'),
     },
   },
+  // Monad references:
+  // - receiver: https://monadvision.com/address/0xe783de89a7f0408687f051e3e6d0beb62719ebad
+  // - wormhole core: https://monadvision.com/address/0x194B123c5E96B9B2e49763619985790Dc241CAC0
+  // - validation target (v2): https://monadvision.com/address/0x182a927119d56008d921126764bf884221b10f59
+  // - validation target (v3): https://monadvision.com/address/0x204faca1764b154221e35c0d20abb3c525710498
+  // - validation target (v4): https://monadvision.com/address/0x188d586ddcf52439676ca21a244753fa19f9ea8e
   monad: {
     key: 'monad',
     chainName: 'Monad',
@@ -101,6 +125,12 @@ export const WORMHOLE_LANE_SUPPORT_MATRIX: Record<WormholeLaneKey, WormholeLaneS
       v4PoolManager: getAddress('0x188d586ddcf52439676ca21a244753fa19f9ea8e'),
     },
   },
+  // Tempo references:
+  // - receiver: https://explore.tempo.xyz/address/0xCFB43dC56B55bE9611deD8384201cECf06A9811b
+  // - wormhole core: https://explore.tempo.xyz/address/0xbebdb6C8ddC678FfA9f8748f85C815C556Dd8ac6
+  // - validation target (v2): https://explore.tempo.xyz/address/0xf9EC577a4E45B5278BB7Cf60FCBc20c3acAef68f
+  // - validation target (v3): https://explore.tempo.xyz/address/0x24a3d4757E330890A8b8978028c9e58E04611fd6
+  // - validation target (v4): https://explore.tempo.xyz/address/0x33620f62C5b9B2086dD6b62F4A297A9f30347029
   tempo: {
     key: 'tempo',
     chainName: 'Tempo Mainnet',
