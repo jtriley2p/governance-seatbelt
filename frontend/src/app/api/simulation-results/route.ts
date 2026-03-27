@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { verifyPublishMetadataSignature } from '@/lib/publish-authenticity';
 import { normalizePublishId } from '@/lib/share-link';
 import { SimulationResultsParseError, parseSimulationResultsJson } from '@/lib/simulation-results';
 import { NextResponse } from 'next/server';
-import { verifyPublishMetadataSignature } from '../../../../../utils/publish/publish-authenticity';
 
 const DEFAULT_MAX_SIMULATION_RESULTS_BYTES = 25 * 1024 * 1024; // 25MB
 const DEFAULT_ARTIFACT_FETCH_TIMEOUT_MS = 15_000;
@@ -487,16 +487,18 @@ function mergeTrustMetadata(
   if (!isPlainRecord(metadata)) return;
 
   const existingTrust = metadata.trust;
-  const existingBlocking = isPlainRecord(existingTrust)
-    ? (existingTrust.blockingReasons ?? []).filter(
-        (reason): reason is string => typeof reason === 'string',
-      )
-    : [];
-  const existingWarnings = isPlainRecord(existingTrust)
-    ? (existingTrust.warningReasons ?? []).filter(
-        (reason): reason is string => typeof reason === 'string',
-      )
-    : [];
+  const existingBlocking =
+    isPlainRecord(existingTrust) && Array.isArray(existingTrust.blockingReasons)
+      ? existingTrust.blockingReasons.filter(
+          (reason): reason is string => typeof reason === 'string',
+        )
+      : [];
+  const existingWarnings =
+    isPlainRecord(existingTrust) && Array.isArray(existingTrust.warningReasons)
+      ? existingTrust.warningReasons.filter(
+          (reason): reason is string => typeof reason === 'string',
+        )
+      : [];
 
   const blockingReasons = [...existingBlocking, ...(additions.blockingReasons ?? [])];
   const warningReasons = [...existingWarnings, ...(additions.warningReasons ?? [])];

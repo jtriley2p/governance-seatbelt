@@ -493,6 +493,9 @@ describe('/api/simulation-results', () => {
     expect(metadata).not.toBeNull();
     const trust = metadata ? Reflect.get(metadata, 'trust') : null;
     expect(trust).not.toBeNull();
+    if (!trust || typeof trust !== 'object') {
+      throw new Error('Expected trust metadata to be an object');
+    }
 
     expect(Reflect.get(trust, 'level')).toBe('blocked');
     expect(Reflect.get(trust, 'blockingReasons')).toEqual(
@@ -544,6 +547,9 @@ describe('/api/simulation-results', () => {
     expect(metadata).not.toBeNull();
     const trust = metadata ? Reflect.get(metadata, 'trust') : null;
     expect(trust).not.toBeNull();
+    if (!trust || typeof trust !== 'object') {
+      throw new Error('Expected trust metadata to be an object');
+    }
 
     expect(Reflect.get(trust, 'level')).toBe('blocked');
     expect(Reflect.get(trust, 'blockingReasons')).toEqual(
