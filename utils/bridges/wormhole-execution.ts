@@ -5,7 +5,7 @@ import {
   WORMHOLE_CORE_STUB_RUNTIME_BYTECODE,
   WORMHOLE_RECEIVER_ABI,
   type WormholeReceiverRuntimeState,
-  type WormholeReceiverRuntimeStateCacheKey,
+  type WormholeReceiverRuntimeStateByKey,
   buildWormholeReceiverSimulationCall,
   getOverriddenWormholeReceiverSequence,
   getWormholeReceiverRuntimeStateKey,
@@ -16,11 +16,6 @@ import type {
   CrossChainBridgePreparedExecution,
 } from './adapter';
 import { getWormholeLaneCapabilities } from './wormhole';
-
-type WormholeReceiverRuntimeStateByKey = Record<
-  WormholeReceiverRuntimeStateCacheKey,
-  WormholeReceiverRuntimeState
->;
 
 const DEFAULT_CROSS_CHAIN_SIMULATION_SENDER = getAddress(
   '0x0000000000000000000000000000000000001234',
@@ -124,7 +119,7 @@ function getWormholeRuntimeStore(
 ): WormholeReceiverRuntimeStateByKey {
   const existing = context.runtimeStore.WormholeL1L2;
   if (existing) {
-    return existing as WormholeReceiverRuntimeStateByKey;
+    return existing;
   }
 
   const created: WormholeReceiverRuntimeStateByKey = {};

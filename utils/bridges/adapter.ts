@@ -1,5 +1,6 @@
 import type { Address } from 'viem';
 import type { BridgeType, CrossChainExecutionJob } from '../../types.d';
+import type { WormholeReceiverRuntimeStateByKey } from '../cross-chain/wormhole-receiver-sim';
 import type { SimulationStateObjects } from '../derived-state';
 import { extractArbitrumL1L2JobsFromProposal } from './arbitrum';
 import { extractOptimismL1L2JobsFromProposal } from './optimism';
@@ -12,7 +13,13 @@ export type CrossChainProposalExtractionContext = {
   l1Sender?: Address;
 };
 
-export type CrossChainBridgeRuntimeStore = Partial<Record<BridgeType, Record<string, unknown>>>;
+type CrossChainBridgeRuntimeStoreByType = {
+  ArbitrumL1L2: Record<string, unknown>;
+  OptimismL1L2: Record<string, unknown>;
+  WormholeL1L2: WormholeReceiverRuntimeStateByKey;
+};
+
+export type CrossChainBridgeRuntimeStore = Partial<CrossChainBridgeRuntimeStoreByType>;
 
 export type CrossChainBridgeExecutionContext = {
   job: CrossChainExecutionJob;
