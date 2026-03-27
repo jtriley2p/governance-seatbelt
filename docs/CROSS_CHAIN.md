@@ -111,7 +111,7 @@ Structured reports may include:
 
 - trust metadata: `ready`, `warning`, or `blocked`
 - publish metadata: `publishId`, `artifactHash`, `artifactUrl`, `metadataUrl`, `publishedAt`
-- authenticity metadata for published artifacts
+- authenticity metadata for published artifacts, verified from an `ed25519`-signed publish envelope
 
 These values are defined in [types.d.ts](../types.d.ts) and surfaced in the hosted UI through:
 
@@ -123,6 +123,7 @@ These values are defined in [types.d.ts](../types.d.ts) and surfaced in the host
 
 - The viewer can expose the raw published artifact and publish metadata.
 - Trust and authenticity state are displayed alongside the report.
+- Published authenticity verification uses the relay's `ed25519` public key when configured.
 - The existing review and submit flow remains intact.
 
 ### What Is Informational

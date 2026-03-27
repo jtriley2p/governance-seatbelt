@@ -1,16 +1,9 @@
-import {
-  createHmac,
-  createPrivateKey,
-  createPublicKey,
-  sign,
-  timingSafeEqual,
-  verify,
-} from 'node:crypto';
+import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
 
 type OpenJsonObject = Record<string, unknown>;
 
 export type PublishAuthenticityEnvelope = {
-  algorithm: 'hmac-sha256' | 'ed25519';
+  algorithm: 'ed25519';
   key_id: string;
   signature: string;
   signed_fields: readonly ['publish_id', 'published_at', 'artifact_hash', 'relay_version'];
@@ -46,28 +39,15 @@ export function signPublishMetadata(
   env: Record<string, string | undefined>,
 ): PublishAuthenticityEnvelope | undefined {
   const ed25519PrivateKey = readNonEmptyEnv(env, 'SEATBELT_PUBLISH_ED25519_PRIVATE_KEY');
-  if (ed25519PrivateKey) {
-    const keyId = readNonEmptyEnv(env, 'SEATBELT_PUBLISH_ED25519_KEY_ID') ?? 'default';
-    const payload = Buffer.from(buildSignedPayload(metadata));
-    const privateKey = createPrivateKey(ed25519PrivateKey);
-    const signature = sign(null, payload, privateKey).toString('hex');
+  if (!ed25519PrivateKey) return undefined;
 
-    return {
-      algorithm: 'ed25519',
-      key_id: keyId,
-      signature,
-      signed_fields: SIGNED_FIELDS,
-    };
-  }
-
-  const secret = readNonEmptyEnv(env, 'SEATBELT_PUBLISH_HMAC_SECRET');
-  if (!secret) return undefined;
-
-  const keyId = readNonEmptyEnv(env, 'SEATBELT_PUBLISH_HMAC_KEY_ID') ?? 'default';
-  const signature = createHmac('sha256', secret).update(buildSignedPayload(metadata)).digest('hex');
+  const keyId = readNonEmptyEnv(env, 'SEATBELT_PUBLISH_ED25519_KEY_ID') ?? 'default';
+  const payload = Buffer.from(buildSignedPayload(metadata));
+  const privateKey = createPrivateKey(ed25519PrivateKey);
+  const signature = sign(null, payload, privateKey).toString('hex');
 
   return {
-    algorithm: 'hmac-sha256',
+    algorithm: 'ed25519',
     key_id: keyId,
     signature,
     signed_fields: SIGNED_FIELDS,
@@ -100,10 +80,8 @@ export function verifyPublishMetadataSignature(
     return { status: 'invalid', reason: 'Publish authenticity payload is malformed.' };
   }
 
-  if (algorithm !== 'hmac-sha256') {
-    if (algorithm !== 'ed25519') {
-      return { status: 'invalid', keyId, algorithm, reason: 'Unsupported authenticity algorithm.' };
-    }
+  if (algorithm !== 'ed25519') {
+    return { status: 'invalid', keyId, algorithm, reason: 'Unsupported authenticity algorithm.' };
   }
 
   if (signedFields === undefined) {
@@ -139,35 +117,6 @@ export function verifyPublishMetadataSignature(
     return { status: 'invalid', keyId, algorithm, reason: 'Publish signature is not valid hex.' };
   }
 
-  const payload = Buffer.from(buildSignedPayload(metadata));
-  const providedSignature = Buffer.from(signatureValue, 'hex');
-
-  if (algorithm === 'hmac-sha256') {
-    const secret = readNonEmptyEnv(env, 'SEATBELT_PUBLISH_HMAC_SECRET');
-    if (!secret) {
-      return {
-        status: 'unconfigured',
-        reason: 'Viewer authenticity verification is not configured.',
-      };
-    }
-
-    const expectedSignature = createHmac('sha256', secret).update(payload).digest();
-    if (providedSignature.length !== expectedSignature.length) {
-      return { status: 'invalid', keyId, algorithm, reason: 'Publish signature length mismatch.' };
-    }
-
-    if (!timingSafeEqual(providedSignature, expectedSignature)) {
-      return {
-        status: 'invalid',
-        keyId,
-        algorithm,
-        reason: 'Publish signature verification failed.',
-      };
-    }
-
-    return { status: 'verified', keyId, algorithm };
-  }
-
   const publicKeyPem = readNonEmptyEnv(env, 'SEATBELT_PUBLISH_ED25519_PUBLIC_KEY');
   if (!publicKeyPem) {
     return {
@@ -175,6 +124,9 @@ export function verifyPublishMetadataSignature(
       reason: 'Viewer authenticity verification is not configured.',
     };
   }
+
+  const payload = Buffer.from(buildSignedPayload(metadata));
+  const providedSignature = Buffer.from(signatureValue, 'hex');
 
   try {
     const publicKey = createPublicKey(publicKeyPem);

@@ -467,9 +467,10 @@ describe('/api/simulation-results', () => {
             artifact_hash: 'hash-from-metadata',
             relay_version: 'test-relay',
             authenticity: {
-              algorithm: 'hmac-sha256',
+              algorithm: 'ed25519',
               key_id: 'k1',
               signature: '00',
+              signed_fields: ['publish_id', 'published_at', 'artifact_hash', 'relay_version'],
             },
           }),
           { status: 200, headers: { 'content-type': 'application/json' } },

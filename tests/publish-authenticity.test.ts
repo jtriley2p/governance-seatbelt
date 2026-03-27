@@ -5,6 +5,16 @@ import {
   verifyPublishMetadataSignature,
 } from '../utils/publish/publish-authenticity';
 
+const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+
+const ed25519Env = {
+  SEATBELT_PUBLISH_ED25519_PRIVATE_KEY: privateKey
+    .export({ format: 'pem', type: 'pkcs8' })
+    .toString(),
+  SEATBELT_PUBLISH_ED25519_PUBLIC_KEY: publicKey.export({ format: 'pem', type: 'spki' }).toString(),
+  SEATBELT_PUBLISH_ED25519_KEY_ID: 'k-ed',
+} as const;
+
 describe('publish authenticity', () => {
   const baseMetadata = {
     publish_id: '11111111-1111-4111-8111-111111111111',
@@ -13,17 +23,18 @@ describe('publish authenticity', () => {
     relay_version: 'test-relay',
   } as const;
 
-  test('does not sign when secret is not configured', () => {
+  test('does not sign when the ed25519 private key is not configured', () => {
     expect(signPublishMetadata(baseMetadata, {})).toBeUndefined();
-    expect(signPublishMetadata(baseMetadata, { SEATBELT_PUBLISH_HMAC_SECRET: '' })).toBeUndefined();
+    expect(
+      signPublishMetadata(baseMetadata, { SEATBELT_PUBLISH_ED25519_PRIVATE_KEY: '' }),
+    ).toBeUndefined();
   });
 
   test('signs and verifies metadata when configured', () => {
-    const env = { SEATBELT_PUBLISH_HMAC_SECRET: 'test-secret', SEATBELT_PUBLISH_HMAC_KEY_ID: 'k1' };
-    const envelope = signPublishMetadata(baseMetadata, env);
+    const envelope = signPublishMetadata(baseMetadata, ed25519Env);
     expect(envelope).toBeDefined();
-    expect(envelope?.algorithm).toBe('hmac-sha256');
-    expect(envelope?.key_id).toBe('k1');
+    expect(envelope?.algorithm).toBe('ed25519');
+    expect(envelope?.key_id).toBe('k-ed');
     expect(envelope?.signed_fields).toEqual([
       'publish_id',
       'published_at',
@@ -32,27 +43,26 @@ describe('publish authenticity', () => {
     ]);
 
     const metadata = { ...baseMetadata, authenticity: envelope };
-    expect(verifyPublishMetadataSignature(metadata, env)).toEqual({
+    expect(verifyPublishMetadataSignature(metadata, ed25519Env)).toEqual({
       status: 'verified',
-      keyId: 'k1',
-      algorithm: 'hmac-sha256',
+      keyId: 'k-ed',
+      algorithm: 'ed25519',
     });
   });
 
   test('returns unsigned when metadata has no authenticity envelope', () => {
-    const env = { SEATBELT_PUBLISH_HMAC_SECRET: 'test-secret' };
-    expect(verifyPublishMetadataSignature({ ...baseMetadata }, env)).toEqual({
+    expect(verifyPublishMetadataSignature({ ...baseMetadata }, ed25519Env)).toEqual({
       status: 'unsigned',
       reason: 'Publish metadata is not signed.',
     });
   });
 
-  test('returns unconfigured when authenticity exists but viewer secret is missing', () => {
+  test('returns unconfigured when authenticity exists but viewer public key is missing', () => {
     const metadata = {
       ...baseMetadata,
       authenticity: {
-        algorithm: 'hmac-sha256',
-        key_id: 'k1',
+        algorithm: 'ed25519',
+        key_id: 'k-ed',
         signature: '00',
         signed_fields: ['publish_id', 'published_at', 'artifact_hash', 'relay_version'],
       },
@@ -65,18 +75,16 @@ describe('publish authenticity', () => {
   });
 
   test('returns invalid when signature verification fails', () => {
-    const env = { SEATBELT_PUBLISH_HMAC_SECRET: 'test-secret', SEATBELT_PUBLISH_HMAC_KEY_ID: 'k1' };
-    const envelope = signPublishMetadata(baseMetadata, env)!;
+    const envelope = signPublishMetadata(baseMetadata, ed25519Env)!;
     const tampered = { ...baseMetadata, artifact_hash: 'cafebabe', authenticity: envelope };
 
-    expect(verifyPublishMetadataSignature(tampered, env)).toMatchObject({
+    expect(verifyPublishMetadataSignature(tampered, ed25519Env)).toMatchObject({
       status: 'invalid',
       reason: 'Publish signature verification failed.',
     });
   });
 
   test('returns invalid for unsupported algorithms', () => {
-    const env = { SEATBELT_PUBLISH_HMAC_SECRET: 'test-secret' };
     const metadata = {
       ...baseMetadata,
       authenticity: {
@@ -86,7 +94,7 @@ describe('publish authenticity', () => {
       },
     };
 
-    expect(verifyPublishMetadataSignature(metadata, env)).toEqual({
+    expect(verifyPublishMetadataSignature(metadata, ed25519Env)).toEqual({
       status: 'invalid',
       keyId: 'k1',
       algorithm: 'rsa-sha256',
@@ -95,42 +103,15 @@ describe('publish authenticity', () => {
   });
 
   test('returns invalid when signed_fields is missing', () => {
-    const env = { SEATBELT_PUBLISH_HMAC_SECRET: 'test-secret', SEATBELT_PUBLISH_HMAC_KEY_ID: 'k1' };
-    const envelope = signPublishMetadata(baseMetadata, env)!;
+    const envelope = signPublishMetadata(baseMetadata, ed25519Env)!;
     const authenticity: Record<string, unknown> = { ...envelope, signed_fields: undefined };
 
     const metadata = { ...baseMetadata, authenticity };
-    expect(verifyPublishMetadataSignature(metadata, env)).toEqual({
+    expect(verifyPublishMetadataSignature(metadata, ed25519Env)).toEqual({
       status: 'invalid',
-      keyId: 'k1',
-      algorithm: 'hmac-sha256',
-      reason: 'Publish signed_fields payload is missing.',
-    });
-  });
-
-  test('signs and verifies metadata with ed25519 when configured', () => {
-    const { publicKey, privateKey } = generateKeyPairSync('ed25519');
-    const env = {
-      SEATBELT_PUBLISH_ED25519_PRIVATE_KEY: privateKey
-        .export({ format: 'pem', type: 'pkcs8' })
-        .toString(),
-      SEATBELT_PUBLISH_ED25519_PUBLIC_KEY: publicKey
-        .export({ format: 'pem', type: 'spki' })
-        .toString(),
-      SEATBELT_PUBLISH_ED25519_KEY_ID: 'k-ed',
-    };
-
-    const envelope = signPublishMetadata(baseMetadata, env);
-    expect(envelope).toBeDefined();
-    expect(envelope?.algorithm).toBe('ed25519');
-    expect(envelope?.key_id).toBe('k-ed');
-    expect(envelope?.signature).toMatch(/^[0-9a-f]+$/i);
-
-    const metadata = { ...baseMetadata, authenticity: envelope };
-    expect(verifyPublishMetadataSignature(metadata, env)).toEqual({
-      status: 'verified',
       keyId: 'k-ed',
       algorithm: 'ed25519',
+      reason: 'Publish signed_fields payload is missing.',
     });
   });
 });
