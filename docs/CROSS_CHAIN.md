@@ -24,7 +24,7 @@ Each adapter is responsible for:
 - preparing any bridge-specific execution state before the destination simulation runs
 - keeping bridge-specific runtime behavior out of the main execution engine
 
-The execution engine in [tenderly-execution-engine.ts](../utils/cross-chain/tenderly-execution-engine.ts) orchestrates adapters. It should not be the place where bridge-specific support matrices or receiver-mode logic live.
+The execution engine in [tenderly-execution-engine.ts](../utils/cross-chain/tenderly-execution-engine.ts) orchestrates adapters and bridge execution flow.
 
 ### Supported Bridge Types
 
@@ -50,7 +50,7 @@ type BridgeType = 'ArbitrumL1L2' | 'OptimismL1L2' | 'WormholeL1L2';
 - Address model: destination execution uses an explicit lane-specific `l2FromAddress`
 - Main job: decode the Wormhole message, map it onto a supported lane, and prepare any receiver-mode runtime state required for simulation
 
-Wormhole support is defined by the support matrix in [wormhole-support.ts](../utils/bridges/wormhole-support.ts), not by scattered constants in parser or execution code.
+Wormhole support is defined centrally by the support matrix in [wormhole-support.ts](../utils/bridges/wormhole-support.ts).
 
 ## Wormhole Support Model
 
