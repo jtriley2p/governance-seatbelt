@@ -1,0 +1,36 @@
+name: Wormhole Lane Canary (Live)
+
+on:
+  schedule:
+    # Daily canary for configuration drift. Time chosen to reduce overlap with CI peaks.
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wormhole-live-canary:
+    name: Live Wormhole Lane Authority Checks
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Read Bun version
+        id: bun-version
+        run: echo "version=$(cat .bun-version)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@f4d14e03ff726c06358e5557344e1da148b56cf7 # v1
+        with:
+          bun-version: ${{ steps.bun-version.outputs.version }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run live lane authority validation
+        run: bun test checks/tests/wormhole-lane-validation.test.ts
+        env:
+          RUN_LIVE_WORMHOLE_LANE_VALIDATION: '1'

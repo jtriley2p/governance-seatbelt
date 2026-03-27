@@ -1,61 +1,32 @@
 import { describe, expect, test } from 'bun:test';
 import { encodeFunctionData, getAddress } from 'viem';
-import { avalanche, bsc, celo, monad, polygon, tempo } from 'viem/chains';
 import {
   SUPPORTED_WORMHOLE_CHAIN_IDS,
   WORMHOLE_SEND_MESSAGE_ABI,
+  type WormholeLaneCapabilities,
   assertValidWormholeLaneCapabilities,
   extractWormholeExecutionJobsFromProposal,
   getWormholeLaneCapabilities,
 } from '../utils/bridges/wormhole';
+import {
+  SUPPORTED_WORMHOLE_LANE_KEYS,
+  getWormholeLaneByKey,
+} from '../utils/bridges/wormhole-support';
 
 describe('wormhole proposal parser', () => {
-  const supportedLanes = [
-    {
-      chainName: 'BNB',
-      wormholeChainId: 4,
-      destinationChainId: bsc.id,
-      expectedSender: getAddress('0x341c1511141022cf8eE20824Ae0fFA3491F1302b'),
-      target: getAddress('0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7'),
-    },
-    {
-      chainName: 'Polygon',
-      wormholeChainId: 5,
-      destinationChainId: polygon.id,
-      expectedSender: getAddress('0x8a1B966aC46F42275860f905dbC75EfBfDC12374'),
-      target: getAddress('0x1F98431c8aD98523631AE4a59f267346ea31F984'),
-    },
-    {
-      chainName: 'Avalanche',
-      wormholeChainId: 6,
-      destinationChainId: avalanche.id,
-      expectedSender: getAddress('0xeb0BCF27D1Fb4b25e708fBB815c421Aeb51eA9fc'),
-      target: getAddress('0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD'),
-    },
-    {
-      chainName: 'Celo',
-      wormholeChainId: 14,
-      destinationChainId: celo.id,
-      expectedSender: getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071'),
-      target: getAddress('0xAfE208a311B21f13EF87E33A90049fC17A7acDEc'),
-    },
-    {
-      chainName: 'Monad',
-      wormholeChainId: 48,
-      destinationChainId: monad.id,
-      expectedSender: getAddress('0xe783de89a7f0408687f051e3e6d0beb62719ebad'),
-      target: getAddress('0x204faca1764b154221e35c0d20abb3c525710498'),
-    },
-    {
-      chainName: 'Tempo',
-      wormholeChainId: 68,
-      destinationChainId: tempo.id,
-      expectedSender: getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b'),
-      target: getAddress('0x24a3d4757E330890A8b8978028c9e58E04611fd6'),
-    },
-  ];
+  const supportedLanes = SUPPORTED_WORMHOLE_LANE_KEYS.map((laneKey) => {
+    const lane = getWormholeLaneByKey(laneKey);
+    return {
+      chainName: lane.chainName,
+      wormholeChainId: lane.wormholeChainId,
+      destinationChainId: lane.destinationChainId,
+      expectedSender: lane.l2FromAddress,
+      target: lane.validationTargets.v3Factory ?? lane.validationTargets.v2Factory,
+    };
+  });
 
   test('extracts celo destination calls from wormhole sendMessage calldata', () => {
+    const celoLane = getWormholeLaneByKey('celo');
     const celoTargets = [
       getAddress('0xAfE208a311B21f13EF87E33A90049fC17A7acDEc'),
       getAddress('0x79a530c8e2fA8748B7B40dd3629C0520c2cCf03f'),
@@ -86,7 +57,7 @@ describe('wormhole proposal parser', () => {
     );
 
     expect(jobs).toHaveLength(1);
-    expect(jobs[0]?.destinationChainId).toBe(celo.id);
+    expect(jobs[0]?.destinationChainId).toBe(celoLane.destinationChainId);
     expect(jobs[0]?.bridgeType).toBe('WormholeL1L2');
     expect(jobs[0]?.wormholeChainId).toBe(14);
     expect(jobs[0]?.l2FromAddress).toBe(getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071'));
@@ -145,7 +116,7 @@ describe('wormhole proposal parser', () => {
     expect(jobs).toHaveLength(0);
   });
 
-  test('ignores unsupported wormhole chain ids without dropping later valid jobs', () => {
+  test('surfaces unsupported wormhole chain ids as errors', () => {
     const unsupportedCalldata = encodeFunctionData({
       abi: WORMHOLE_SEND_MESSAGE_ABI,
       functionName: 'sendMessage',
@@ -169,16 +140,42 @@ describe('wormhole proposal parser', () => {
       ],
     });
 
-    const jobs = extractWormholeExecutionJobsFromProposal(
-      [
-        getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a'),
-        getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a'),
+    expect(() =>
+      extractWormholeExecutionJobsFromProposal(
+        [
+          getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a'),
+          getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a'),
+        ],
+        [unsupportedCalldata, calldata],
+      ),
+    ).toThrow('Unsupported Wormhole chain id 999 in proposal calldata index 0');
+  });
+
+  test('does not parse wormhole messages when sendMessage array lengths are inconsistent', () => {
+    const targetA = getAddress('0xAfE208a311B21f13EF87E33A90049fC17A7acDEc');
+    const targetB = getAddress('0x79a530c8e2fA8748B7B40dd3629C0520c2cCf03f');
+
+    const calldata = encodeFunctionData({
+      abi: WORMHOLE_SEND_MESSAGE_ABI,
+      functionName: 'sendMessage',
+      args: [
+        [targetA, targetB],
+        [0n],
+        [
+          '0x13af4035000000000000000000000000044aaf330d7fd6ae683eec5c1c1d1fff5196b6b7',
+          '0xa2e74af6000000000000000000000000044aaf330d7fd6ae683eec5c1c1d1fff5196b6b7',
+        ],
+        getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
+        14,
       ],
-      [unsupportedCalldata, calldata],
+    });
+
+    const jobs = extractWormholeExecutionJobsFromProposal(
+      [getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a')],
+      [calldata],
     );
 
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0]?.wormholeChainId).toBe(14);
+    expect(jobs).toHaveLength(0);
   });
 
   test('reports the expected wormhole lane capabilities', () => {
@@ -218,59 +215,67 @@ describe('wormhole proposal parser', () => {
   });
 
   test('rejects malformed legacy wormhole lane capabilities before execution', () => {
-    expect(() =>
-      assertValidWormholeLaneCapabilities(5, {
-        kind: 'direct',
-        receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B') as never,
-      }),
-    ).toThrow('inconsistent receiver config');
+    // @ts-expect-error Intentional malformed config for runtime validation.
+    const malformedDirect: WormholeLaneCapabilities = {
+      kind: 'direct',
+      receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
+    };
+    expect(() => assertValidWormholeLaneCapabilities(5, malformedDirect)).toThrow(
+      'inconsistent receiver config',
+    );
 
-    expect(() =>
-      assertValidWormholeLaneCapabilities(14, {
-        kind: 'modern',
-        receiverCoreAddress: '' as never,
-      }),
-    ).toThrow('invalid receiverCoreAddress');
+    const malformedModern: WormholeLaneCapabilities = {
+      kind: 'modern',
+      // @ts-expect-error Intentional malformed config for runtime validation.
+      receiverCoreAddress: '',
+    };
+    expect(() => assertValidWormholeLaneCapabilities(14, malformedModern)).toThrow(
+      'invalid receiverCoreAddress',
+    );
 
-    expect(() =>
-      assertValidWormholeLaneCapabilities(4, {
-        kind: 'legacy',
-        receiverCoreAddress: '' as never,
-        payloadVersion:
-          '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b' as never,
-        nextSequenceStorageSlot:
-          '0x0000000000000000000000000000000000000000000000000000000000000000' as never,
-      }),
-    ).toThrow('invalid receiverCoreAddress');
+    const malformedLegacyReceiver: WormholeLaneCapabilities = {
+      kind: 'legacy',
+      // @ts-expect-error Intentional malformed config for runtime validation.
+      receiverCoreAddress: '',
+      payloadVersion: '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b',
+      nextSequenceStorageSlot: '0x0000000000000000000000000000000000000000000000000000000000000000',
+    };
+    expect(() => assertValidWormholeLaneCapabilities(4, malformedLegacyReceiver)).toThrow(
+      'invalid receiverCoreAddress',
+    );
 
-    expect(() =>
-      assertValidWormholeLaneCapabilities(4, {
-        kind: 'legacy',
-        receiverCoreAddress: undefined as never,
-        payloadVersion: '0x1234' as never,
-        nextSequenceStorageSlot:
-          '0x0000000000000000000000000000000000000000000000000000000000000000' as never,
-      }),
-    ).toThrow('invalid receiverCoreAddress');
+    const malformedLegacyMultiple: WormholeLaneCapabilities = {
+      kind: 'legacy',
+      // @ts-expect-error Intentional malformed config for runtime validation.
+      receiverCoreAddress: undefined,
+      // @ts-expect-error Intentional malformed config for runtime validation.
+      payloadVersion: '0x1234',
+      nextSequenceStorageSlot: '0x0000000000000000000000000000000000000000000000000000000000000000',
+    };
+    expect(() => assertValidWormholeLaneCapabilities(4, malformedLegacyMultiple)).toThrow(
+      'invalid receiverCoreAddress',
+    );
 
-    expect(() =>
-      assertValidWormholeLaneCapabilities(4, {
-        kind: 'legacy',
-        receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
-        payloadVersion: '0x1234' as never,
-        nextSequenceStorageSlot:
-          '0x0000000000000000000000000000000000000000000000000000000000000000' as never,
-      }),
-    ).toThrow('invalid payloadVersion');
+    const malformedPayloadVersion: WormholeLaneCapabilities = {
+      kind: 'legacy',
+      receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
+      // @ts-expect-error Intentional malformed config for runtime validation.
+      payloadVersion: '0x1234',
+      nextSequenceStorageSlot: '0x0000000000000000000000000000000000000000000000000000000000000000',
+    };
+    expect(() => assertValidWormholeLaneCapabilities(4, malformedPayloadVersion)).toThrow(
+      'invalid payloadVersion',
+    );
 
-    expect(() =>
-      assertValidWormholeLaneCapabilities(4, {
-        kind: 'legacy',
-        receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
-        payloadVersion:
-          '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b' as never,
-        nextSequenceStorageSlot: '0x1234' as never,
-      }),
-    ).toThrow('invalid nextSequenceStorageSlot');
+    const malformedSequenceSlot: WormholeLaneCapabilities = {
+      kind: 'legacy',
+      receiverCoreAddress: getAddress('0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B'),
+      payloadVersion: '0x5b9c8ce5e2cddf4e51d4563526c39850198bb92458f003423543f7bfae0ffb1b',
+      // @ts-expect-error Intentional malformed config for runtime validation.
+      nextSequenceStorageSlot: '0x1234',
+    };
+    expect(() => assertValidWormholeLaneCapabilities(4, malformedSequenceSlot)).toThrow(
+      'invalid nextSequenceStorageSlot',
+    );
   });
 });

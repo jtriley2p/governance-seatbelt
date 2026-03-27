@@ -1,6 +1,11 @@
 import { encodeFunctionData, getAddress, parseAbi } from 'viem';
 import type { SimulationConfigNew } from '../../types';
 import {
+  WORMHOLE_LANE_SUPPORT_MATRIX,
+  type WormholeLaneKey,
+  type WormholeLaneValidationTargets,
+} from '../../utils/bridges/wormhole-support';
+import {
   TEST_ONLY_WORMHOLE_LANES,
   TEST_ONLY_WORMHOLE_LANE_ARTIFACTS,
   type TestOnlyLaneArtifacts,
@@ -29,41 +34,14 @@ export const REPRESENTATIVE_WORMHOLE_ROLLOUT_LANE_KEYS = [
   Extract<TestOnlyWormholeLaneKey, 'bnb' | 'polygon' | 'avalanche' | 'monad' | 'tempo'>
 >;
 
-export type LiveWormholeLaneValidationTargets = {
-  v2Factory: `0x${string}`;
-  v3Factory?: `0x${string}`;
-  v4PoolManager?: `0x${string}`;
-};
-
-export const LIVE_WORMHOLE_LANE_VALIDATION_TARGETS: Record<
-  Extract<TestOnlyWormholeLaneKey, 'bnb' | 'polygon' | 'avalanche' | 'celo' | 'monad' | 'tempo'>,
-  LiveWormholeLaneValidationTargets
-> = {
-  bnb: {
-    v2Factory: getAddress('0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6'),
-  },
-  polygon: {
-    v2Factory: getAddress('0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C'),
-  },
-  avalanche: {
-    v2Factory: getAddress('0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C'),
-  },
-  celo: {
-    v2Factory: getAddress('0x79a530c8e2fA8748B7B40dd3629C0520c2cCf03f'),
-    v3Factory: getAddress('0xAfE208a311B21f13EF87E33A90049fC17A7acDEc'),
-    v4PoolManager: getAddress('0x288dc841A52FCA2707c6947B3A777c5E56cd87BC'),
-  },
-  monad: {
-    v2Factory: getAddress('0x182a927119d56008d921126764bf884221b10f59'),
-    v3Factory: getAddress('0x204faca1764b154221e35c0d20abb3c525710498'),
-    v4PoolManager: getAddress('0x188d586ddcf52439676ca21a244753fa19f9ea8e'),
-  },
-  tempo: {
-    v2Factory: getAddress('0xf9EC577a4E45B5278BB7Cf60FCBc20c3acAef68f'),
-    v3Factory: getAddress('0x24a3d4757E330890A8b8978028c9e58E04611fd6'),
-    v4PoolManager: getAddress('0x33620f62C5b9B2086dD6b62F4A297A9f30347029'),
-  },
-};
+export const LIVE_WORMHOLE_LANE_VALIDATION_TARGETS = {
+  bnb: WORMHOLE_LANE_SUPPORT_MATRIX.bnb.validationTargets,
+  polygon: WORMHOLE_LANE_SUPPORT_MATRIX.polygon.validationTargets,
+  avalanche: WORMHOLE_LANE_SUPPORT_MATRIX.avalanche.validationTargets,
+  celo: WORMHOLE_LANE_SUPPORT_MATRIX.celo.validationTargets,
+  monad: WORMHOLE_LANE_SUPPORT_MATRIX.monad.validationTargets,
+  tempo: WORMHOLE_LANE_SUPPORT_MATRIX.tempo.validationTargets,
+} satisfies Record<WormholeLaneKey, WormholeLaneValidationTargets>;
 
 function buildWormholeProposalCall(
   laneKey: TestOnlyWormholeLaneKey,
@@ -190,8 +168,8 @@ function buildRepresentativeWormholeRolloutConfig(kind: 'setup' | 'followup'): S
   const actions = buildRepresentativeWormholeRolloutActions(kind);
   const description =
     kind === 'setup'
-      ? `# Representative Wormhole rollout setup (test only)\n\nThis representative multi-lane setup proposal uses the live Wormhole authorities for ${buildRepresentativeLaneSummary()} as the destination senders and hands ownership of fresh fake V2/V3/V4 targets to fresh fake CrossChainAccounts. It exists to model the kind of consolidated rollout proposal governance would likely use across multiple lanes.`
-      : `# Representative Wormhole rollout follow-up (test only)\n\nThis representative multi-lane follow-up proposal mirrors the derived dependency pattern from the Celo 94 -> 95 story. A plain run should fail because the fresh fake targets are still owned by the live Wormhole authorities, while the fake CrossChainAccounts are not yet the owners. Running this proposal derived from the matching setup proposal should pass after the ownership handoff for ${buildRepresentativeLaneSummary()}.`;
+      ? `# Representative Wormhole rollout setup (test only)\n\nThis representative multi-lane setup proposal uses the live Wormhole authorities for ${buildRepresentativeLaneSummary()} as the destination senders and hands ownership of fresh fake V2/V3/V4 targets to fresh fake CrossChainAccounts. It exists to model the kind of consolidated rollout proposal governance would likely use across upcoming lanes without bundling historical Celo-only migration steps.`
+      : `# Representative Wormhole rollout follow-up (test only)\n\nThis representative multi-lane follow-up proposal mirrors the same derived dependency pattern used in the historical Celo 94 -> 95 story without including Celo itself. A plain run should fail because the fresh fake targets are still owned by the live Wormhole authorities, while the fake CrossChainAccounts are not yet the owners. Running this proposal derived from the matching setup proposal should pass after the ownership handoff for ${buildRepresentativeLaneSummary()}.`;
 
   return {
     type: 'new',

@@ -1,303 +1,208 @@
 # Cross-Chain Integration Guide
 
-This document provides technical guidance for working with cross-chain governance proposals in the governance-seatbelt tool.
+This document describes the bridge architecture, supported Uniswap cross-chain lanes, and the hosted review workflow in `governance-seatbelt`.
 
 ## Overview
 
-The governance-seatbelt supports cross-chain proposal simulation for:
-- **Arbitrum** (L1→L2 via DelayedInbox `createRetryableTicket`)
-- **Optimism Stack** (L1→L2 via L1CrossDomainMessenger `sendMessage`)
-  - OP Mainnet (Chain ID: 10)
-  - Base (Chain ID: 8453)
-  - Unichain (Chain ID: 130)
+Seatbelt simulates a governance proposal on the source chain, extracts bridge-specific execution jobs, runs destination simulations, and produces one combined report.
 
-## Architecture
+Today the tool supports three bridge families:
 
-### Bridge Types
+- `ArbitrumL1L2`
+- `OptimismL1L2`
+- `WormholeL1L2`
 
-The system supports two bridge architectures:
+Cross-chain proposal support is intentionally lane-based. Seatbelt only guarantees behavior for the lanes that are explicitly configured and validated in code.
+
+## Bridge Adapter Architecture
+
+Cross-chain extraction and execution now flow through a shared bridge-adapter seam in [adapter.ts](../utils/bridges/adapter.ts).
+
+Each adapter is responsible for:
+
+- extracting destination execution jobs from proposal targets and calldata
+- preparing any bridge-specific execution state before the destination simulation runs
+- keeping bridge-specific runtime behavior out of the main execution engine
+
+The execution engine in [tenderly-execution-engine.ts](../utils/cross-chain/tenderly-execution-engine.ts) orchestrates adapters and bridge execution flow.
+
+### Supported Bridge Types
 
 ```typescript
-type BridgeType = 'ArbitrumL1L2' | 'OptimismL1L2';
+type BridgeType = 'ArbitrumL1L2' | 'OptimismL1L2' | 'WormholeL1L2';
 ```
 
-#### ArbitrumL1L2
-- **Contract**: DelayedInbox (`0x4Dbd4fc535Ac27206064B68FfCf827b0A60BAB3f`)
-- **Function**: `createRetryableTicket(address,uint256,uint256,address,address,uint256,uint256,bytes)`
-- **Address Aliasing**: L1 addresses get +0x1111000000000000000000000000000000001111 on L2
-- **Gas**: Uses `uint256` for gas parameters
+### ArbitrumL1L2
 
-#### OptimismL1L2
-- **Contracts**: L1CrossDomainMessenger (varies by chain)
-- **Function**: `sendMessage(address,bytes,uint32)`
-- **Address Preservation**: L1 sender address preserved on L2
-- **Gas**: Uses `uint32` for gas limit parameter
+- Source bridge call: `DelayedInbox.createRetryableTicket(...)`
+- Address model: L1 sender is alias-adjusted on L2
+- Main job: extract retryable ticket payload and simulate the L2 call
 
-### Message Flow
+### OptimismL1L2
 
-1. **Source Chain Simulation**: Execute governance proposal on L1
-2. **Message Extraction**: Parse transaction logs for cross-chain messages
-3. **Destination Simulation**: Execute extracted messages on L2
-4. **Report Generation**: Combine L1 and L2 analysis
+- Source bridge call: `L1CrossDomainMessenger.sendMessage(address,bytes,uint32)`
+- Address model: L1 sender is preserved on L2
+- Main job: extract messenger payload and simulate the L2 call
 
-## Common Issues & Troubleshooting
+### WormholeL1L2
+
+- Source bridge call: Uniswap Wormhole sender contract
+- Address model: destination execution uses an explicit lane-specific `l2FromAddress`
+- Main job: decode the Wormhole message, map it onto a supported lane, and prepare any receiver-mode runtime state required for simulation
+
+Wormhole support is defined centrally by the support matrix in [wormhole-support.ts](../utils/bridges/wormhole-support.ts).
+
+## Wormhole Support Model
+
+Each supported Wormhole lane defines:
+
+- a stable lane key
+- destination chain id
+- Wormhole chain id
+- execution mode: `direct` or `receiver`
+- expected L2 executor address
+- recognized sender target set
+- optional receiver-core address for receiver-mode chains
+- validation targets used by live support checks
+
+Current supported lanes:
+
+- `bnb`
+- `polygon`
+- `avalanche`
+- `celo`
+- `monad`
+- `tempo`
+
+Unknown lanes, unknown sender targets, or partially configured lanes are treated as unsupported. Seatbelt should not silently guess.
+
+### Source of Truth
+
+These files should stay aligned:
+
+- support matrix: [wormhole-support.ts](../utils/bridges/wormhole-support.ts)
+- parser / extraction: [wormhole.ts](../utils/bridges/wormhole.ts)
+- execution prep: [wormhole-execution.ts](../utils/bridges/wormhole-execution.ts)
+- live validation: [wormhole-lane-validation.test.ts](../checks/tests/wormhole-lane-validation.test.ts)
+- support-matrix drift checks: [wormhole-support-matrix.test.ts](../checks/tests/wormhole-support-matrix.test.ts)
+
+If a lane is declared supported, it should also have parser coverage, execution coverage, and validation coverage.
+
+## Message Flow
+
+1. Simulate the proposal on the source chain.
+2. Ask each bridge adapter to extract execution jobs.
+3. For each extracted job, prepare bridge-specific runtime state if needed.
+4. Simulate each destination job on its destination chain.
+5. Combine source and destination results into one report.
+
+For Wormhole receiver-mode lanes, runtime prep may include:
+
+- reading live receiver configuration
+- computing synthetic receiver calls
+- injecting simulation-only state needed to mimic the bridge handoff
+- cleaning up simulation-only state after the destination step commits
+
+## Hosted Report Trust And Provenance
+
+The hosted report remains proposal-data driven. It does not create proposal contents. It exists to review, share, and act on a simulation result.
+
+Structured reports may include:
+
+- trust metadata: `ready`, `warning`, or `blocked`
+- publish metadata: `publishId`, `artifactHash`, `artifactUrl`, `metadataUrl`, `publishedAt`
+- authenticity metadata for published artifacts, verified from an `ed25519`-signed publish envelope
+
+These values are defined in [types.d.ts](../types.d.ts) and surfaced in the hosted UI through:
+
+- [DecisionHeader.tsx](../frontend/src/components/DecisionHeader.tsx)
+- [action/page.tsx](../frontend/src/app/action/page.tsx)
+- [simulation-results/route.ts](../frontend/src/app/api/simulation-results/route.ts)
+
+### What Is Guaranteed
+
+- The viewer can expose the raw published artifact and publish metadata.
+- Trust and authenticity state are displayed alongside the report.
+- Published authenticity verification uses the relay's `ed25519` public key when configured.
+- The existing review and submit flow remains intact.
+
+### What Is Informational
+
+- A `warning` trust state is advisory, not a workflow gate.
+- Provenance improves operator visibility, but it is not a substitute for understanding the underlying proposal.
+- Only configured authenticity verification is enforced. Unsigned artifacts are reported as such.
+
+## Troubleshooting
+
+### Tenderly Encode `413`
+
+Problem:
+
+- very large Bravo proposals can exceed Tenderly's encode payload ceiling during governor/timelock state override setup
+- this usually shows up before destination simulation starts
+
+Why it happens:
+
+- Seatbelt encodes the full proposal action arrays into governor storage overrides for simulation
+- more actions or larger calldatas increase the encode request size
+
+What to do:
+
+- split oversized representative rollouts into smaller bundles
+- keep historical or special-case migrations out of "upcoming rollout" fixtures
+- treat the issue as proposal-size related, not automatically as a bridge correctness failure
 
 ### Function Signature Mismatches
 
-**Problem**: Optimism and Arbitrum use different parameter types for gas limits.
+Problem:
 
 ```typescript
-// ❌ Wrong - Using Arbitrum pattern for Optimism
+// Wrong for Optimism
 signature: 'sendMessage(address,bytes,uint256)'
 
-// ✅ Correct - Optimism uses uint32 for gas
+// Correct for Optimism
 signature: 'sendMessage(address,bytes,uint32)'
 ```
 
-**Solution**: Always check the actual contract ABI. Optimism uses `uint32` for gas limits, not `uint256`.
+Solution:
 
-### Gas Limit Requirements
-
-**Problem**: Optimism requires higher gas limits than initially expected.
-
-```typescript
-// ❌ Too low - Will fail
-const gasLimit = 100000;
-
-// ✅ Adequate - Based on Optimism's baseGas calculation
-const gasLimit = 1000000; // 1M gas minimum recommended
-```
-
-**Solution**: Use generous gas limits (1M+) for Optimism L2 calls. The baseGas calculation requires significant overhead.
-
-### Block Number Conflicts
-
-**Problem**: Using `proposal.endBlock + 1n` causes arithmetic underflow in OptimismPortal2.
-
-```typescript
-// ❌ Can cause underflow
-const simBlock = proposal.endBlock + 1n;
-
-// ✅ Safe approach
-const simBlock = latestBlock.number;
-```
-
-**Error**: `panic: arithmetic overflow / underflow`
-
-**Root Cause**: OptimismPortal2 validates `block.number >= params.prevBlockNum`. Using a future block number violates this constraint.
-
-**Solution**: Simulate at the latest available block number instead of a computed future block.
+- verify the real bridge ABI before assuming a signature
 
 ### ETH Balance Requirements
 
-**Problem**: Proposals with ETH transfers fail due to insufficient balances.
+Problem:
 
-```typescript
-// Check if proposal requires ETH
-const totalValue = config.values.reduce((sum, val) => sum + val, 0n);
+- proposals that transfer ETH can fail if the simulated executor lacks balance
 
-if (totalValue > 0n) {
-  // Override timelock balance
-  simulationPayload.state_objects[timelock.address] = {
-    balance: totalValue.toString(),
-  };
-}
-```
+Solution:
 
-**Solution**: Override account balances in simulation payloads when proposals transfer ETH.
+- seed the required balance in `stateObjectsByChain` or the source-chain simulation payload
 
-## Adding New OP Stack Chains
+### Unsupported Wormhole Lane
 
-### 1. Add Chain Configuration
+Problem:
 
-Update `utils/clients/client.ts`:
+- the proposal references a Wormhole message that does not match a configured lane
 
-```typescript
-export const SUPPORTED_CHAINS = {
-  // ... existing chains
-  '424': { // Example: New OP Stack chain
-    name: 'PGN',
-    rpcUrl: process.env.PGN_RPC_URL || 'https://rpc.publicgoods.network',
-    blockExplorerUrl: 'https://explorer.publicgoods.network',
-    blockExplorerApiUrl: 'https://explorer.publicgoods.network/api',
-  },
-} as const;
-```
+Solution:
 
-### 2. Add L1CrossDomainMessenger Address
+- add the lane to the support matrix only after the parser, execution prep, and validation coverage are ready
+- do not treat partial lane definitions as supported
 
-Update `utils/bridges/optimism.ts`:
+## Adding A New Wormhole Lane
 
-```typescript
-const OPTIMISM_MESSENGERS: Record<string, Address> = {
-  '10': '0x25ace71c97B33Cc4729CF772ae268934F7ab5fA1', // OP Mainnet
-  '8453': '0x866E82a600A1414e583f7F13623F1aC5d58b0Afa', // Base
-  '424': '0x..........', // New chain - find from chain docs
-};
-```
+1. Add the lane to [wormhole-support.ts](../utils/bridges/wormhole-support.ts).
+2. Add or update parser coverage in [wormhole.ts](../utils/bridges/wormhole.ts) and [wormhole-parser.test.ts](../tests/wormhole-parser.test.ts).
+3. Add execution coverage in [wormhole-execution.ts](../utils/bridges/wormhole-execution.ts) and [cross-chain-execution-engine.test.ts](../checks/tests/cross-chain-execution-engine.test.ts).
+4. Add live validation coverage in [wormhole-lane-validation.test.ts](../checks/tests/wormhole-lane-validation.test.ts).
+5. Update representative rollout fixtures only if the lane belongs in the forward-looking rollout bundle.
 
-### 3. Verify Contract Address
+Do not claim support for a new lane until all of those steps are done.
 
-Find the L1CrossDomainMessenger address:
-- Check the chain's official documentation
-- Look for "L1CrossDomainMessenger" in deployed contracts
-- Verify it implements `sendMessage(address,bytes,uint32)`
+## Adding A New OP Stack Chain
 
-### 4. Test Integration
-
-Create a test simulation:
-
-```typescript
-// sims/new-chain-test.sim.ts
-import { encodeAbiParameters } from 'viem';
-import type { SimulationConfigNew } from '../types';
-
-const L1_CROSS_DOMAIN_MESSENGER = '0x..........'; // Your new chain's messenger
-const L2_RECIPIENT = '0x4200000000000000000000000000000000000006'; // WETH9 on L2
-const testMessage = encodeAbiParameters([{ type: 'bytes4' }], ['0xd0e30db0']); // deposit()
-
-const call = {
-  target: L1_CROSS_DOMAIN_MESSENGER,
-  calldata: encodeAbiParameters(
-    [{ type: 'address' }, { type: 'bytes' }, { type: 'uint32' }],
-    [L2_RECIPIENT, testMessage, 1000000] // Note: uint32 for gas limit
-  ),
-  value: 0n,
-  signature: 'sendMessage(address,bytes,uint32)', // Correct signature
-};
-
-export const config: SimulationConfigNew = {
-  type: 'new',
-  daoName: 'NewChainBridgeTest',
-  governorAddress: '0x408ED6354d4973f66138C91495F2f2FCbd8724C3',
-  governorType: 'bravo',
-  targets: [call.target],
-  values: [call.value],
-  signatures: [call.signature],
-  calldatas: [call.calldata],
-  description: 'Test cross-chain message to new OP Stack chain',
-};
-```
-
-### 5. Run Test
-
-```bash
-SIM_NAME=new-chain-test bun start
-```
-
-Verify:
-- ✅ Message detection: "Found message to [target] on chain [new-chain-id]"
-- ✅ L2 simulation: "Destination sim SUCCESS"
-- ✅ Report generation with cross-chain analysis
-
-## Simulation Configuration Examples
-
-### Basic ETH Transfer to L2
-
-```typescript
-// Transfer 1 ETH to L2 via Optimism bridge
-const call = {
-  target: '0x25ace71c97B33Cc4729CF772ae268934F7ab5fA1', // OP Mainnet Messenger
-  calldata: encodeAbiParameters(
-    [{ type: 'address' }, { type: 'bytes' }, { type: 'uint32' }],
-    [
-      '0x4200000000000000000000000000000000000006', // L2 WETH9
-      '0xd0e30db0', // deposit() function selector
-      1000000 // gas limit (uint32)
-    ]
-  ),
-  value: parseEther('1'), // 1 ETH
-  signature: 'sendMessage(address,bytes,uint32)',
-};
-```
-
-### Multi-Chain Governance Call
-
-```typescript
-// Send same governance action to multiple L2s
-const targets = [
-  '0x25ace71c97B33Cc4729CF772ae268934F7ab5fA1', // OP Mainnet
-  '0x866E82a600A1414e583f7F13623F1aC5d58b0Afa', // Base
-];
-
-const governanceCalldata = encodeFunctionData({
-  abi: governanceAbi,
-  functionName: 'updateParameter',
-  args: [newValue],
-});
-
-const calls = targets.map(messenger => ({
-  target: messenger,
-  calldata: encodeAbiParameters(
-    [{ type: 'address' }, { type: 'bytes' }, { type: 'uint32' }],
-    [L2_GOVERNANCE_CONTRACT, governanceCalldata, 2000000]
-  ),
-  value: 0n,
-  signature: 'sendMessage(address,bytes,uint32)',
-}));
-```
-
-### Complex Contract Interaction
-
-```typescript
-// Deploy and initialize contract on L2
-const deploymentCalldata = encodeFunctionData({
-  abi: factoryAbi,
-  functionName: 'createContract',
-  args: [initParams],
-});
-
-const call = {
-  target: '0x25ace71c97B33Cc4729CF772ae268934F7ab5fA1',
-  calldata: encodeAbiParameters(
-    [{ type: 'address' }, { type: 'bytes' }, { type: 'uint32' }],
-    [
-      '0x...', // L2 factory contract
-      deploymentCalldata,
-      3000000 // Higher gas for complex operations
-    ]
-  ),
-  value: 0n,
-  signature: 'sendMessage(address,bytes,uint32)',
-};
-```
-
-## Best Practices
-
-### Gas Estimation
-- **Minimum**: 1,000,000 gas for simple calls
-- **Complex operations**: 2,000,000+ gas
-- **Contract deployments**: 3,000,000+ gas
-
-### Error Handling
-- Always verify messenger contract addresses
-- Check function signatures match exactly
-- Test with small amounts first
-- Validate L2 contract exists and is verified
-
-### Testing Strategy
-1. **Unit tests**: Verify message parsing logic
-2. **Integration tests**: End-to-end simulation flow
-3. **Manual testing**: Real proposal simulation
-4. **Cross-validation**: Compare with Tenderly UI results
-
-## Debugging Tools
-
-### Tenderly Integration
-The tool automatically saves failed simulations to Tenderly for debugging:
-
-```typescript
-save_if_fails: true, // Enables failed simulation persistence
-```
-
-### Console Logging
-Enable detailed logging by checking console output for:
-- `[Optimism Parser] Found message to ...`
-- `[CrossChainHandler] Destination sim SUCCESS/FAILED`
-- Error messages with specific failure reasons
-
-### Manual Verification
-Test proposals directly in Tenderly UI to isolate issues:
-1. Copy transaction data from logs
-2. Paste into Tenderly simulator
-3. Compare results with tool output
+1. Add the chain to [client.ts](../utils/clients/client.ts).
+2. Add the correct `L1CrossDomainMessenger` mapping in [optimism.ts](../utils/bridges/optimism.ts).
+3. Verify the messenger implements `sendMessage(address,bytes,uint32)`.
+4. Add extraction or execution coverage if the chain behaves differently from the existing OP-stack set.
+5. Validate the lane with a representative simulation before claiming support.

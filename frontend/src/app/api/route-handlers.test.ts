@@ -41,6 +41,32 @@ const VALID_SIMULATION_RESULTS_JSON = JSON.stringify([
   },
 ]);
 
+const VALID_SIMULATION_RESULTS_WITH_STRUCTURED_REPORT_JSON = JSON.stringify([
+  {
+    proposalData: {
+      targets: [],
+      values: [],
+      signatures: [],
+      calldatas: [],
+      description: 'test proposal',
+    },
+    report: {
+      status: 'ok',
+      summary: 'summary',
+      markdownReport: '# report',
+      structuredReport: {
+        title: 'Test Report',
+        status: 'success',
+        metadata: {
+          trust: {
+            level: 'ready',
+          },
+        },
+      },
+    },
+  },
+]);
+
 function createMockFetch(
   handler: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
 ): typeof fetch {
@@ -87,6 +113,10 @@ function readErrorMessage(payload: unknown): string | null {
   return typeof error === 'string' ? error : null;
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 function readMarkdownReport(payload: unknown): string | null {
   if (!Array.isArray(payload) || payload.length === 0) return null;
 
@@ -98,6 +128,36 @@ function readMarkdownReport(payload: unknown): string | null {
 
   const markdownReport = Reflect.get(report, 'markdownReport');
   return typeof markdownReport === 'string' ? markdownReport : null;
+}
+
+function readStructuredReportMetadata(payload: unknown): Record<string, unknown> | null {
+  if (!Array.isArray(payload) || payload.length === 0) return null;
+
+  const firstItem = payload[0];
+  if (!firstItem || typeof firstItem !== 'object') return null;
+
+  const report = Reflect.get(firstItem, 'report');
+  if (!report || typeof report !== 'object') return null;
+
+  const structuredReport = Reflect.get(report, 'structuredReport');
+  if (
+    !structuredReport ||
+    typeof structuredReport !== 'object' ||
+    Array.isArray(structuredReport)
+  ) {
+    return null;
+  }
+
+  const metadata = Reflect.get(structuredReport, 'metadata');
+  if (!isPlainRecord(metadata)) return null;
+
+  return metadata;
+}
+
+function readStructuredReportPublishMetadata(payload: unknown): unknown | null {
+  const metadata = readStructuredReportMetadata(payload);
+  if (!metadata) return null;
+  return Reflect.get(metadata, 'publish') ?? null;
 }
 
 function readArtifactUrl(payload: unknown): string | null {
@@ -195,12 +255,29 @@ describe('/api/simulation-results', () => {
     expect(readMarkdownReport(payload)).toBe('');
   });
 
+  it('does not attach publish authenticity metadata for local simulation-results.json reads', async () => {
+    globalThis.fetch = createMockFetch(async (): Promise<Response> => {
+      throw new Error('Unexpected fetch call');
+    });
+
+    writeSimulationResultsFile(VALID_SIMULATION_RESULTS_WITH_STRUCTURED_REPORT_JSON);
+
+    const response = await getSimulationResults(
+      new Request('http://localhost/api/simulation-results'),
+    );
+
+    expect(response.status).toBe(200);
+
+    const payload: unknown = await response.json();
+    expect(readStructuredReportPublishMetadata(payload)).toBeNull();
+  });
+
   it('normalizes base deployment artifact urls to simulation-results.json before fetch', async () => {
-    let requestedUrl = '';
+    const requestedUrls: string[] = [];
 
     globalThis.fetch = createMockFetch(
       async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-        requestedUrl = readFetchRequestUrl(input);
+        requestedUrls.push(readFetchRequestUrl(input));
         return new Response(VALID_SIMULATION_RESULTS_JSON, {
           status: 200,
           headers: {
@@ -217,9 +294,10 @@ describe('/api/simulation-results', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(requestedUrl).toBe(
+    expect(requestedUrls).toEqual([
       'https://seatbelt-publish.vercel.app/deployment/xyz/simulation-results.json',
-    );
+      'https://seatbelt-publish.vercel.app/deployment/xyz/publish-metadata.json',
+    ]);
   });
 
   it('rejects private-network artifact targets', async () => {
@@ -327,6 +405,9 @@ describe('/api/simulation-results', () => {
           JSON.stringify({
             publishId: '11111111-1111-4111-8111-111111111111',
             artifactUrl: 'https://seatbelt-publish.vercel.app/simulation-results.json',
+            metadataUrl: 'https://seatbelt-publish.vercel.app/publish-metadata.json',
+            artifactHash: 'hash-from-relay',
+            publishedAt: '2026-03-26T00:00:00.000Z',
           }),
           {
             status: 200,
@@ -354,6 +435,136 @@ describe('/api/simulation-results', () => {
       'https://seatbelt-relay-beta.vercel.app/api/v1/publishes/11111111-1111-4111-8111-111111111111',
     );
     expect(requests).toContain('https://seatbelt-publish.vercel.app/simulation-results.json');
+  });
+
+  it('blocks when publish-metadata.json does not match relay lookup fields', async () => {
+    process.env.SEATBELT_RELAY_URL = 'https://seatbelt-relay-beta.vercel.app';
+
+    globalThis.fetch = createMockFetch(async (input: RequestInfo | URL): Promise<Response> => {
+      const requestUrl = readFetchRequestUrl(input);
+
+      if (requestUrl.includes('/api/v1/publishes/')) {
+        return new Response(
+          JSON.stringify({
+            publishId: '11111111-1111-4111-8111-111111111111',
+            artifactUrl: 'https://seatbelt-publish.vercel.app/simulation-results.json',
+            metadataUrl: 'https://seatbelt-publish.vercel.app/publish-metadata.json',
+            artifactHash: 'hash-from-relay',
+            publishedAt: '2026-03-26T00:00:00.000Z',
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (requestUrl.endsWith('/simulation-results.json')) {
+        return new Response(VALID_SIMULATION_RESULTS_WITH_STRUCTURED_REPORT_JSON, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      if (requestUrl.endsWith('/publish-metadata.json')) {
+        return new Response(
+          JSON.stringify({
+            publish_id: '00000000-0000-4000-8000-000000000000',
+            published_at: '2026-03-27T00:00:00.000Z',
+            artifact_hash: 'hash-from-metadata',
+            relay_version: 'test-relay',
+            authenticity: {
+              algorithm: 'ed25519',
+              key_id: 'k1',
+              signature: '0x00',
+              signed_fields: ['publish_id', 'published_at', 'artifact_hash', 'relay_version'],
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+
+      return new Response('{}', { status: 404 });
+    });
+
+    const response = await getSimulationResults(
+      new Request(
+        'http://localhost/api/simulation-results?publishId=11111111-1111-4111-8111-111111111111',
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const payload: unknown = await response.json();
+
+    const metadata = readStructuredReportMetadata(payload);
+    expect(metadata).not.toBeNull();
+    const trust = metadata ? Reflect.get(metadata, 'trust') : null;
+    expect(trust).not.toBeNull();
+    if (!trust || typeof trust !== 'object') {
+      throw new Error('Expected trust metadata to be an object');
+    }
+
+    expect(Reflect.get(trust, 'level')).toBe('blocked');
+    expect(Reflect.get(trust, 'blockingReasons')).toEqual(
+      expect.arrayContaining([
+        'Publish metadata publish_id does not match relay lookup.',
+        'Publish metadata artifact_hash does not match relay lookup.',
+      ]),
+    );
+  });
+
+  it('blocks when fetched simulation-results.json does not match relay artifactHash', async () => {
+    process.env.SEATBELT_RELAY_URL = 'https://seatbelt-relay-beta.vercel.app';
+
+    globalThis.fetch = createMockFetch(async (input: RequestInfo | URL): Promise<Response> => {
+      const requestUrl = readFetchRequestUrl(input);
+
+      if (requestUrl.includes('/api/v1/publishes/')) {
+        return new Response(
+          JSON.stringify({
+            publishId: '11111111-1111-4111-8111-111111111111',
+            artifactUrl: 'https://seatbelt-publish.vercel.app/simulation-results.json',
+            metadataUrl: 'https://seatbelt-publish.vercel.app/publish-metadata.json',
+            artifactHash: 'not-the-real-hash',
+            publishedAt: '2026-03-26T00:00:00.000Z',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+
+      if (requestUrl.endsWith('/simulation-results.json')) {
+        return new Response(VALID_SIMULATION_RESULTS_WITH_STRUCTURED_REPORT_JSON, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      return new Response('{}', { status: 404 });
+    });
+
+    const response = await getSimulationResults(
+      new Request(
+        'http://localhost/api/simulation-results?publishId=11111111-1111-4111-8111-111111111111',
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const payload: unknown = await response.json();
+
+    const metadata = readStructuredReportMetadata(payload);
+    expect(metadata).not.toBeNull();
+    const trust = metadata ? Reflect.get(metadata, 'trust') : null;
+    expect(trust).not.toBeNull();
+    if (!trust || typeof trust !== 'object') {
+      throw new Error('Expected trust metadata to be an object');
+    }
+
+    expect(Reflect.get(trust, 'level')).toBe('blocked');
+    expect(Reflect.get(trust, 'blockingReasons')).toEqual(
+      expect.arrayContaining([
+        'Published artifact hash does not match fetched simulation-results.json.',
+      ]),
+    );
   });
 });
 

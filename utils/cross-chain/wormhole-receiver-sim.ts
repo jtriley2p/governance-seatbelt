@@ -18,6 +18,11 @@ export type WormholeReceiverRuntimeState = {
 
 export type WormholeReceiverRuntimeStateCacheKey = `${number}:${string}`;
 
+export type WormholeReceiverRuntimeStateByKey = Record<
+  WormholeReceiverRuntimeStateCacheKey,
+  WormholeReceiverRuntimeState
+>;
+
 export function getOverriddenWormholeReceiverSequence(
   workingState: SimulationStateObjects | undefined,
   receiverAddress: Address,

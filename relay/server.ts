@@ -2,11 +2,16 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { readNonEmptyEnv, readPrimaryOrAliasEnv } from '../utils/env.js';
 import {
   PublishArtifactValidationError,
   type PublishableSimulationResult,
   validatePublishArtifact,
 } from '../utils/publish/artifact-validator.js';
+import {
+  type PublishAuthenticityEnvelope,
+  signPublishMetadata,
+} from '../utils/publish/publish-authenticity.js';
 import { computeArtifactHash, createPublishMetadata } from '../utils/publish/publish-metadata.js';
 
 type OpenJsonObject = Record<string, unknown>;
@@ -24,6 +29,7 @@ type RelayPublishLogEntry = {
   source_publish_id?: string;
   source_published_at?: string;
   provenance?: OpenJsonObject;
+  authenticity?: PublishAuthenticityEnvelope;
 };
 
 type RelaySuccessResponse = {
@@ -166,36 +172,6 @@ class RelayPublishTimeoutError extends Error {
     this.name = 'RelayPublishTimeoutError';
     this.timeoutMs = timeoutMs;
   }
-}
-
-function readNonEmptyEnv(
-  env: Record<string, string | undefined>,
-  name: string,
-): string | undefined {
-  const value = env[name];
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return undefined;
-  }
-
-  return trimmed;
-}
-
-function readPrimaryOrAliasEnv(
-  env: Record<string, string | undefined>,
-  primaryName: string,
-  aliasName: string,
-): string | undefined {
-  const primaryValue = readNonEmptyEnv(env, primaryName);
-  if (primaryValue) {
-    return primaryValue;
-  }
-
-  return readNonEmptyEnv(env, aliasName);
 }
 
 function readBooleanFlag(value: string | undefined, defaultValue: boolean): boolean {
@@ -1125,6 +1101,7 @@ function buildRelayPublishLogEntry(input: {
   relayVersion: string;
   sourcePublishMetadata?: OpenJsonObject;
   provenance?: OpenJsonObject;
+  env?: Record<string, string | undefined>;
 }): RelayPublishLogEntry {
   const sourcePublishId = input.sourcePublishMetadata
     ? readOptionalString(input.sourcePublishMetadata, 'publish_id')
@@ -1136,7 +1113,7 @@ function buildRelayPublishLogEntry(input: {
   const metadata = input.validatedArtifact.report.structuredReport.metadata;
   const publishMetadata = createPublishMetadata(input.artifactHash);
 
-  return {
+  const publishLogEntry: RelayPublishLogEntry = {
     ...publishMetadata,
     schema_version: metadata.schemaVersion,
     simulation_type: metadata.simulationType,
@@ -1148,6 +1125,13 @@ function buildRelayPublishLogEntry(input: {
     source_published_at: sourcePublishedAt,
     provenance: input.provenance,
   };
+
+  const authenticity = signPublishMetadata(publishLogEntry, input.env ?? {});
+  if (authenticity) {
+    publishLogEntry.authenticity = authenticity;
+  }
+
+  return publishLogEntry;
 }
 
 function buildHealthResponse(input: {
@@ -1493,6 +1477,7 @@ export function createRelayFetchHandler(
         relayVersion: config.relayVersion,
         sourcePublishMetadata: payload.publishMetadata,
         provenance: payload.provenance,
+        env,
       });
 
       const publishResult = await publisher({

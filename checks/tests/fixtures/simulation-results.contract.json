@@ -79,7 +79,14 @@
         "schemaVersion": 1,
         "simulationBlockNumber": "18200000",
         "simulationTimestamp": "1700000000",
-        "simulationType": "proposed"
+        "simulationType": "proposed",
+        "trust": {
+          "level": "warning",
+          "warningReasons": [
+            "Simulation completed with warnings or inconclusive checks.",
+            "Some checks were skipped and should be reviewed."
+          ]
+        }
       },
       "permissionsDiff": [],
       "status": "warning"

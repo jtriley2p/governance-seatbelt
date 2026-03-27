@@ -135,6 +135,8 @@ function ActionSection({ isConnected }: { isConnected: boolean }) {
         : false;
 
   const checks = report.structuredReport?.checks ?? [];
+  const trust = report.structuredReport?.metadata?.trust;
+  const publish = report.structuredReport?.metadata?.publish;
   const passedChecks = checks.filter((c) => c.status === 'passed');
   const failedChecks = checks.filter((c) => c.status === 'failed');
   const warningChecks = checks.filter((c) => c.status === 'warning');
@@ -152,6 +154,67 @@ function ActionSection({ isConnected }: { isConnected: boolean }) {
         </div>
         <p className="text-muted-foreground">{pageCopy.description}</p>
       </div>
+
+      {(trust || publish) && (
+        <Alert
+          variant={
+            trust?.level === 'blocked' || publish?.authenticity?.status === 'invalid'
+              ? 'destructive'
+              : 'default'
+          }
+        >
+          <AlertTriangleIcon className="h-4 w-4" />
+          <AlertTitle>
+            {trust?.level === 'blocked'
+              ? 'Blocking report concerns'
+              : trust?.level === 'warning'
+                ? 'Report warnings'
+                : 'Report provenance'}
+          </AlertTitle>
+          <AlertDescription className="space-y-2">
+            {trust?.blockingReasons?.length ? (
+              <p>{trust.blockingReasons.join(' ')}</p>
+            ) : trust?.warningReasons?.length ? (
+              <p>{trust.warningReasons.join(' ')}</p>
+            ) : null}
+            <div className="flex flex-wrap gap-3 text-xs">
+              {publish?.artifactHash && (
+                <span className="font-mono">hash {publish.artifactHash.slice(0, 12)}…</span>
+              )}
+              {publish?.publishedAt && (
+                <span>published {new Date(publish.publishedAt).toLocaleString()}</span>
+              )}
+              {publish?.authenticity && (
+                <span>
+                  authenticity {publish.authenticity.status}
+                  {publish.authenticity.algorithm ? ` via ${publish.authenticity.algorithm}` : ''}
+                  {publish.authenticity.keyId ? ` / ${publish.authenticity.keyId}` : ''}
+                </span>
+              )}
+              {publish?.artifactUrl && (
+                <a
+                  href={publish.artifactUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  raw artifact
+                </a>
+              )}
+              {publish?.metadataUrl && (
+                <a
+                  href={publish.metadataUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  publish metadata
+                </a>
+              )}
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">

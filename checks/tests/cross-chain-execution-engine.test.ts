@@ -7,13 +7,17 @@ import {
   getAddress,
   parseAbi,
 } from 'viem';
-import { bsc, mainnet, monad, polygon, tempo } from 'viem/chains';
+import { bsc, celo, mainnet, monad, polygon, tempo } from 'viem/chains';
 import type { TenderlySimulation } from '../../types.d';
 import { WORMHOLE_SEND_MESSAGE_ABI } from '../../utils/bridges/wormhole';
 import {
   LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION,
   LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
 } from '../../utils/bridges/wormhole-runtime-state';
+import {
+  SUPPORTED_WORMHOLE_LANE_KEYS,
+  getWormholeLaneByKey,
+} from '../../utils/bridges/wormhole-support';
 import { createMockSimulation } from './test-utils';
 
 process.env.ETHERSCAN_API_KEY ??= 'test-etherscan-key';
@@ -23,15 +27,17 @@ process.env.TENDERLY_PROJECT_SLUG ??= 'test-project';
 process.env.MAINNET_RPC_URL ??= 'http://localhost:8545';
 process.env.ARBITRUM_RPC_URL ??= 'http://localhost:8545';
 
-const actualClientModule = await import('../../utils/clients/client');
-
 const RECEIVER_PAYLOAD_VERSION = LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION;
-const TEMPO_RECEIVER = getAddress('0xCFB43dC56B55bE9611deD8384201cECf06A9811b');
-const CELO_RECEIVER = getAddress('0x0Eb863541278308c3A64F8E908BC646e27BFD071');
-const MONAD_RECEIVER = getAddress('0xe783de89a7f0408687f051e3e6d0beb62719ebad');
-const BNB_RECEIVER = getAddress('0x341c1511141022cf8eE20824Ae0fFA3491F1302b');
-const CELO_WORMHOLE_CORE = getAddress('0xa321448d90d4e5b0A732867c18eA198e75CAC48E');
-const MONAD_WORMHOLE_CORE = getAddress('0x194B123c5E96B9B2e49763619985790Dc241CAC0');
+const TEMPO_RECEIVER = getWormholeLaneByKey('tempo').l2FromAddress;
+const CELO_RECEIVER = getWormholeLaneByKey('celo').l2FromAddress;
+const MONAD_RECEIVER = getWormholeLaneByKey('monad').l2FromAddress;
+const BNB_RECEIVER = getWormholeLaneByKey('bnb').l2FromAddress;
+const CELO_WORMHOLE_CORE = getWormholeLaneByKey('celo').wormholeReceiverCoreAddress;
+const MONAD_WORMHOLE_CORE = getWormholeLaneByKey('monad').wormholeReceiverCoreAddress;
+
+if (!CELO_WORMHOLE_CORE || !MONAD_WORMHOLE_CORE) {
+  throw new Error('Expected Celo and Monad Wormhole core addresses to be configured');
+}
 
 type ReceiverReadRequest = { address: `0x${string}`; functionName: string; blockNumber?: bigint };
 
@@ -41,9 +47,9 @@ async function resolveMockedReceiverReadContract(
   const receiverAddress = getAddress(request.address);
 
   if (
-    receiverAddress === TEMPO_RECEIVER ||
-    receiverAddress === CELO_RECEIVER ||
-    receiverAddress === MONAD_RECEIVER
+    receiverAddress === getAddress(TEMPO_RECEIVER) ||
+    receiverAddress === getAddress(CELO_RECEIVER) ||
+    receiverAddress === getAddress(MONAD_RECEIVER)
   ) {
     if (request.functionName === 'nextMinimumSequence') return 7n;
     if (request.functionName === 'EXPECTED_MESSAGE_PAYLOAD_VERSION') {
@@ -51,7 +57,7 @@ async function resolveMockedReceiverReadContract(
     }
   }
 
-  if (receiverAddress === BNB_RECEIVER) {
+  if (receiverAddress === getAddress(BNB_RECEIVER)) {
     throw new Error(`Legacy BNB receiver should not probe ${request.functionName}`);
   }
 
@@ -105,8 +111,37 @@ const mockedGetClientForChain = mock(() => ({
 }));
 
 mock.module('../../utils/clients/client', () => ({
-  ...actualClientModule,
+  BlockExplorerSource: {
+    Blockscout: 'blockscout',
+    Etherscan: 'etherscan',
+  },
+  VerificationBackend: {
+    EtherscanV2: 'etherscan-v2',
+    Blockscout: 'blockscout',
+    Tempo: 'tempo',
+    SourcifyOnly: 'sourcify-only',
+  },
+  formatVerificationBackend: (backend: string) => backend,
+  getBlockExplorerBaseUrlForChain: () => 'https://etherscan.io',
   getClientForChain: mockedGetClientForChain,
+  getChainConfig: () => ({
+    chainId: mainnet.id,
+    blockExplorer: { baseUrl: 'https://etherscan.io' },
+    rpcUrl: 'http://localhost:8545',
+  }),
+  resolveVerificationConfig: () => ({
+    backend: 'etherscan-v2',
+    apiUrl: 'https://api.etherscan.io/v2/api',
+    apiKey: 'test-etherscan-key',
+    degradedReason: undefined,
+  }),
+  CHAIN_CONFIGS: {
+    [mainnet.id]: {
+      chainId: mainnet.id,
+      blockExplorer: { baseUrl: 'https://etherscan.io' },
+      rpcUrl: 'http://localhost:8545',
+    },
+  },
   publicClient: {
     getChainId: async () => mainnet.id,
     getBlock: async () => ({
@@ -147,6 +182,7 @@ mock.module('../../utils/clients/tenderly-api', () => ({
 const WORMHOLE_PROPOSAL_TARGET = '0xf5F4496219F31CDCBa6130B5402873624585615a' as const;
 const WORMHOLE_ADDRESS = '0x00000000000000000000000000000000000000AA' as const;
 const DIRECT_DESTINATION_CHAIN_ID = polygon.id;
+const CELO_CHAIN_ID = celo.id;
 const TIMELOCK_ADDRESS = '0x1a9C8182C09F50C8318d769245beA52c32BE35BC';
 
 type CrossChainHandler = typeof import('../../utils/clients/tenderly').handleCrossChainSimulations;
@@ -300,6 +336,83 @@ function makeSourceResult(
 }
 
 describe('cross-chain destination execution engine', () => {
+  test('executes one simulated destination job per supported Wormhole lane', async () => {
+    const calldatas = SUPPORTED_WORMHOLE_LANE_KEYS.map((laneKey) => {
+      const lane = getWormholeLaneByKey(laneKey);
+      const target = getAddress('0x00000000000000000000000000000000000000A1');
+      return makeWormholeCalldata([{ target, data: '0x11111111' }], lane.wormholeChainId);
+    });
+
+    for (const laneKey of SUPPORTED_WORMHOLE_LANE_KEYS) {
+      const lane = getWormholeLaneByKey(laneKey);
+      enqueueSimulation(
+        makeSimulation({
+          id: `${laneKey}-step-1`,
+          chainId: lane.destinationChainId,
+        }),
+      );
+    }
+
+    const result = await handleCrossChainSimulations(makeSourceResult(calldatas));
+
+    expect(mockedSendSimulation).toHaveBeenCalledTimes(SUPPORTED_WORMHOLE_LANE_KEYS.length);
+    expect(result.destinationJobResults).toHaveLength(SUPPORTED_WORMHOLE_LANE_KEYS.length);
+
+    for (const laneKey of SUPPORTED_WORMHOLE_LANE_KEYS) {
+      const lane = getWormholeLaneByKey(laneKey);
+      const jobResult = result.destinationJobResults.find(
+        (job) => job.chainId === lane.destinationChainId,
+      );
+      expect(jobResult?.bridgeType).toBe('WormholeL1L2');
+      expect(jobResult?.status).toBe('success');
+    }
+  });
+
+  test('does not leak committed state across different destination chains', async () => {
+    const bnbTarget = getAddress('0x0000000000000000000000000000000000000B56');
+    const celoTarget = getAddress('0x0000000000000000000000000000000000000CE0');
+
+    const bnbCalldata = makeWormholeCalldata([{ target: bnbTarget, data: '0x11111111' }], 4);
+    const celoCalldata = makeWormholeCalldata([{ target: celoTarget, data: '0x22222222' }], 14);
+
+    enqueueSimulation(
+      makeSimulation({
+        id: 'bnb-step-1',
+        chainId: 56,
+        stateDiff: [{ address: bnbTarget, key: '0x01', dirty: '0xaa' }],
+      }),
+    );
+    enqueueSimulation(
+      makeSimulation({
+        id: 'celo-step-1',
+        chainId: CELO_CHAIN_ID,
+        stateDiff: [{ address: celoTarget, key: '0x02', dirty: '0xbb' }],
+      }),
+    );
+
+    const result = await handleCrossChainSimulations(
+      makeSourceResult([bnbCalldata, celoCalldata], { simulationTimestamp: 1_600_000_321n }),
+    );
+
+    expect(mockedSendSimulation).toHaveBeenCalledTimes(2);
+    expect(transportCalls[0]?.network_id).toBe('56');
+    expect(transportCalls[1]?.network_id).toBe(String(CELO_CHAIN_ID));
+
+    const secondPayload = transportCalls[1];
+    const secondStateObjectsRaw = secondPayload?.state_objects;
+    const secondStateObjects =
+      secondStateObjectsRaw &&
+      typeof secondStateObjectsRaw === 'object' &&
+      !Array.isArray(secondStateObjectsRaw)
+        ? (secondStateObjectsRaw as Record<string, unknown>)
+        : null;
+    expect(secondStateObjects?.[bnbTarget]).toBeUndefined();
+    expect(result.destinationStateByChain[56]?.[bnbTarget]?.storage?.['0x01']).toBe('0xaa');
+    expect(result.destinationStateByChain[CELO_CHAIN_ID]?.[celoTarget]?.storage?.['0x02']).toBe(
+      '0xbb',
+    );
+  });
+
   test('keeps step results and commits merged state for a successful multi-step job', async () => {
     const firstTarget = getAddress('0x00000000000000000000000000000000000000A1');
     const secondTarget = getAddress('0x00000000000000000000000000000000000000A2');

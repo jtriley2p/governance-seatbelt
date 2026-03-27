@@ -129,6 +129,32 @@ export interface DerivedSimulationDependency {
   baselineChains: DerivedBaselineChain[];
 }
 
+export type ReportTrustLevel = 'ready' | 'warning' | 'blocked';
+
+export interface ReportTrustMetadata {
+  level: ReportTrustLevel;
+  warningReasons?: string[];
+  blockingReasons?: string[];
+}
+
+export type PublishAuthenticityStatus = 'verified' | 'unsigned' | 'invalid' | 'unconfigured';
+
+export interface PublishAuthenticityMetadata {
+  status: PublishAuthenticityStatus;
+  reason?: string;
+  keyId?: string;
+  algorithm?: string;
+}
+
+export interface PublishArtifactMetadata {
+  publishId?: string;
+  artifactHash?: string;
+  artifactUrl?: string;
+  metadataUrl?: string;
+  publishedAt?: string;
+  authenticity?: PublishAuthenticityMetadata;
+}
+
 // TODO If adding support for a third governor, instead of hardcoding optional governor-specific
 // fields, make this a union type of each governor's individual proposal type.
 export interface ProposalStruct {
@@ -832,6 +858,8 @@ export interface StructuredSimulationReport {
     proposalState?: string;
     // Dependency provenance for derived-state simulations
     dependency?: DerivedSimulationDependency;
+    trust?: ReportTrustMetadata;
+    publish?: PublishArtifactMetadata;
   };
 }
 

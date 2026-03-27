@@ -1,3 +1,5 @@
+import { readNonEmptyEnv, readPrimaryOrAliasEnv } from '../utils/env.js';
+
 type OpenJsonObject = Record<string, unknown>;
 
 type RelayPublisherResult = {
@@ -43,36 +45,6 @@ type AliasApiError = Error & {
   status: number;
   errorCode?: string;
 };
-
-function readNonEmptyEnv(
-  env: Record<string, string | undefined>,
-  name: string,
-): string | undefined {
-  const value = env[name];
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return undefined;
-  }
-
-  return trimmed;
-}
-
-function readPrimaryOrAliasEnv(
-  env: Record<string, string | undefined>,
-  primaryName: string,
-  aliasName: string,
-): string | undefined {
-  const primaryValue = readNonEmptyEnv(env, primaryName);
-  if (primaryValue) {
-    return primaryValue;
-  }
-
-  return readNonEmptyEnv(env, aliasName);
-}
 
 function formatEnvPair(primaryName: string, aliasName: string): string {
   return `${primaryName} (or ${aliasName})`;

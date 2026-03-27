@@ -3,19 +3,21 @@ import type { FETCH_OPT } from 'micro-ftch';
 import { getAddress } from 'viem';
 import type { StorageEncodingResponse, TenderlyPayload, TenderlySimulation } from '../../types.d';
 import {
-  TENDERLY_ACCESS_TOKEN,
   TENDERLY_BASE_URL,
-  TENDERLY_ENCODE_URL,
-  TENDERLY_SIM_URL,
+  getTenderlyAccessToken,
+  getTenderlyEncodeUrl,
+  getTenderlySimUrl,
 } from '../constants';
 import { parseWithSchema, z } from '../validation/zod';
 
 const fetchUrl = mftch;
 
-const TENDERLY_FETCH_OPTIONS = {
-  type: 'json' as const,
-  headers: { 'X-Access-Key': TENDERLY_ACCESS_TOKEN },
-};
+function getTenderlyFetchOptions() {
+  return {
+    type: 'json' as const,
+    headers: { 'X-Access-Key': getTenderlyAccessToken() },
+  };
+}
 
 const DEFAULT_TENDERLY_REQUEST_TIMEOUT_MS = 15_000;
 const TENDERLY_REQUEST_TIMEOUT_MS = (() => {
@@ -179,7 +181,7 @@ export async function getLatestBlock(chainId: number): Promise<number> {
     const url = `${TENDERLY_BASE_URL}/network/${chainId.toString()}/block-number`;
     const fetchOptions = <Partial<FETCH_OPT>>{
       method: 'GET',
-      ...TENDERLY_FETCH_OPTIONS,
+      ...getTenderlyFetchOptions(),
     };
     const rawRes = await fetchUrlWithTimeout(
       `Tenderly getLatestBlock(${chainId})`,
@@ -206,11 +208,11 @@ export async function sendEncodeRequest(
     const fetchOptions = <Partial<FETCH_OPT>>{
       method: 'POST',
       data: payload,
-      ...TENDERLY_FETCH_OPTIONS,
+      ...getTenderlyFetchOptions(),
     };
     const rawResponse = await fetchUrlWithTimeout(
       `Tenderly sendEncodeRequest(${payload.networkID})`,
-      TENDERLY_ENCODE_URL,
+      getTenderlyEncodeUrl(),
       fetchOptions,
     );
     const response = parseWithSchema(
@@ -243,12 +245,12 @@ export async function sendSimulation(
   const fetchOptions = <Partial<FETCH_OPT>>{
     method: 'POST',
     data: payload,
-    ...TENDERLY_FETCH_OPTIONS,
+    ...getTenderlyFetchOptions(),
   };
   try {
     const rawSim = await fetchUrlWithTimeout(
       `Tenderly sendSimulation(${payload.network_id})`,
-      TENDERLY_SIM_URL,
+      getTenderlySimUrl(),
       fetchOptions,
     );
     const sim = parseWithSchema(tenderlySimulationSchema, rawSim, 'Tenderly simulate response');

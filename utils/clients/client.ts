@@ -51,11 +51,8 @@ export interface ChainConfig {
   rpcUrl: string;
 }
 
-if (!process.env.MAINNET_RPC_URL || !process.env.ARBITRUM_RPC_URL) {
-  throw new Error(
-    'MAINNET_RPC_URL and ARBITRUM_RPC_URL must be set. Optional: OPTIMISM_RPC_URL, BASE_RPC_URL, or ALCHEMY_API_KEY',
-  );
-}
+const MAINNET_RPC_URL = process.env.MAINNET_RPC_URL || 'https://cloudflare-eth.com';
+const ARBITRUM_RPC_URL = process.env.ARBITRUM_RPC_URL || arbitrum.rpcUrls.default.http[0];
 
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY;
 const OPTIMISM_RPC_URL =
@@ -149,7 +146,7 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
       apiUrl: ETHERSCAN_V2_API_URL,
       apiKey: process.env.ETHERSCAN_API_KEY,
     },
-    rpcUrl: process.env.MAINNET_RPC_URL,
+    rpcUrl: MAINNET_RPC_URL,
   },
   [arbitrum.id]: {
     chainId: arbitrum.id,
@@ -161,7 +158,7 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
       apiUrl: ETHERSCAN_V2_API_URL,
       apiKey: process.env.ETHERSCAN_API_KEY,
     },
-    rpcUrl: process.env.ARBITRUM_RPC_URL,
+    rpcUrl: ARBITRUM_RPC_URL,
   },
   [optimism.id]: {
     chainId: optimism.id,

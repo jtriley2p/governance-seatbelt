@@ -8,16 +8,14 @@ import {
   buildTestOnlyWormholeRolloutFollowupConfig,
   buildTestOnlyWormholeRolloutSetupConfig,
 } from '../../tests/fixtures/test-only-wormhole-lane-configs';
-import {
-  TEST_ONLY_WORMHOLE_LANES,
-  type TestOnlyWormholeLaneKey,
-} from '../../tests/fixtures/test-only-wormhole-lane-state';
+import { TEST_ONLY_WORMHOLE_LANES } from '../../tests/fixtures/test-only-wormhole-lane-state';
 import type { SimulationConfigNew, SimulationResult } from '../../types';
 import { getWormholeLaneCapabilities } from '../../utils/bridges/wormhole';
 import {
   LEGACY_BNB_WORMHOLE_MESSAGE_PAYLOAD_VERSION,
   LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
 } from '../../utils/bridges/wormhole-runtime-state';
+import { SUPPORTED_WORMHOLE_LANE_KEYS } from '../../utils/bridges/wormhole-support';
 import { BlockExplorerFactory } from '../../utils/clients/block-explorers/factory';
 import { getClientForChain } from '../../utils/clients/client';
 import type { SimulationExecutionOptions } from '../../utils/clients/tenderly';
@@ -35,15 +33,15 @@ const V2_FACTORY_ABI = parseAbi(['function feeToSetter() view returns (address)'
 const EXTERNAL_API_TIMEOUT_MS = 180000;
 const RUN_LIVE_BNB_LEGACY_VALIDATION = process.env.RUN_LIVE_BNB_LEGACY_VALIDATION === '1';
 const maybeLiveBnbLegacy = RUN_LIVE_BNB_LEGACY_VALIDATION ? test : test.skip;
+const tenderlyTest = process.env.RUN_TENDERLY_INTEGRATION_TESTS === '1' ? test : test.skip;
+const maybeLiveLaneValidation =
+  process.env.RUN_LIVE_WORMHOLE_LANE_VALIDATION === '1' ? test : test.skip;
 const BNB_SOURCIFY_SOURCE_BASE_URL =
   'https://repo.sourcify.dev/contracts/full_match/56/0x341c1511141022cf8eE20824Ae0fFA3491F1302b/sources';
 const LEGACY_BNB_WORMHOLE_PAYLOAD_DESCRIPTOR =
   'UniswapWormholeMessageSenderV1 (bytes32 receivedMessagePayloadVersion, address[] memory targets, uint256[] memory values, bytes[] memory datas, address messageReceiver, uint16 receiverChainId)';
 
-type LaneKey = Extract<
-  TestOnlyWormholeLaneKey,
-  'bnb' | 'polygon' | 'avalanche' | 'celo' | 'monad' | 'tempo'
->;
+type LaneKey = (typeof SUPPORTED_WORMHOLE_LANE_KEYS)[number];
 
 async function expectLiveGovernanceAuthorityMatchesLane(laneKey: LaneKey): Promise<void> {
   const lane = TEST_ONLY_WORMHOLE_LANES[laneKey];
@@ -87,7 +85,6 @@ async function fetchLegacyBnbVerifiedSource(relativePath: string): Promise<strin
 
   return await response.text();
 }
-
 function buildExecutionOptions(
   config: SimulationConfigNew,
   derivedStateByChain?: DerivedStateByChain,
@@ -135,46 +132,81 @@ function getCeloFollowupJobs(result: SimulationResult) {
 }
 
 describe('Wormhole lane live authority validation', () => {
-  const supportedLanes: Array<{ laneKey: LaneKey; chainName: string }> = [
-    { laneKey: 'bnb', chainName: 'BNB' },
-    { laneKey: 'polygon', chainName: 'Polygon' },
-    { laneKey: 'avalanche', chainName: 'Avalanche' },
-    { laneKey: 'celo', chainName: 'Celo' },
-    { laneKey: 'monad', chainName: 'Monad' },
-    { laneKey: 'tempo', chainName: 'Tempo' },
-  ];
+  const supportedLanes: Array<{ laneKey: LaneKey; chainName: string }> =
+    SUPPORTED_WORMHOLE_LANE_KEYS.map((laneKey) => ({
+      laneKey,
+      chainName: TEST_ONLY_WORMHOLE_LANES[laneKey].name,
+    }));
 
-  test.each(supportedLanes)(
-    'confirms the configured $chainName lane authority matches live destination governance state',
-    async ({ laneKey }) => {
-      const lane = TEST_ONLY_WORMHOLE_LANES[laneKey];
-      const client = getClientForChain(lane.chainId);
+  for (const { laneKey, chainName } of supportedLanes) {
+    maybeLiveLaneValidation(
+      `confirms the configured ${chainName} lane authority matches live destination governance state`,
+      async () => {
+        const lane = TEST_ONLY_WORMHOLE_LANES[laneKey];
+        const client = getClientForChain(lane.chainId);
 
-      await expectLiveGovernanceAuthorityMatchesLane(laneKey);
+        await expectLiveGovernanceAuthorityMatchesLane(laneKey);
 
-      const code = await client.getCode({ address: lane.l2FromAddress });
-      expect(code).toBeDefined();
-      expect(code).not.toBe('0x');
+        const code = await client.getCode({ address: lane.l2FromAddress });
+        expect(code).toBeDefined();
+        expect(code).not.toBe('0x');
 
-      const laneCapabilities = getWormholeLaneCapabilities(lane.wormholeChainId);
-      const wormholeReceiverCoreAddress = laneCapabilities.receiverCoreAddress;
-      const usesReceiverMode = laneCapabilities.kind !== 'direct';
-      const usesLegacyRuntimeState = laneCapabilities.kind === 'legacy';
+        const laneCapabilities = getWormholeLaneCapabilities(lane.wormholeChainId);
+        const wormholeReceiverCoreAddress = laneCapabilities.receiverCoreAddress;
+        const usesReceiverMode = laneCapabilities.kind !== 'direct';
+        const usesLegacyRuntimeState = laneCapabilities.kind === 'legacy';
 
-      expect(usesReceiverMode).toBe(wormholeReceiverCoreAddress !== null);
-      expect(usesLegacyRuntimeState && !usesReceiverMode).toBe(false);
+        expect(usesReceiverMode).toBe(wormholeReceiverCoreAddress !== null);
+        expect(usesLegacyRuntimeState && !usesReceiverMode).toBe(false);
 
-      if (usesReceiverMode) {
-        expect(wormholeReceiverCoreAddress).not.toBeNull();
-        const receiverCoreAddress = wormholeReceiverCoreAddress!;
+        if (usesReceiverMode) {
+          expect(wormholeReceiverCoreAddress).not.toBeNull();
+          const receiverCoreAddress = wormholeReceiverCoreAddress!;
 
-        const wormholeCoreCode = await client.getCode({
-          address: receiverCoreAddress,
-        });
-        expect(wormholeCoreCode).toBeDefined();
-        expect(wormholeCoreCode).not.toBe('0x');
+          const wormholeCoreCode = await client.getCode({
+            address: receiverCoreAddress,
+          });
+          expect(wormholeCoreCode).toBeDefined();
+          expect(wormholeCoreCode).not.toBe('0x');
 
-        if (usesLegacyRuntimeState) {
+          if (usesLegacyRuntimeState) {
+            await expect(
+              client.readContract({
+                address: lane.l2FromAddress,
+                abi: WORMHOLE_RECEIVER_ABI,
+                functionName: 'EXPECTED_MESSAGE_PAYLOAD_VERSION',
+              }),
+            ).rejects.toThrow();
+            await expect(
+              client.readContract({
+                address: lane.l2FromAddress,
+                abi: WORMHOLE_RECEIVER_ABI,
+                functionName: 'nextMinimumSequence',
+              }),
+            ).rejects.toThrow();
+
+            const storedSequence = await client.getStorageAt({
+              address: lane.l2FromAddress,
+              slot: LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
+            });
+            expect(storedSequence).toBeDefined();
+          } else {
+            const payloadVersion = await client.readContract({
+              address: lane.l2FromAddress,
+              abi: WORMHOLE_RECEIVER_ABI,
+              functionName: 'EXPECTED_MESSAGE_PAYLOAD_VERSION',
+            });
+            const nextMinimumSequence = await client.readContract({
+              address: lane.l2FromAddress,
+              abi: WORMHOLE_RECEIVER_ABI,
+              functionName: 'nextMinimumSequence',
+            });
+
+            expect(payloadVersion).toMatch(/^0x[0-9a-fA-F]{64}$/);
+            expect(typeof nextMinimumSequence).toBe('bigint');
+          }
+        } else {
+          expect(wormholeReceiverCoreAddress).toBeNull();
           await expect(
             client.readContract({
               address: lane.l2FromAddress,
@@ -182,47 +214,11 @@ describe('Wormhole lane live authority validation', () => {
               functionName: 'EXPECTED_MESSAGE_PAYLOAD_VERSION',
             }),
           ).rejects.toThrow();
-          await expect(
-            client.readContract({
-              address: lane.l2FromAddress,
-              abi: WORMHOLE_RECEIVER_ABI,
-              functionName: 'nextMinimumSequence',
-            }),
-          ).rejects.toThrow();
-
-          const storedSequence = await client.getStorageAt({
-            address: lane.l2FromAddress,
-            slot: LEGACY_BNB_WORMHOLE_NEXT_MINIMUM_SEQUENCE_SLOT,
-          });
-          expect(storedSequence).toBeDefined();
-        } else {
-          const payloadVersion = await client.readContract({
-            address: lane.l2FromAddress,
-            abi: WORMHOLE_RECEIVER_ABI,
-            functionName: 'EXPECTED_MESSAGE_PAYLOAD_VERSION',
-          });
-          const nextMinimumSequence = await client.readContract({
-            address: lane.l2FromAddress,
-            abi: WORMHOLE_RECEIVER_ABI,
-            functionName: 'nextMinimumSequence',
-          });
-
-          expect(payloadVersion).toMatch(/^0x[0-9a-fA-F]{64}$/);
-          expect(typeof nextMinimumSequence).toBe('bigint');
         }
-      } else {
-        expect(wormholeReceiverCoreAddress).toBeNull();
-        await expect(
-          client.readContract({
-            address: lane.l2FromAddress,
-            abi: WORMHOLE_RECEIVER_ABI,
-            functionName: 'EXPECTED_MESSAGE_PAYLOAD_VERSION',
-          }),
-        ).rejects.toThrow();
-      }
-    },
-    EXTERNAL_API_TIMEOUT_MS,
-  );
+      },
+      EXTERNAL_API_TIMEOUT_MS,
+    );
+  }
 });
 
 describe('BNB legacy Wormhole live validation', () => {
@@ -324,7 +320,7 @@ describe('Celo 94 -> 95 derived-state validation', () => {
     return derived95ResultPromise;
   }
 
-  test(
+  tenderlyTest(
     '94-test succeeds on the Celo Wormhole handoff lane',
     async () => {
       const proposal94Result = await getProposal94Result();
@@ -341,7 +337,7 @@ describe('Celo 94 -> 95 derived-state validation', () => {
     EXTERNAL_API_TIMEOUT_MS,
   );
 
-  test(
+  tenderlyTest(
     '95-test fails on Celo without the derived 94 baseline',
     async () => {
       const proposal95Result = await getStandalone95Result();
@@ -354,7 +350,7 @@ describe('Celo 94 -> 95 derived-state validation', () => {
     EXTERNAL_API_TIMEOUT_MS,
   );
 
-  test(
+  tenderlyTest(
     '95-test succeeds on Celo when derived from the 94 baseline',
     async () => {
       const proposal95Result = await getDerived95Result();
@@ -405,7 +401,7 @@ describe('Representative Wormhole rollout validation', () => {
     return derivedFollowupResultPromise;
   }
 
-  test(
+  tenderlyTest(
     'setup rollout succeeds on every representative lane',
     async () => {
       const setupResult = await getSetupResult();
@@ -423,7 +419,7 @@ describe('Representative Wormhole rollout validation', () => {
     EXTERNAL_API_TIMEOUT_MS,
   );
 
-  test(
+  tenderlyTest(
     'setup rollout produces derived baselines for mainnet and every representative lane',
     async () => {
       const setupResult = await getSetupResult();
@@ -446,7 +442,7 @@ describe('Representative Wormhole rollout validation', () => {
     EXTERNAL_API_TIMEOUT_MS,
   );
 
-  test(
+  tenderlyTest(
     'standalone follow-up rollout fails on every representative lane',
     async () => {
       const standaloneFollowupResult = await getStandaloneFollowupResult();
@@ -464,7 +460,7 @@ describe('Representative Wormhole rollout validation', () => {
     EXTERNAL_API_TIMEOUT_MS,
   );
 
-  test(
+  tenderlyTest(
     'derived follow-up rollout succeeds on every representative lane',
     async () => {
       const derivedFollowupResult = await getDerivedFollowupResult();
