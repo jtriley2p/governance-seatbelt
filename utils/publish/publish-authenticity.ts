@@ -106,27 +106,33 @@ export function verifyPublishMetadataSignature(
     }
   }
 
-  if (signedFields !== undefined) {
-    if (!Array.isArray(signedFields)) {
-      return {
-        status: 'invalid',
-        keyId,
-        algorithm,
-        reason: 'Publish signed_fields payload is malformed.',
-      };
-    }
+  if (signedFields === undefined) {
+    return {
+      status: 'invalid',
+      keyId,
+      algorithm,
+      reason: 'Publish signed_fields payload is missing.',
+    };
+  }
+  if (!Array.isArray(signedFields)) {
+    return {
+      status: 'invalid',
+      keyId,
+      algorithm,
+      reason: 'Publish signed_fields payload is malformed.',
+    };
+  }
 
-    if (
-      signedFields.length !== SIGNED_FIELDS.length ||
-      !SIGNED_FIELDS.every((field, index) => signedFields[index] === field)
-    ) {
-      return {
-        status: 'invalid',
-        keyId,
-        algorithm,
-        reason: 'Unsupported signed_fields in authenticity payload.',
-      };
-    }
+  if (
+    signedFields.length !== SIGNED_FIELDS.length ||
+    !SIGNED_FIELDS.every((field, index) => signedFields[index] === field)
+  ) {
+    return {
+      status: 'invalid',
+      keyId,
+      algorithm,
+      reason: 'Unsupported signed_fields in authenticity payload.',
+    };
   }
 
   if (!isHexSignature(signatureValue)) {

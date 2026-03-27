@@ -122,6 +122,17 @@ export const SUPPORTED_WORMHOLE_LANE_KEYS = Object.freeze(
   Object.keys(WORMHOLE_LANE_SUPPORT_MATRIX) as WormholeLaneKey[],
 );
 
+let wormholeSupportMatrixValidated = false;
+function assertWormholeSupportMatrixValid(): void {
+  if (wormholeSupportMatrixValidated) return;
+  wormholeSupportMatrixValidated = true;
+
+  const issues = getWormholeSupportMatrixIssues(WORMHOLE_LANE_SUPPORT_MATRIX);
+  if (issues.length > 0) {
+    throw new Error(`Invalid Wormhole support matrix:\n- ${issues.join('\n- ')}`);
+  }
+}
+
 function getWormholeLaneKeys(
   supportMatrix: Record<WormholeLaneKey, WormholeLaneSupport>,
 ): WormholeLaneKey[] {
@@ -129,16 +140,19 @@ function getWormholeLaneKeys(
 }
 
 export function getWormholeLaneByChainId(wormholeChainId: number): WormholeLaneSupport | undefined {
+  assertWormholeSupportMatrixValid();
   return SUPPORTED_WORMHOLE_LANE_KEYS.map((laneKey) => WORMHOLE_LANE_SUPPORT_MATRIX[laneKey]).find(
     (lane) => lane.wormholeChainId === wormholeChainId,
   );
 }
 
 export function getWormholeLaneByKey(laneKey: WormholeLaneKey): WormholeLaneSupport {
+  assertWormholeSupportMatrixValid();
   return WORMHOLE_LANE_SUPPORT_MATRIX[laneKey];
 }
 
 export function getAllSupportedWormholeSenderTargets(): readonly `0x${string}`[] {
+  assertWormholeSupportMatrixValid();
   return Array.from(
     new Set(
       SUPPORTED_WORMHOLE_LANE_KEYS.flatMap(

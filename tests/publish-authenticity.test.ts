@@ -54,6 +54,7 @@ describe('publish authenticity', () => {
         algorithm: 'hmac-sha256',
         key_id: 'k1',
         signature: '00',
+        signed_fields: ['publish_id', 'published_at', 'artifact_hash', 'relay_version'],
       },
     };
 
@@ -90,6 +91,20 @@ describe('publish authenticity', () => {
       keyId: 'k1',
       algorithm: 'rsa-sha256',
       reason: 'Unsupported authenticity algorithm.',
+    });
+  });
+
+  test('returns invalid when signed_fields is missing', () => {
+    const env = { SEATBELT_PUBLISH_HMAC_SECRET: 'test-secret', SEATBELT_PUBLISH_HMAC_KEY_ID: 'k1' };
+    const envelope = signPublishMetadata(baseMetadata, env)!;
+    const authenticity: Record<string, unknown> = { ...envelope, signed_fields: undefined };
+
+    const metadata = { ...baseMetadata, authenticity };
+    expect(verifyPublishMetadataSignature(metadata, env)).toEqual({
+      status: 'invalid',
+      keyId: 'k1',
+      algorithm: 'hmac-sha256',
+      reason: 'Publish signed_fields payload is missing.',
     });
   });
 

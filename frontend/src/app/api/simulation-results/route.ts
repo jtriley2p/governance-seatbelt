@@ -638,10 +638,15 @@ export async function GET(request: Request) {
       if (metadataUrl) {
         const metadataResponse = await readPublishMetadataFromUrl(metadataUrl, maxBytes);
         if (!isSimulationResultsSourceError(metadataResponse)) {
+          const metadataPublishId = readOptionalString(metadataResponse, 'publish_id');
+          const metadataArtifactHash = readOptionalString(metadataResponse, 'artifact_hash');
+          const metadataPublishedAt = readOptionalString(metadataResponse, 'published_at');
           publishLookup = {
-            publishId: publishIdParam ?? undefined,
+            publishId: publishIdParam ?? metadataPublishId ?? undefined,
             artifactUrl,
             metadataUrl,
+            artifactHash: metadataArtifactHash,
+            publishedAt: metadataPublishedAt,
           };
           publishMetadata = metadataResponse;
         }

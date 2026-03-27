@@ -63,6 +63,10 @@ type WormholeBatch = WormholeDestinationContext & {
   calls: CrossChainExecutionCall[];
 };
 
+type WormholeBatchDecodeResult =
+  | { kind: 'supported'; batch: WormholeBatch }
+  | { kind: 'unsupported'; wormholeChainId: number };
+
 function normalizeWormholeProposalTarget(target: string): string | null {
   try {
     return getAddress(target).toLowerCase();
@@ -123,7 +127,7 @@ function toWormholeBatchCalls(
   return calls;
 }
 
-function tryDecodeWormholeBatch(data: string): WormholeBatch | null {
+function tryDecodeWormholeBatch(data: string): WormholeBatchDecodeResult | null {
   try {
     if (!isHex(data)) return null;
 
@@ -140,12 +144,18 @@ function tryDecodeWormholeBatch(data: string): WormholeBatch | null {
       return null;
     }
 
-    const context = resolveWormholeDestinationContext(Number(wormholeChainId));
-    if (!context) return null;
+    const resolvedChainId = Number(wormholeChainId);
+    const context = resolveWormholeDestinationContext(resolvedChainId);
+    if (!context) {
+      return { kind: 'unsupported', wormholeChainId: resolvedChainId };
+    }
 
     return {
-      ...context,
-      calls: toWormholeBatchCalls(wormholeTargets, wormholeValues, wormholeDatas),
+      kind: 'supported',
+      batch: {
+        ...context,
+        calls: toWormholeBatchCalls(wormholeTargets, wormholeValues, wormholeDatas),
+      },
     };
   } catch {
     // Best-effort decode only; ignore malformed calldata and keep scanning.
@@ -171,16 +181,21 @@ export function extractWormholeExecutionJobsFromProposal(
     const data = calldatas[i];
     if (!target || !isKnownWormholeProposalCall(target, data)) continue;
 
-    const batch = tryDecodeWormholeBatch(data);
-    if (!batch) continue;
+    const decodedBatch = tryDecodeWormholeBatch(data);
+    if (!decodedBatch) continue;
+    if (decodedBatch.kind === 'unsupported') {
+      throw new Error(
+        `Unsupported Wormhole chain id ${decodedBatch.wormholeChainId} in proposal calldata index ${i}`,
+      );
+    }
 
     jobs.push({
       bridgeType: 'WormholeL1L2',
-      destinationChainId: batch.destinationChainId,
-      l2FromAddress: batch.l2FromAddress,
-      wormholeChainId: batch.wormholeChainId,
+      destinationChainId: decodedBatch.batch.destinationChainId,
+      l2FromAddress: decodedBatch.batch.l2FromAddress,
+      wormholeChainId: decodedBatch.batch.wormholeChainId,
       sourceOrder: i,
-      calls: batch.calls,
+      calls: decodedBatch.batch.calls,
     });
   }
 

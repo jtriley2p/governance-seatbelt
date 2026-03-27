@@ -116,7 +116,7 @@ describe('wormhole proposal parser', () => {
     expect(jobs).toHaveLength(0);
   });
 
-  test('ignores unsupported wormhole chain ids without dropping later valid jobs', () => {
+  test('surfaces unsupported wormhole chain ids as errors', () => {
     const unsupportedCalldata = encodeFunctionData({
       abi: WORMHOLE_SEND_MESSAGE_ABI,
       functionName: 'sendMessage',
@@ -140,16 +140,15 @@ describe('wormhole proposal parser', () => {
       ],
     });
 
-    const jobs = extractWormholeExecutionJobsFromProposal(
-      [
-        getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a'),
-        getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a'),
-      ],
-      [unsupportedCalldata, calldata],
-    );
-
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0]?.wormholeChainId).toBe(14);
+    expect(() =>
+      extractWormholeExecutionJobsFromProposal(
+        [
+          getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a'),
+          getAddress('0xf5F4496219F31CDCBa6130B5402873624585615a'),
+        ],
+        [unsupportedCalldata, calldata],
+      ),
+    ).toThrow('Unsupported Wormhole chain id 999 in proposal calldata index 0');
   });
 
   test('does not parse wormhole messages when sendMessage array lengths are inconsistent', () => {
