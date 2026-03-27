@@ -113,6 +113,10 @@ function readErrorMessage(payload: unknown): string | null {
   return typeof error === 'string' ? error : null;
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 function readMarkdownReport(payload: unknown): string | null {
   if (!Array.isArray(payload) || payload.length === 0) return null;
 
@@ -145,9 +149,9 @@ function readStructuredReportMetadata(payload: unknown): Record<string, unknown>
   }
 
   const metadata = Reflect.get(structuredReport, 'metadata');
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  if (!isPlainRecord(metadata)) return null;
 
-  return metadata as Record<string, unknown>;
+  return metadata;
 }
 
 function readStructuredReportPublishMetadata(payload: unknown): unknown | null {
