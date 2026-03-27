@@ -26,11 +26,11 @@ type SimulationResultsSourceError = {
 };
 
 type PublishLookupRecord = {
-  publishId?: string;
+  publishId: string;
   artifactUrl: string;
-  metadataUrl?: string;
-  artifactHash?: string;
-  publishedAt?: string;
+  metadataUrl: string;
+  artifactHash: string;
+  publishedAt: string;
 };
 
 type ParsedSimulationResults = {
@@ -207,17 +207,18 @@ async function resolvePublishLookupFromPublishId(
       return { error: 'Relay publish lookup is missing artifactUrl', status: 502 };
     }
 
-    const metadataUrl = Reflect.get(payload, 'metadataUrl');
-    const artifactHash = Reflect.get(payload, 'artifactHash');
-    const publishedAt = Reflect.get(payload, 'publishedAt');
-
-    return {
+    const publishLookupRecord = buildPublishLookupRecord({
       publishId,
       artifactUrl,
-      metadataUrl: typeof metadataUrl === 'string' ? metadataUrl : undefined,
-      artifactHash: typeof artifactHash === 'string' ? artifactHash : undefined,
-      publishedAt: typeof publishedAt === 'string' ? publishedAt : undefined,
-    };
+      metadataUrl: readOptionalString(payload as Record<string, unknown>, 'metadataUrl'),
+      artifactHash: readOptionalString(payload as Record<string, unknown>, 'artifactHash'),
+      publishedAt: readOptionalString(payload as Record<string, unknown>, 'publishedAt'),
+    });
+    if (!publishLookupRecord) {
+      return { error: 'Relay publish lookup is missing required provenance fields', status: 502 };
+    }
+
+    return publishLookupRecord;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       return { error: 'Publish lookup timed out', status: 504 };
@@ -479,6 +480,26 @@ function readOptionalString(record: Record<string, unknown>, key: string): strin
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function buildPublishLookupRecord(input: {
+  publishId?: string;
+  artifactUrl: string;
+  metadataUrl?: string;
+  artifactHash?: string;
+  publishedAt?: string;
+}): PublishLookupRecord | null {
+  if (!input.publishId || !input.metadataUrl || !input.artifactHash || !input.publishedAt) {
+    return null;
+  }
+
+  return {
+    publishId: input.publishId,
+    artifactUrl: input.artifactUrl,
+    metadataUrl: input.metadataUrl,
+    artifactHash: input.artifactHash,
+    publishedAt: input.publishedAt,
+  };
+}
+
 function mergeTrustMetadata(
   structuredReport: Record<string, unknown>,
   additions: { warningReasons?: string[]; blockingReasons?: string[] },
@@ -523,11 +544,7 @@ function attachPublishMetadata(
     const metadata = structuredReport.metadata;
     if (!isPlainRecord(metadata)) continue;
 
-    if (
-      publishLookup.artifactHash &&
-      artifactHashFromFetch &&
-      artifactHashFromFetch !== publishLookup.artifactHash
-    ) {
+    if (artifactHashFromFetch && artifactHashFromFetch !== publishLookup.artifactHash) {
       mergeTrustMetadata(structuredReport, {
         blockingReasons: [
           'Published artifact hash does not match fetched simulation-results.json.',
@@ -543,30 +560,22 @@ function attachPublishMetadata(
       const metadataArtifactHash = readOptionalString(publishMetadata, 'artifact_hash');
       const metadataPublishedAt = readOptionalString(publishMetadata, 'published_at');
 
-      if (publishLookup.publishId) {
-        if (!metadataPublishId) {
-          bindingWarningReasons.push('Publish metadata is missing publish_id.');
-        } else if (metadataPublishId !== publishLookup.publishId) {
-          bindingBlockingReasons.push('Publish metadata publish_id does not match relay lookup.');
-        }
+      if (!metadataPublishId) {
+        bindingWarningReasons.push('Publish metadata is missing publish_id.');
+      } else if (metadataPublishId !== publishLookup.publishId) {
+        bindingBlockingReasons.push('Publish metadata publish_id does not match relay lookup.');
       }
 
-      if (publishLookup.artifactHash) {
-        if (!metadataArtifactHash) {
-          bindingWarningReasons.push('Publish metadata is missing artifact_hash.');
-        } else if (metadataArtifactHash !== publishLookup.artifactHash) {
-          bindingBlockingReasons.push(
-            'Publish metadata artifact_hash does not match relay lookup.',
-          );
-        }
+      if (!metadataArtifactHash) {
+        bindingWarningReasons.push('Publish metadata is missing artifact_hash.');
+      } else if (metadataArtifactHash !== publishLookup.artifactHash) {
+        bindingBlockingReasons.push('Publish metadata artifact_hash does not match relay lookup.');
       }
 
-      if (publishLookup.publishedAt) {
-        if (!metadataPublishedAt) {
-          bindingWarningReasons.push('Publish metadata is missing published_at.');
-        } else if (metadataPublishedAt !== publishLookup.publishedAt) {
-          bindingWarningReasons.push('Publish metadata published_at differs from relay lookup.');
-        }
+      if (!metadataPublishedAt) {
+        bindingWarningReasons.push('Publish metadata is missing published_at.');
+      } else if (metadataPublishedAt !== publishLookup.publishedAt) {
+        bindingWarningReasons.push('Publish metadata published_at differs from relay lookup.');
       }
 
       if (bindingBlockingReasons.length > 0) {
@@ -643,13 +652,13 @@ export async function GET(request: Request) {
           const metadataPublishId = readOptionalString(metadataResponse, 'publish_id');
           const metadataArtifactHash = readOptionalString(metadataResponse, 'artifact_hash');
           const metadataPublishedAt = readOptionalString(metadataResponse, 'published_at');
-          publishLookup = {
+          publishLookup = buildPublishLookupRecord({
             publishId: publishIdParam ?? metadataPublishId ?? undefined,
             artifactUrl,
             metadataUrl,
             artifactHash: metadataArtifactHash,
             publishedAt: metadataPublishedAt,
-          };
+          });
           publishMetadata = metadataResponse;
         }
       }
@@ -685,14 +694,12 @@ export async function GET(request: Request) {
         results = artifactResults.parsedBody;
         artifactHashFromFetch = artifactResults.rawBodyHash;
       }
-      if (resolvedPublishLookup.metadataUrl) {
-        const metadataResponse = await readPublishMetadataFromUrl(
-          resolvedPublishLookup.metadataUrl,
-          maxBytes,
-        );
-        if (!isSimulationResultsSourceError(metadataResponse)) {
-          publishMetadata = metadataResponse;
-        }
+      const metadataResponse = await readPublishMetadataFromUrl(
+        resolvedPublishLookup.metadataUrl,
+        maxBytes,
+      );
+      if (!isSimulationResultsSourceError(metadataResponse)) {
+        publishMetadata = metadataResponse;
       }
     } else {
       results = readSimulationResultsFromLocalFile(maxBytes);

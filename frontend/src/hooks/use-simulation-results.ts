@@ -220,11 +220,11 @@ export interface PublishAuthenticityMetadata {
 }
 
 export interface PublishArtifactMetadata {
-  publishId?: string;
-  artifactHash?: string;
-  artifactUrl?: string;
-  metadataUrl?: string;
-  publishedAt?: string;
+  publishId: string;
+  artifactHash: string;
+  artifactUrl: string;
+  metadataUrl: string;
+  publishedAt: string;
   authenticity?: PublishAuthenticityMetadata;
 }
 
