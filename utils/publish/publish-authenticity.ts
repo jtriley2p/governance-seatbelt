@@ -1,4 +1,5 @@
 import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
+import { isHex } from 'viem';
 
 type OpenJsonObject = Record<string, unknown>;
 
@@ -26,10 +27,6 @@ export function readNonEmptyEnv(
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function isHexSignature(value: string): boolean {
-  return value.length % 2 === 0 && /^[0-9a-f]+$/i.test(value);
-}
-
 function buildSignedPayload(metadata: OpenJsonObject): string {
   return SIGNED_FIELDS.map((field) => `${field}=${String(metadata[field] ?? '')}`).join('\n');
 }
@@ -44,7 +41,7 @@ export function signPublishMetadata(
   const keyId = readNonEmptyEnv(env, 'SEATBELT_PUBLISH_ED25519_KEY_ID') ?? 'default';
   const payload = Buffer.from(buildSignedPayload(metadata));
   const privateKey = createPrivateKey(ed25519PrivateKey);
-  const signature = sign(null, payload, privateKey).toString('hex');
+  const signature = `0x${sign(null, payload, privateKey).toString('hex')}`;
 
   return {
     algorithm: 'ed25519',
@@ -113,7 +110,7 @@ export function verifyPublishMetadataSignature(
     };
   }
 
-  if (!isHexSignature(signatureValue)) {
+  if (!isHex(signatureValue, { strict: true })) {
     return { status: 'invalid', keyId, algorithm, reason: 'Publish signature is not valid hex.' };
   }
 
@@ -126,7 +123,7 @@ export function verifyPublishMetadataSignature(
   }
 
   const payload = Buffer.from(buildSignedPayload(metadata));
-  const providedSignature = Buffer.from(signatureValue, 'hex');
+  const providedSignature = Buffer.from(signatureValue.slice(2), 'hex');
 
   try {
     const publicKey = createPublicKey(publicKeyPem);

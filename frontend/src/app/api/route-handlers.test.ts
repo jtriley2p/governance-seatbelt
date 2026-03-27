@@ -405,6 +405,9 @@ describe('/api/simulation-results', () => {
           JSON.stringify({
             publishId: '11111111-1111-4111-8111-111111111111',
             artifactUrl: 'https://seatbelt-publish.vercel.app/simulation-results.json',
+            metadataUrl: 'https://seatbelt-publish.vercel.app/publish-metadata.json',
+            artifactHash: 'hash-from-relay',
+            publishedAt: '2026-03-26T00:00:00.000Z',
           }),
           {
             status: 200,
@@ -473,7 +476,7 @@ describe('/api/simulation-results', () => {
             authenticity: {
               algorithm: 'ed25519',
               key_id: 'k1',
-              signature: '00',
+              signature: '0x00',
               signed_fields: ['publish_id', 'published_at', 'artifact_hash', 'relay_version'],
             },
           }),
@@ -521,6 +524,7 @@ describe('/api/simulation-results', () => {
           JSON.stringify({
             publishId: '11111111-1111-4111-8111-111111111111',
             artifactUrl: 'https://seatbelt-publish.vercel.app/simulation-results.json',
+            metadataUrl: 'https://seatbelt-publish.vercel.app/publish-metadata.json',
             artifactHash: 'not-the-real-hash',
             publishedAt: '2026-03-26T00:00:00.000Z',
           }),

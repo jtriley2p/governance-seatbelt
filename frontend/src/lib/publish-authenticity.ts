@@ -1,4 +1,5 @@
 import { createPublicKey, verify } from 'node:crypto';
+import { isHex } from 'viem';
 
 type OpenJsonObject = Record<string, unknown>;
 
@@ -32,10 +33,6 @@ function readNonEmptyEnv(
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function isHexSignature(value: string): boolean {
-  return value.length % 2 === 0 && /^[0-9a-f]+$/i.test(value);
 }
 
 function buildSignedPayload(metadata: OpenJsonObject): string {
@@ -96,7 +93,7 @@ export function verifyPublishMetadataSignature(
     };
   }
 
-  if (!isHexSignature(signatureValue)) {
+  if (!isHex(signatureValue, { strict: true })) {
     return { status: 'invalid', keyId, algorithm, reason: 'Publish signature is not valid hex.' };
   }
 
@@ -109,7 +106,7 @@ export function verifyPublishMetadataSignature(
   }
 
   const payload = Buffer.from(buildSignedPayload(metadata));
-  const providedSignature = Buffer.from(signatureValue, 'hex');
+  const providedSignature = Buffer.from(signatureValue.slice(2), 'hex');
 
   try {
     const publicKey = createPublicKey(publicKeyPem);

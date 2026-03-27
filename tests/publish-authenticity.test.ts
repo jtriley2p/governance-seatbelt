@@ -63,7 +63,7 @@ describe('publish authenticity', () => {
       authenticity: {
         algorithm: 'ed25519',
         key_id: 'k-ed',
-        signature: '00',
+        signature: '0x00',
         signed_fields: ['publish_id', 'published_at', 'artifact_hash', 'relay_version'],
       },
     };
@@ -90,7 +90,7 @@ describe('publish authenticity', () => {
       authenticity: {
         algorithm: 'rsa-sha256',
         key_id: 'k1',
-        signature: '00',
+        signature: '0x00',
       },
     };
 

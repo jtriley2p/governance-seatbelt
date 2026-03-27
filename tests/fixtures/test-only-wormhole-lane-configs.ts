@@ -1,8 +1,8 @@
 import { encodeFunctionData, getAddress, parseAbi } from 'viem';
 import type { SimulationConfigNew } from '../../types';
 import {
-  SUPPORTED_WORMHOLE_LANE_KEYS,
   WORMHOLE_LANE_SUPPORT_MATRIX,
+  type WormholeLaneKey,
   type WormholeLaneValidationTargets,
 } from '../../utils/bridges/wormhole-support';
 import {
@@ -34,15 +34,14 @@ export const REPRESENTATIVE_WORMHOLE_ROLLOUT_LANE_KEYS = [
   Extract<TestOnlyWormholeLaneKey, 'bnb' | 'polygon' | 'avalanche' | 'monad' | 'tempo'>
 >;
 
-export const LIVE_WORMHOLE_LANE_VALIDATION_TARGETS: Record<
-  (typeof SUPPORTED_WORMHOLE_LANE_KEYS)[number],
-  WormholeLaneValidationTargets
-> = Object.fromEntries(
-  SUPPORTED_WORMHOLE_LANE_KEYS.map((laneKey) => [
-    laneKey,
-    WORMHOLE_LANE_SUPPORT_MATRIX[laneKey].validationTargets,
-  ]),
-) as Record<(typeof SUPPORTED_WORMHOLE_LANE_KEYS)[number], WormholeLaneValidationTargets>;
+export const LIVE_WORMHOLE_LANE_VALIDATION_TARGETS = {
+  bnb: WORMHOLE_LANE_SUPPORT_MATRIX.bnb.validationTargets,
+  polygon: WORMHOLE_LANE_SUPPORT_MATRIX.polygon.validationTargets,
+  avalanche: WORMHOLE_LANE_SUPPORT_MATRIX.avalanche.validationTargets,
+  celo: WORMHOLE_LANE_SUPPORT_MATRIX.celo.validationTargets,
+  monad: WORMHOLE_LANE_SUPPORT_MATRIX.monad.validationTargets,
+  tempo: WORMHOLE_LANE_SUPPORT_MATRIX.tempo.validationTargets,
+} satisfies Record<WormholeLaneKey, WormholeLaneValidationTargets>;
 
 function buildWormholeProposalCall(
   laneKey: TestOnlyWormholeLaneKey,
