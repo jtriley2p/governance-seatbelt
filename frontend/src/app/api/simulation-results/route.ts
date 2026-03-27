@@ -198,7 +198,7 @@ async function resolvePublishLookupFromPublishId(
     }
 
     const payload = (await response.json()) as unknown;
-    if (!payload || typeof payload !== 'object') {
+    if (!isPlainRecord(payload)) {
       return { error: 'Relay returned invalid publish lookup payload', status: 502 };
     }
 
@@ -210,9 +210,9 @@ async function resolvePublishLookupFromPublishId(
     const publishLookupRecord = buildPublishLookupRecord({
       publishId,
       artifactUrl,
-      metadataUrl: readOptionalString(payload as Record<string, unknown>, 'metadataUrl'),
-      artifactHash: readOptionalString(payload as Record<string, unknown>, 'artifactHash'),
-      publishedAt: readOptionalString(payload as Record<string, unknown>, 'publishedAt'),
+      metadataUrl: readOptionalString(payload, 'metadataUrl'),
+      artifactHash: readOptionalString(payload, 'artifactHash'),
+      publishedAt: readOptionalString(payload, 'publishedAt'),
     });
     if (!publishLookupRecord) {
       return { error: 'Relay publish lookup is missing required provenance fields', status: 502 };
