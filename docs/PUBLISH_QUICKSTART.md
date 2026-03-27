@@ -37,6 +37,14 @@ Canonical share links should use:
 - `<viewerUrl>/p/<publishId>` (preferred)
 - `<viewerUrl>?artifact=<artifactUrl>` (automatic fallback if publish lookup is unavailable)
 
+Authenticity notes:
+
+- Relay-side signing is controlled by `SEATBELT_PUBLISH_ED25519_PRIVATE_KEY`.
+- Viewer-side verification is controlled by `SEATBELT_PUBLISH_ED25519_PUBLIC_KEY`.
+- If signing is not configured, published reports show authenticity as `unsigned`.
+- If verification is not configured on the viewer, hosted reports show authenticity as `unconfigured`.
+- Operator setup details are in `docs/PUBLISH_RELAY_OPS.md`.
+
 ## 2) Optional custom paths
 
 ```bash

@@ -91,6 +91,16 @@ Artifact alias prerequisites:
 - Configure DNS for those records in the domain provider
 - Relay token/org/project must have permission to create deployment aliases
 
+## Report authenticity
+
+Published artifacts can optionally carry an `ed25519` authenticity envelope in
+`publish-metadata.json`.
+
+- Relay signs publish metadata when `SEATBELT_PUBLISH_ED25519_PRIVATE_KEY` is configured.
+- Viewer verifies publish metadata when `SEATBELT_PUBLISH_ED25519_PUBLIC_KEY` is configured.
+- If relay signing is not configured, publishes remain valid but are marked `unsigned`.
+- If viewer verification is not configured, hosted reports show authenticity as `unconfigured`.
+
 ## Failure model
 
 - Invalid JSON/schema/artifact contract => `400`
@@ -125,6 +135,29 @@ export VERCEL_ORG_ID="$SEATBELT_RELAY_VERCEL_ORG_ID"
 Important:
 - `SEATBELT_VIEWER_URL` should point to a stable viewer app URL (project/domain dedicated to frontend).
 - Do not point `SEATBELT_VIEWER_URL` at rotating artifact deployment aliases.
+
+Optional authenticity signing on relay:
+
+```bash
+# Sign publish-metadata.json with ed25519
+export SEATBELT_PUBLISH_ED25519_PRIVATE_KEY="<pem>"
+
+# Optional label surfaced in viewer/debug output
+export SEATBELT_PUBLISH_ED25519_KEY_ID="default"
+```
+
+Viewer verification:
+
+Set this on the `seatbelt-viewer` deployment if you want hosted reports to verify relay signatures:
+
+```bash
+export SEATBELT_PUBLISH_ED25519_PUBLIC_KEY="<pem>"
+```
+
+Operational notes:
+- Relay private key and viewer public key must be the matching keypair.
+- `SEATBELT_PUBLISH_ED25519_KEY_ID` is descriptive only. It does not select a key automatically.
+- If you rotate keys, update both relay and viewer.
 
 Optional tuning:
 
