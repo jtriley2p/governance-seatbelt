@@ -7,7 +7,10 @@ import {
   type PublishableSimulationResult,
   validatePublishArtifact,
 } from '../utils/publish/artifact-validator.js';
-import { signPublishMetadata } from '../utils/publish/publish-authenticity.js';
+import {
+  type PublishAuthenticityEnvelope,
+  signPublishMetadata,
+} from '../utils/publish/publish-authenticity.js';
 import { computeArtifactHash, createPublishMetadata } from '../utils/publish/publish-metadata.js';
 
 type OpenJsonObject = Record<string, unknown>;
@@ -25,12 +28,7 @@ type RelayPublishLogEntry = {
   source_publish_id?: string;
   source_published_at?: string;
   provenance?: OpenJsonObject;
-  authenticity?: {
-    algorithm: 'hmac-sha256';
-    key_id: string;
-    signature: string;
-    signed_fields: readonly ['publish_id', 'published_at', 'artifact_hash', 'relay_version'];
-  };
+  authenticity?: PublishAuthenticityEnvelope;
 };
 
 type RelaySuccessResponse = {

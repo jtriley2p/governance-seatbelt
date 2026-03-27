@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { generateKeyPairSync } from 'node:crypto';
 import {
   signPublishMetadata,
   verifyPublishMetadataSignature,
@@ -89,6 +90,32 @@ describe('publish authenticity', () => {
       keyId: 'k1',
       algorithm: 'rsa-sha256',
       reason: 'Unsupported authenticity algorithm.',
+    });
+  });
+
+  test('signs and verifies metadata with ed25519 when configured', () => {
+    const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+    const env = {
+      SEATBELT_PUBLISH_ED25519_PRIVATE_KEY: privateKey
+        .export({ format: 'pem', type: 'pkcs8' })
+        .toString(),
+      SEATBELT_PUBLISH_ED25519_PUBLIC_KEY: publicKey
+        .export({ format: 'pem', type: 'spki' })
+        .toString(),
+      SEATBELT_PUBLISH_ED25519_KEY_ID: 'k-ed',
+    };
+
+    const envelope = signPublishMetadata(baseMetadata, env);
+    expect(envelope).toBeDefined();
+    expect(envelope?.algorithm).toBe('ed25519');
+    expect(envelope?.key_id).toBe('k-ed');
+    expect(envelope?.signature).toMatch(/^[0-9a-f]+$/i);
+
+    const metadata = { ...baseMetadata, authenticity: envelope };
+    expect(verifyPublishMetadataSignature(metadata, env)).toEqual({
+      status: 'verified',
+      keyId: 'k-ed',
+      algorithm: 'ed25519',
     });
   });
 });

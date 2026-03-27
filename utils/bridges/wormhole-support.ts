@@ -155,6 +155,16 @@ export function getWormholeSupportMatrixIssues(
   const seenWormholeChainIds = new Set<number>();
   const seenDestinationChainIds = new Set<number>();
 
+  function isValidAddress(value: unknown): boolean {
+    if (typeof value !== 'string') return false;
+    try {
+      getAddress(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   for (const laneKey of getWormholeLaneKeys(supportMatrix)) {
     const lane = supportMatrix[laneKey];
     if (seenWormholeChainIds.has(lane.wormholeChainId)) {
@@ -171,14 +181,61 @@ export function getWormholeSupportMatrixIssues(
       issues.push(`Lane ${lane.key} has no recognized Wormhole sender targets`);
     }
 
+    if (!isValidAddress(lane.l2FromAddress)) {
+      issues.push(`Lane ${lane.key} has invalid l2FromAddress`);
+    }
+
+    for (const target of lane.senderTargets) {
+      if (!isValidAddress(target)) {
+        issues.push(`Lane ${lane.key} has invalid sender target ${String(target)}`);
+      }
+    }
+
     if (!lane.validationTargets.v2Factory) {
       issues.push(`Lane ${lane.key} is missing required v2 validation target`);
+    }
+    if (!isValidAddress(lane.validationTargets.v2Factory)) {
+      issues.push(`Lane ${lane.key} has invalid v2Factory validation target`);
+    }
+    if (
+      lane.validationTargets.v3Factory !== undefined &&
+      !isValidAddress(lane.validationTargets.v3Factory)
+    ) {
+      issues.push(`Lane ${lane.key} has invalid v3Factory validation target`);
+    }
+    if (
+      lane.validationTargets.v4PoolManager !== undefined &&
+      !isValidAddress(lane.validationTargets.v4PoolManager)
+    ) {
+      issues.push(`Lane ${lane.key} has invalid v4PoolManager validation target`);
+    }
+
+    if (lane.executionMode === 'direct') {
+      if (lane.wormholeReceiverCoreAddress !== undefined) {
+        issues.push(`Lane ${lane.key} is direct-mode but defines wormhole receiver core`);
+      }
+      if (lane.legacyPayloadVersion !== undefined) {
+        issues.push(`Lane ${lane.key} is direct-mode but defines legacy payload version`);
+      }
+      if (lane.legacyNextSequenceStorageSlot !== undefined) {
+        issues.push(`Lane ${lane.key} is direct-mode but defines legacy sequence storage slot`);
+      }
     }
 
     if (lane.executionMode === 'receiver-modern' && !lane.wormholeReceiverCoreAddress) {
       issues.push(
         `Lane ${lane.key} uses modern receiver mode but is missing wormhole receiver core`,
       );
+    }
+    if (lane.executionMode === 'receiver-modern') {
+      if (lane.legacyPayloadVersion !== undefined) {
+        issues.push(`Lane ${lane.key} is modern receiver-mode but defines legacy payload version`);
+      }
+      if (lane.legacyNextSequenceStorageSlot !== undefined) {
+        issues.push(
+          `Lane ${lane.key} is modern receiver-mode but defines legacy sequence storage slot`,
+        );
+      }
     }
 
     if (lane.executionMode === 'receiver-legacy') {
@@ -195,6 +252,13 @@ export function getWormholeSupportMatrixIssues(
           `Lane ${lane.key} uses legacy receiver mode but is missing next sequence storage slot`,
         );
       }
+    }
+
+    if (
+      lane.wormholeReceiverCoreAddress !== undefined &&
+      !isValidAddress(lane.wormholeReceiverCoreAddress)
+    ) {
+      issues.push(`Lane ${lane.key} has invalid wormhole receiver core address`);
     }
   }
 
