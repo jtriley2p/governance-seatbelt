@@ -148,9 +148,14 @@ export const WORMHOLE_LANE_SUPPORT_MATRIX: Record<WormholeLaneKey, WormholeLaneS
   },
 };
 
-export const SUPPORTED_WORMHOLE_LANE_KEYS = Object.freeze(
-  Object.keys(WORMHOLE_LANE_SUPPORT_MATRIX) as WormholeLaneKey[],
-);
+export const SUPPORTED_WORMHOLE_LANE_KEYS = [
+  'bnb',
+  'polygon',
+  'avalanche',
+  'celo',
+  'monad',
+  'tempo',
+] as const satisfies readonly WormholeLaneKey[];
 
 let wormholeSupportMatrixValidated = false;
 function assertWormholeSupportMatrixValid(): void {
