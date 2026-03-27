@@ -4,6 +4,26 @@ type OpenJsonObject = Record<string, unknown>;
 
 const SIGNED_FIELDS = ['publish_id', 'published_at', 'artifact_hash', 'relay_version'] as const;
 
+export type PublishAuthenticityVerificationResult =
+  | {
+      status: 'verified';
+      algorithm: 'ed25519';
+      keyId: string;
+      reason?: undefined;
+    }
+  | {
+      status: 'unsigned' | 'unconfigured';
+      reason: string;
+      keyId?: undefined;
+      algorithm?: undefined;
+    }
+  | {
+      status: 'invalid';
+      reason: string;
+      keyId?: string;
+      algorithm?: string;
+    };
+
 function readNonEmptyEnv(
   env: Record<string, string | undefined>,
   name: string,
@@ -25,12 +45,7 @@ function buildSignedPayload(metadata: OpenJsonObject): string {
 export function verifyPublishMetadataSignature(
   metadata: OpenJsonObject,
   env: Record<string, string | undefined>,
-): {
-  status: 'verified' | 'unsigned' | 'invalid' | 'unconfigured';
-  keyId?: string;
-  algorithm?: string;
-  reason?: string;
-} {
+): PublishAuthenticityVerificationResult {
   const authenticity = metadata.authenticity;
   if (!authenticity || typeof authenticity !== 'object') {
     return { status: 'unsigned', reason: 'Publish metadata is not signed.' };

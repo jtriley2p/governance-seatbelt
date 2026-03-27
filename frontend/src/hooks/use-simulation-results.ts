@@ -212,12 +212,25 @@ export interface ReportTrustMetadata {
 
 export type PublishAuthenticityStatus = 'verified' | 'unsigned' | 'invalid' | 'unconfigured';
 
-export interface PublishAuthenticityMetadata {
-  status: PublishAuthenticityStatus;
-  reason?: string;
-  keyId?: string;
-  algorithm?: string;
-}
+export type PublishAuthenticityMetadata =
+  | {
+      status: 'verified';
+      algorithm: 'ed25519';
+      keyId: string;
+      reason?: undefined;
+    }
+  | {
+      status: 'unsigned' | 'unconfigured';
+      reason: string;
+      keyId?: undefined;
+      algorithm?: undefined;
+    }
+  | {
+      status: 'invalid';
+      reason: string;
+      keyId?: string;
+      algorithm?: string;
+    };
 
 export interface PublishArtifactMetadata {
   publishId: string;
@@ -225,7 +238,7 @@ export interface PublishArtifactMetadata {
   artifactUrl: string;
   metadataUrl: string;
   publishedAt: string;
-  authenticity?: PublishAuthenticityMetadata;
+  authenticity: PublishAuthenticityMetadata;
 }
 
 export interface StructuredSimulationReport {
