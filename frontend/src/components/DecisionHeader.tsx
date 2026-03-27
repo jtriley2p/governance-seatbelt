@@ -52,6 +52,10 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
   const tenderlyUrl = report.metadata.tenderlyUrl;
   const trust = report.metadata.trust;
   const publish = report.metadata.publish;
+  const publishedAtLabel = publish?.publishedAt ? formatIsoLocalTime(publish.publishedAt) : null;
+  const authenticityLabel = publish?.authenticity
+    ? formatAuthenticityLabel(publish.authenticity.algorithm, publish.authenticity.keyId)
+    : null;
 
   const repoName = repoUrl ? repoUrl.split('/').slice(-2).join('/') : 'Repository';
 
@@ -180,6 +184,14 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
                     Authenticity: {publish.authenticity.status}
                   </Badge>
                 )}
+                {publishedAtLabel && (
+                  <span className="text-xs text-muted-foreground">
+                    Published {publishedAtLabel}
+                  </span>
+                )}
+                {authenticityLabel && (
+                  <span className="text-xs text-muted-foreground">{authenticityLabel}</span>
+                )}
                 {publish?.artifactUrl && (
                   <a
                     href={publish.artifactUrl}
@@ -306,6 +318,12 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
               {publish?.authenticity?.reason ?? 'No publish provenance'}
             </span>
           )}
+          {publishedAtLabel && (
+            <span className="text-xs text-muted-foreground">{publishedAtLabel}</span>
+          )}
+          {authenticityLabel && (
+            <span className="text-xs text-muted-foreground">{authenticityLabel}</span>
+          )}
         </StatItem>
       </div>
     </div>
@@ -362,6 +380,25 @@ function formatLocalTime(timestamp: string): string {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function formatIsoLocalTime(timestamp: string): string {
+  const ts = Date.parse(timestamp);
+  if (Number.isNaN(ts)) return timestamp;
+
+  return new Date(ts).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatAuthenticityLabel(algorithm?: string, keyId?: string): string | null {
+  if (!algorithm && !keyId) return null;
+  if (algorithm && keyId) return `Verified via ${algorithm} / ${keyId}`;
+  if (algorithm) return `Verified via ${algorithm}`;
+  return `Verification key ${keyId}`;
 }
 
 const STATUS_TOOLTIPS = {

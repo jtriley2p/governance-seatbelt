@@ -184,7 +184,13 @@ function ActionSection({ isConnected }: { isConnected: boolean }) {
               {publish?.publishedAt && (
                 <span>published {new Date(publish.publishedAt).toLocaleString()}</span>
               )}
-              {publish?.authenticity && <span>authenticity {publish.authenticity.status}</span>}
+              {publish?.authenticity && (
+                <span>
+                  authenticity {publish.authenticity.status}
+                  {publish.authenticity.algorithm ? ` via ${publish.authenticity.algorithm}` : ''}
+                  {publish.authenticity.keyId ? ` / ${publish.authenticity.keyId}` : ''}
+                </span>
+              )}
               {publish?.artifactUrl && (
                 <a
                   href={publish.artifactUrl}
