@@ -95,9 +95,6 @@ jobs:
         with:
           bun-version: ${{ steps.bun-version.outputs.version }}
 
-      - name: Install root dependencies (for shared utils imports)
-        run: bun install --frozen-lockfile
-
       - name: Install frontend dependencies
         run: cd frontend && bun install --frozen-lockfile
 
@@ -128,7 +125,7 @@ jobs:
       - name: Run frontend build in isolated deployment context
         run: |
           temp_dir="$(mktemp -d)"
-          git archive --format=tar HEAD frontend shared | tar -xf - -C "$temp_dir"
+          git archive --format=tar HEAD frontend | tar -xf - -C "$temp_dir"
           cd "$temp_dir/frontend"
           bun install --frozen-lockfile
           bun run build
