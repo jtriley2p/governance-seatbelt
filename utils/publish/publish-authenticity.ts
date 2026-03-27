@@ -1,5 +1,6 @@
 import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
 import { isHex } from 'viem';
+import { readNonEmptyEnv } from '../env';
 
 type OpenJsonObject = Record<string, unknown>;
 
@@ -16,16 +17,6 @@ const SIGNED_FIELDS = [
   'artifact_hash',
   'relay_version',
 ] as const satisfies PublishAuthenticityEnvelope['signed_fields'];
-
-export function readNonEmptyEnv(
-  env: Record<string, string | undefined>,
-  name: string,
-): string | undefined {
-  const value = env[name];
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
 
 function buildSignedPayload(metadata: OpenJsonObject): string {
   return SIGNED_FIELDS.map((field) => `${field}=${String(metadata[field] ?? '')}`).join('\n');

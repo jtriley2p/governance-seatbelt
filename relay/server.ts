@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { readNonEmptyEnv, readPrimaryOrAliasEnv } from '../utils/env.js';
 import {
   PublishArtifactValidationError,
   type PublishableSimulationResult,
@@ -171,36 +172,6 @@ class RelayPublishTimeoutError extends Error {
     this.name = 'RelayPublishTimeoutError';
     this.timeoutMs = timeoutMs;
   }
-}
-
-function readNonEmptyEnv(
-  env: Record<string, string | undefined>,
-  name: string,
-): string | undefined {
-  const value = env[name];
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return undefined;
-  }
-
-  return trimmed;
-}
-
-function readPrimaryOrAliasEnv(
-  env: Record<string, string | undefined>,
-  primaryName: string,
-  aliasName: string,
-): string | undefined {
-  const primaryValue = readNonEmptyEnv(env, primaryName);
-  if (primaryValue) {
-    return primaryValue;
-  }
-
-  return readNonEmptyEnv(env, aliasName);
 }
 
 function readBooleanFlag(value: string | undefined, defaultValue: boolean): boolean {

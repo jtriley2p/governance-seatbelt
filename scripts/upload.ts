@@ -9,6 +9,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
+import { readNonEmptyEnv, readPrimaryOrAliasEnv } from '../utils/env';
 import {
   PublishArtifactValidationError,
   type PublishableSimulationResult,
@@ -249,23 +250,6 @@ function buildLogEntry(
   };
 }
 
-function readNonEmptyEnv(
-  env: Record<string, string | undefined>,
-  name: string,
-): string | undefined {
-  const value = env[name];
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return undefined;
-  }
-
-  return trimmed;
-}
-
 function appendPathToUrl(baseUrl: string, relativePath: string): string {
   if (baseUrl.endsWith('/')) {
     return `${baseUrl}${relativePath}`;
@@ -500,19 +484,6 @@ async function runManagedRelayPublish(
 // ---------------------------------------------------------------------------
 // BYO Vercel publish (break-glass fallback, --publish-provider vercel)
 // ---------------------------------------------------------------------------
-
-function readPrimaryOrAliasEnv(
-  env: Record<string, string | undefined>,
-  primaryName: string,
-  aliasName: string,
-): string | undefined {
-  const primaryValue = readNonEmptyEnv(env, primaryName);
-  if (primaryValue) {
-    return primaryValue;
-  }
-
-  return readNonEmptyEnv(env, aliasName);
-}
 
 function formatEnvPair(primaryName: string, aliasName: string): string {
   return `${primaryName} (or ${aliasName})`;
