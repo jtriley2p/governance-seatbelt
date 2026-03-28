@@ -43,4 +43,22 @@ describe('report provenance helpers', () => {
     expect(formatAuthenticityBadgeLabel(publish.authenticity)).toBe('Artifact verified');
     expect(formatAuthenticityDetails(publish.authenticity)).toBe('ed25519 · authenticity-v1');
   });
+
+  it('falls back to the original vercel url when publish id is blank', () => {
+    const publish = {
+      publishId: '   ',
+      artifactHash: 'hash',
+      artifactUrl: 'https://seatbelt-publish-123.vercel.app/simulation-results.json',
+      metadataUrl: 'https://seatbelt-publish-123.vercel.app/publish-metadata.json',
+      publishedAt: '2026-03-28T01:37:48.565Z',
+      authenticity: {
+        status: 'verified',
+        algorithm: 'ed25519',
+        keyId: 'authenticity-v1',
+      },
+    } satisfies PublishArtifactMetadata;
+
+    expect(getCanonicalPublishedFileUrl(publish, 'artifact')).toBe(publish.artifactUrl);
+    expect(getCanonicalPublishedFileUrl(publish, 'metadata')).toBe(publish.metadataUrl);
+  });
 });

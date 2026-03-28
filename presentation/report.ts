@@ -161,14 +161,13 @@ async function decodeContractCall(
 }
 
 async function decodeForwardedContractCall(
-  _target: string,
   calldata: string,
   chainId: number,
   simulation: TenderlySimulation | undefined,
 ): Promise<{
   targetAddress: `0x${string}`;
   targetLabel?: string;
-  call: { selector: Hex; signature?: string };
+  call?: { selector: Hex; signature?: string };
 } | null> {
   if (!isHex(calldata)) return null;
 
@@ -186,12 +185,11 @@ async function decodeForwardedContractCall(
 
     const targetAddress = getAddress(forwardTarget);
     const call = await decodeContractCall(targetAddress, forwardData, chainId);
-    if (!call) return null;
 
     return {
       targetAddress,
       targetLabel: getSimulationContractLabel(simulation, targetAddress),
-      call,
+      call: call ?? undefined,
     };
   } catch {
     return null;
@@ -235,7 +233,6 @@ async function buildCrossChainPreview(
           const decoded = await decodeContractCall(call.l2TargetAddress, call.l2InputData, chainId);
           const stepSimulation = step?.sim ?? dest.accumulatedSim;
           const forwarded = await decodeForwardedContractCall(
-            call.l2TargetAddress,
             call.l2InputData,
             chainId,
             stepSimulation,

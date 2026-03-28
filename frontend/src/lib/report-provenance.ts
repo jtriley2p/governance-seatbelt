@@ -57,6 +57,10 @@ export function getCanonicalPublishedFileUrl(
     return currentUrl;
   }
 
+  if (publish.publishId.trim().length === 0) {
+    return currentUrl;
+  }
+
   const pathname = kind === 'artifact' ? '/simulation-results.json' : '/publish-metadata.json';
   return `https://a-${publish.publishId}.publish.scopelift.co${pathname}`;
 }

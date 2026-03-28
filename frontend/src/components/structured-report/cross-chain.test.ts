@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import type { CrossChainJobStepPreview } from '@/hooks/use-simulation-results';
-import { formatCrossChainCall, getCrossChainStepTarget } from './cross-chain';
+import {
+  formatCrossChainCall,
+  getCrossChainStepTarget,
+  getCrossChainTransportLabel,
+} from './cross-chain';
 
 function makeForwardStep(): CrossChainJobStepPreview {
   return {
@@ -28,5 +32,17 @@ describe('cross-chain formatting', () => {
 
     expect(formatCrossChainCall(step)).toBe('setFeeTo(address)');
     expect(getCrossChainStepTarget(step)).toBe('0x100000000000000000000000000000000000B111');
+    expect(getCrossChainTransportLabel(step)).toBe('forward(address,bytes)');
+  });
+
+  it('preserves the forwarded target when the inner call is undecodable', () => {
+    const step = {
+      ...makeForwardStep(),
+      forwardedCall: undefined,
+    } satisfies CrossChainJobStepPreview;
+
+    expect(formatCrossChainCall(step)).toBe('forward(address,bytes)');
+    expect(getCrossChainStepTarget(step)).toBe('0x100000000000000000000000000000000000B111');
+    expect(getCrossChainTransportLabel(step)).toBe('forward(address,bytes)');
   });
 });
