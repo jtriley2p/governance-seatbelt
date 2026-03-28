@@ -6,6 +6,12 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useShareLink } from '@/hooks/use-share-link';
 import type { StructuredSimulationReport } from '@/hooks/use-simulation-results';
 import {
+  formatAuthenticityBadgeLabel,
+  formatAuthenticityDetails,
+  getCanonicalPublishedFileUrl,
+  getVisibleTrustState,
+} from '@/lib/report-provenance';
+import {
   ActivityIcon,
   AlertTriangleIcon,
   CheckCircleIcon,
@@ -52,14 +58,13 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
   const tenderlyUrl = report.metadata.tenderlyUrl;
   const trust = report.metadata.trust;
   const publish = report.metadata.publish;
+  const authenticityStatus = publish?.authenticity?.status;
+  const visibleTrust = getVisibleTrustState(trust);
+  const artifactUrl = getCanonicalPublishedFileUrl(publish, 'artifact');
+  const metadataUrl = getCanonicalPublishedFileUrl(publish, 'metadata');
   const publishedAtLabel = publish?.publishedAt ? formatIsoLocalTime(publish.publishedAt) : null;
-  const authenticityLabel = publish?.authenticity
-    ? formatAuthenticityLabel(
-        publish.authenticity.status,
-        publish.authenticity.algorithm,
-        publish.authenticity.keyId,
-      )
-    : null;
+  const authenticityBadgeLabel = formatAuthenticityBadgeLabel(publish?.authenticity);
+  const authenticityLabel = formatAuthenticityDetails(publish?.authenticity);
 
   const repoName = repoUrl ? repoUrl.split('/').slice(-2).join('/') : 'Repository';
 
@@ -160,34 +165,39 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
             ) : null}
             {(trust || publish) && (
               <div className="flex flex-wrap items-center gap-2 pt-1">
-                {trust && (
+                {visibleTrust && (
                   <Badge
                     variant="outline"
                     className={
-                      trust.level === 'blocked'
+                      visibleTrust.level === 'blocked'
                         ? 'border-red-200 bg-red-50 text-red-700'
-                        : trust.level === 'warning'
+                        : visibleTrust.level === 'warning'
                           ? 'border-yellow-200 bg-yellow-50 text-yellow-700'
                           : 'border-green-200 bg-green-50 text-green-700'
                     }
                   >
-                    Trust: {trust.level}
+                    {visibleTrust.label}
                   </Badge>
                 )}
-                {publish?.authenticity && (
+                {authenticityBadgeLabel && (
                   <Badge
                     variant="outline"
                     className={
-                      publish.authenticity.status === 'verified'
+                      authenticityStatus === 'verified'
                         ? 'border-green-200 bg-green-50 text-green-700'
-                        : publish.authenticity.status === 'invalid'
+                        : authenticityStatus === 'invalid'
                           ? 'border-red-200 bg-red-50 text-red-700'
                           : 'border-slate-200 bg-slate-50 text-slate-700'
                     }
                   >
-                    Authenticity: {publish.authenticity.status}
+                    {authenticityBadgeLabel}
                   </Badge>
                 )}
+                {visibleTrust?.reasons.length ? (
+                  <span className="text-xs text-muted-foreground">
+                    {visibleTrust.reasons.join(' ')}
+                  </span>
+                ) : null}
                 {publishedAtLabel && (
                   <span className="text-xs text-muted-foreground">
                     Published {publishedAtLabel}
@@ -196,26 +206,26 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
                 {authenticityLabel && (
                   <span className="text-xs text-muted-foreground">{authenticityLabel}</span>
                 )}
-                {publish?.artifactUrl && (
+                {artifactUrl && (
                   <a
-                    href={publish.artifactUrl}
+                    href={artifactUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
                   >
                     <FileJsonIcon className="h-3.5 w-3.5" />
-                    Raw artifact
+                    Artifact
                   </a>
                 )}
-                {publish?.metadataUrl && (
+                {metadataUrl && (
                   <a
-                    href={publish.metadataUrl}
+                    href={metadataUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
                   >
                     <ExternalLinkIcon className="h-3.5 w-3.5" />
-                    Publish metadata
+                    Metadata
                   </a>
                 )}
               </div>
@@ -308,14 +318,14 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
         </StatItem>
 
         <StatItem icon={<CheckCircleIcon className="h-4 w-4" />} label="Publish">
-          {publish?.publishId ? (
-            <span className="text-sm font-medium font-mono">{publish.publishId.slice(0, 8)}…</span>
+          {publish ? (
+            <span className="text-sm font-medium">Published</span>
           ) : (
             <span className="text-sm font-medium">Local only</span>
           )}
-          {publish?.artifactHash ? (
+          {publish?.publishId ? (
             <span className="text-xs text-muted-foreground font-mono">
-              {publish.artifactHash.slice(0, 10)}…
+              {publish.publishId.slice(0, 8)}…
             </span>
           ) : (
             <span className="text-xs text-muted-foreground">
@@ -396,21 +406,6 @@ function formatIsoLocalTime(timestamp: string): string {
     hour: 'numeric',
     minute: '2-digit',
   });
-}
-
-function formatAuthenticityLabel(
-  status: 'verified' | 'unsigned' | 'invalid' | 'unconfigured',
-  algorithm?: string,
-  keyId?: string,
-): string | null {
-  if (!algorithm && !keyId) return null;
-  if (status === 'verified') {
-    if (algorithm && keyId) return `Verified via ${algorithm} / ${keyId}`;
-    if (algorithm) return `Verified via ${algorithm}`;
-  }
-  if (algorithm && keyId) return `Signature ${algorithm} / ${keyId}`;
-  if (algorithm) return `Signature ${algorithm}`;
-  return `Verification key ${keyId}`;
 }
 
 const STATUS_TOOLTIPS = {
