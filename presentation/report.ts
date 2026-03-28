@@ -14,9 +14,9 @@ import { unified } from 'unified';
 import { visit } from 'unist-util-visit';
 import type { Visitor } from 'unist-util-visit';
 import {
-  decodeFunctionData,
   type Abi,
   type Hex,
+  decodeFunctionData,
   getAddress,
   isHex,
   parseAbi,
@@ -161,7 +161,7 @@ async function decodeContractCall(
 }
 
 async function decodeForwardedContractCall(
-  target: string,
+  _target: string,
   calldata: string,
   chainId: number,
   simulation: TenderlySimulation | undefined,
