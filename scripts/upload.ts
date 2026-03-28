@@ -9,7 +9,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
-import { readNonEmptyEnv, readPrimaryOrAliasEnv } from '../utils/env';
+import { readNonEmptyEnv, readPrimaryOrAliasEnv } from '../utils/env.js';
 import {
   PublishArtifactValidationError,
   type PublishableSimulationResult,
