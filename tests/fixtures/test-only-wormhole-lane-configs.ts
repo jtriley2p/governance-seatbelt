@@ -98,19 +98,6 @@ function buildRepresentativeWormholeFollowupAction(
   laneKey: TestOnlyWormholeLaneKey,
   artifacts: TestOnlyLaneArtifacts = TEST_ONLY_WORMHOLE_LANE_ARTIFACTS[laneKey],
 ) {
-  const v3Forward = encodeFunctionData({
-    abi: FORWARD_ABI,
-    functionName: 'forward',
-    args: [
-      artifacts.v3Factory,
-      encodeFunctionData({
-        abi: SET_OWNER_ABI,
-        functionName: 'setOwner',
-        args: [artifacts.feeAdapter],
-      }),
-    ],
-  });
-
   const v2Forward = encodeFunctionData({
     abi: FORWARD_ABI,
     functionName: 'forward',
@@ -124,11 +111,7 @@ function buildRepresentativeWormholeFollowupAction(
     ],
   });
 
-  return buildWormholeProposalCall(
-    laneKey,
-    [artifacts.crossChainAccount, artifacts.crossChainAccount],
-    [v3Forward, v2Forward],
-  );
+  return buildWormholeProposalCall(laneKey, [artifacts.crossChainAccount], [v2Forward]);
 }
 
 function buildRepresentativeWormholeRolloutState(): NonNullable<
@@ -169,7 +152,7 @@ function buildRepresentativeWormholeRolloutConfig(kind: 'setup' | 'followup'): S
   const description =
     kind === 'setup'
       ? `# Representative Wormhole rollout setup (test only)\n\nThis representative multi-lane setup proposal uses the live Wormhole authorities for ${buildRepresentativeLaneSummary()} as the destination senders and hands ownership of fresh fake V2/V3/V4 targets to fresh fake CrossChainAccounts. It exists to model the kind of consolidated rollout proposal governance would likely use across upcoming lanes without bundling historical Celo-only migration steps.`
-      : `# Representative Wormhole rollout follow-up (test only)\n\nThis representative multi-lane follow-up proposal mirrors the same derived dependency pattern used in the historical Celo 94 -> 95 story without including Celo itself. A plain run should fail because the fresh fake targets are still owned by the live Wormhole authorities, while the fake CrossChainAccounts are not yet the owners. Running this proposal derived from the matching setup proposal should pass after the ownership handoff for ${buildRepresentativeLaneSummary()}.`;
+      : `# Representative Wormhole rollout follow-up (test only)\n\nThis representative multi-lane follow-up proposal mirrors the fee-setting step in the historical Celo 94 -> 95 story without including Celo itself. A plain run should fail because the fresh fake V2 factories are still controlled by the live Wormhole authorities, while the fake CrossChainAccounts are not yet the fee setters. Running this proposal derived from the matching setup proposal should pass after the setup ownership handoff for ${buildRepresentativeLaneSummary()}.`;
 
   return {
     type: 'new',
