@@ -72,11 +72,11 @@ export function formatAuthenticityBadgeLabel(
 
   switch (authenticity.status) {
     case 'verified':
-      return 'Artifact verified';
+      return 'Verified';
     case 'invalid':
       return 'Verification failed';
     case 'unsigned':
-      return 'Unsigned artifact';
+      return 'Unsigned';
     case 'unconfigured':
       return 'Verification unavailable';
   }

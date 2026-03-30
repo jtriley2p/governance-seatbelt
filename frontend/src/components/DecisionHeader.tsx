@@ -180,18 +180,27 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
                   </Badge>
                 )}
                 {authenticityBadgeLabel && (
-                  <Badge
-                    variant="outline"
-                    className={
-                      authenticityStatus === 'verified'
-                        ? 'border-green-200 bg-green-50 text-green-700'
-                        : authenticityStatus === 'invalid'
-                          ? 'border-red-200 bg-red-50 text-red-700'
-                          : 'border-slate-200 bg-slate-50 text-slate-700'
-                    }
-                  >
-                    {authenticityBadgeLabel}
-                  </Badge>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge
+                          variant="outline"
+                          className={
+                            authenticityStatus === 'verified'
+                              ? 'border-green-200 bg-green-50 text-green-700'
+                              : authenticityStatus === 'invalid'
+                                ? 'border-red-200 bg-red-50 text-red-700'
+                                : 'border-slate-200 bg-slate-50 text-slate-700'
+                          }
+                        >
+                          {authenticityBadgeLabel}
+                        </Badge>
+                      </TooltipTrigger>
+                      {authenticityLabel ? (
+                        <TooltipContent>{authenticityLabel}</TooltipContent>
+                      ) : null}
+                    </Tooltip>
+                  </TooltipProvider>
                 )}
                 {visibleTrust?.reasons.length ? (
                   <span className="text-xs text-muted-foreground">
@@ -202,9 +211,6 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
                   <span className="text-xs text-muted-foreground">
                     Published {publishedAtLabel}
                   </span>
-                )}
-                {authenticityLabel && (
-                  <span className="text-xs text-muted-foreground">{authenticityLabel}</span>
                 )}
                 {artifactUrl && (
                   <a
@@ -332,12 +338,9 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
               {publish?.authenticity?.reason ?? 'No publish provenance'}
             </span>
           )}
-          {publishedAtLabel && (
-            <span className="text-xs text-muted-foreground">{publishedAtLabel}</span>
-          )}
-          {authenticityLabel && (
-            <span className="text-xs text-muted-foreground">{authenticityLabel}</span>
-          )}
+          {authenticityBadgeLabel ? (
+            <span className="text-xs text-muted-foreground">{authenticityBadgeLabel}</span>
+          ) : null}
         </StatItem>
       </div>
     </div>
