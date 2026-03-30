@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { encodeFunctionData, parseAbiItem } from 'viem';
-import type { CallTrace, ProposalData, ProposalEvent } from '../../types';
+import type { ProposalData, ProposalEvent } from '../../types';
 import { BlockExplorerFactory } from '../../utils/clients/block-explorers/factory';
+import { CHAIN_CONFIGS } from '../../utils/clients/client';
 import { checkDecodeCalldata } from '../check-decode-calldata';
 import { createMockSimulation } from './test-utils';
 
@@ -11,9 +12,33 @@ const OTHER = '0x3333333333333333333333333333333333333333';
 
 function buildDeps(chainId = 1): ProposalData {
   return {
-    chainConfig: { chainId },
+    governor: null,
+    chainConfig: CHAIN_CONFIGS[chainId],
     timelock: { address: TIMELOCK },
-  } as ProposalData;
+    publicClient: null,
+    targets: [],
+    touchedContracts: [],
+  };
+}
+
+function buildProposalEvent({
+  signatures,
+  calldatas,
+  targets,
+  values,
+}: Pick<ProposalEvent, 'signatures' | 'calldatas' | 'targets' | 'values'>): ProposalEvent {
+  return {
+    id: 0n,
+    proposalId: 0n,
+    proposer: TIMELOCK,
+    startBlock: 0n,
+    endBlock: 0n,
+    description: '',
+    signatures,
+    calldatas,
+    targets,
+    values,
+  };
 }
 
 describe('checkDecodeCalldata', () => {
@@ -24,12 +49,12 @@ describe('checkDecodeCalldata', () => {
       args: [OTHER, '0x1234', 200000],
     });
 
-    const proposal = {
+    const proposal = buildProposalEvent({
       signatures: [''],
       calldatas: [sendMessageCall],
       targets: [TARGET],
       values: [0n],
-    } as unknown as ProposalEvent;
+    });
 
     const sim = createMockSimulation([
       {
@@ -74,12 +99,12 @@ describe('checkDecodeCalldata', () => {
       ],
     });
 
-    const proposal = {
+    const proposal = buildProposalEvent({
       signatures: [''],
       calldatas: [createRetryableTicketCall],
       targets: ['0x4Dbd4fc535Ac27206064B68FfCf827b0A60BAB3f'],
       values: [0n],
-    } as unknown as ProposalEvent;
+    });
 
     const sim = createMockSimulation([]);
 
@@ -105,12 +130,12 @@ describe('checkDecodeCalldata', () => {
       args: [TARGET, '0x13af40350000000000000000000000003333333333333333333333333333333333333333'],
     });
 
-    const proposal = {
+    const proposal = buildProposalEvent({
       signatures: [''],
       calldatas: [forwardCall],
       targets: [TARGET],
       values: [0n],
-    } as unknown as ProposalEvent;
+    });
 
     const sim = createMockSimulation([
       {
@@ -118,7 +143,7 @@ describe('checkDecodeCalldata', () => {
         to: TARGET,
         input: forwardCall,
         value: '0',
-      } as CallTrace,
+      },
     ]);
 
     const originalDecode = BlockExplorerFactory.decodeFunctionWithAbi;
@@ -150,15 +175,15 @@ describe('checkDecodeCalldata', () => {
         to: TARGET,
         input: receiveMessageCall,
         value: '0',
-      } as CallTrace,
+      },
     ]);
 
-    const proposal = {
+    const proposal = buildProposalEvent({
       signatures: [],
       calldatas: [],
       targets: [],
       values: [],
-    } as unknown as ProposalEvent;
+    });
 
     const originalDecode = BlockExplorerFactory.decodeFunctionWithAbi;
     BlockExplorerFactory.decodeFunctionWithAbi = async () => null;

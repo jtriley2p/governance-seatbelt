@@ -2,6 +2,7 @@ import {
   decodeFunctionData,
   formatUnits,
   getAddress,
+  isAddress,
   parseAbiItem,
   toFunctionSelector,
 } from 'viem';
@@ -543,7 +544,9 @@ function formatTransportCallDescription(
   if (functionName === 'forward') {
     const [forwardTarget] = args;
     const targetLabel =
-      typeof forwardTarget === 'string' ? getAddress(forwardTarget as `0x${string}`) : 'target';
+      typeof forwardTarget === 'string' && isAddress(forwardTarget)
+        ? getAddress(forwardTarget)
+        : 'target';
     return `\`${call.from}\` calls \`forward(${targetLabel}, bytes)\` on ${contractIdentifier} (decoded from signature)`;
   }
 
