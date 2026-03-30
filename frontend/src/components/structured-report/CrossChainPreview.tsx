@@ -6,7 +6,12 @@ import { resolveChainName } from '@/lib/chain-name';
 import { ExternalLinkIcon } from 'lucide-react';
 import { useMemo } from 'react';
 import { ChainLogo } from './ChainLogo';
-import { formatCrossChainCall } from './cross-chain';
+import {
+  formatCrossChainCall,
+  getCrossChainStepTarget,
+  getCrossChainStepTargetLabel,
+  getCrossChainTransportLabel,
+} from './cross-chain';
 import { buildAddressLinkForExplorer } from './explorer';
 
 export function CrossChainPreview({ jobs }: { jobs: CrossChainJobPreview[] }) {
@@ -49,9 +54,10 @@ export function CrossChainPreview({ jobs }: { jobs: CrossChainJobPreview[] }) {
               {chainJobs.map((job) => {
                 const firstStep = job.steps[0];
                 const jobKey = `${job.chainId}-${job.bridgeType}-${job.sourceOrder}-${job.l2FromAddress}-${job.status}`;
-                const target = firstStep?.l2TargetAddress;
-                const targetLabel = firstStep?.targetLabel;
+                const target = firstStep ? getCrossChainStepTarget(firstStep) : undefined;
+                const targetLabel = firstStep ? getCrossChainStepTargetLabel(firstStep) : undefined;
                 const call = firstStep ? formatCrossChainCall(firstStep) : '(empty job)';
+                const transportLabel = firstStep ? getCrossChainTransportLabel(firstStep) : null;
 
                 const statusBadge =
                   job.status === 'success' ? (
@@ -96,6 +102,11 @@ export function CrossChainPreview({ jobs }: { jobs: CrossChainJobPreview[] }) {
                     <code className="block mt-1.5 font-mono text-[10px] text-muted-foreground truncate">
                       {call}
                     </code>
+                    {transportLabel ? (
+                      <div className="mt-1 text-[10px] text-muted-foreground">
+                        via <code className="font-mono">{transportLabel}</code>
+                      </div>
+                    ) : null}
 
                     {job.error ? (
                       <div className="text-[10px] text-red-600 mt-1">{job.error}</div>

@@ -11,6 +11,12 @@ import { useSimulationResults } from '@/hooks/use-simulation-results';
 import { useWriteExecuteProposal } from '@/hooks/use-write-execute-proposal';
 import { useWriteProposeNew } from '@/hooks/use-write-propose-new';
 import { getProposalActionUi } from '@/lib/proposal-action-ui';
+import {
+  formatAuthenticityBadgeLabel,
+  formatAuthenticityDetails,
+  getCanonicalPublishedFileUrl,
+  getVisibleTrustState,
+} from '@/lib/report-provenance';
 import { resolveProposalAction } from '@/lib/write-actions';
 import { AlertTriangleIcon, ArrowLeftIcon, InfoIcon, ShieldCheckIcon } from 'lucide-react';
 import Link from 'next/link';
@@ -142,6 +148,11 @@ function ActionSection({ isConnected }: { isConnected: boolean }) {
   const warningChecks = checks.filter((c) => c.status === 'warning');
   const skippedChecks = checks.filter((c) => c.status === 'skipped');
   const pageCopy = getProposalActionUi(actionResolution).page;
+  const visibleTrust = getVisibleTrustState(trust);
+  const artifactUrl = getCanonicalPublishedFileUrl(publish, 'artifact');
+  const metadataUrl = getCanonicalPublishedFileUrl(publish, 'metadata');
+  const authenticityBadgeLabel = formatAuthenticityBadgeLabel(publish?.authenticity);
+  const authenticityDetails = formatAuthenticityDetails(publish?.authenticity);
 
   return (
     <>
@@ -165,50 +176,44 @@ function ActionSection({ isConnected }: { isConnected: boolean }) {
         >
           <AlertTriangleIcon className="h-4 w-4" />
           <AlertTitle>
-            {trust?.level === 'blocked'
+            {visibleTrust?.level === 'blocked'
               ? 'Blocking report concerns'
-              : trust?.level === 'warning'
-                ? 'Report warnings'
+              : visibleTrust
+                ? 'Report trust notes'
                 : 'Report provenance'}
           </AlertTitle>
           <AlertDescription className="space-y-2">
-            {trust?.blockingReasons?.length ? (
-              <p>{trust.blockingReasons.join(' ')}</p>
-            ) : trust?.warningReasons?.length ? (
-              <p>{trust.warningReasons.join(' ')}</p>
+            {visibleTrust?.reasons.length ? (
+              <p>{visibleTrust.reasons.join(' ')}</p>
+            ) : authenticityDetails ? (
+              <p>{authenticityDetails}</p>
             ) : null}
             <div className="flex flex-wrap gap-3 text-xs">
-              {publish?.artifactHash && (
-                <span className="font-mono">hash {publish.artifactHash.slice(0, 12)}…</span>
+              {publish?.publishId && (
+                <span className="font-mono">publish {publish.publishId.slice(0, 8)}…</span>
               )}
               {publish?.publishedAt && (
                 <span>published {new Date(publish.publishedAt).toLocaleString()}</span>
               )}
-              {publish?.authenticity && (
-                <span>
-                  authenticity {publish.authenticity.status}
-                  {publish.authenticity.algorithm ? ` via ${publish.authenticity.algorithm}` : ''}
-                  {publish.authenticity.keyId ? ` / ${publish.authenticity.keyId}` : ''}
-                </span>
-              )}
-              {publish?.artifactUrl && (
+              {authenticityBadgeLabel && <span>{authenticityBadgeLabel}</span>}
+              {artifactUrl && (
                 <a
-                  href={publish.artifactUrl}
+                  href={artifactUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline"
                 >
-                  raw artifact
+                  artifact
                 </a>
               )}
-              {publish?.metadataUrl && (
+              {metadataUrl && (
                 <a
-                  href={publish.metadataUrl}
+                  href={metadataUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline"
                 >
-                  publish metadata
+                  metadata
                 </a>
               )}
             </div>

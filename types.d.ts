@@ -780,6 +780,10 @@ export interface CrossChainJobStepPreview {
   targetLabel?: string;
   /** Optional decoded calldata metadata for display. */
   call?: CrossChainDecodedCall;
+  /** Optional inner call metadata when the outer call forwards another payload. */
+  forwardedTargetAddress?: Address;
+  forwardedTargetLabel?: string;
+  forwardedCall?: CrossChainDecodedCall;
 }
 
 /**

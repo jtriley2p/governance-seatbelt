@@ -13,7 +13,15 @@ import remarkToc from 'remark-toc';
 import { unified } from 'unified';
 import { visit } from 'unist-util-visit';
 import type { Visitor } from 'unist-util-visit';
-import { type Abi, type Hex, getAddress, toFunctionSelector } from 'viem';
+import {
+  type Abi,
+  type Hex,
+  decodeFunctionData,
+  getAddress,
+  isHex,
+  parseAbi,
+  toFunctionSelector,
+} from 'viem';
 import type {
   AllCheckResults,
   CoverageData,
@@ -87,6 +95,7 @@ const KNOWN_FUNCTION_SELECTORS: Record<string, string> = {
 
 const CONTRACT_ABI_CACHE = new Map<string, Abi | null>();
 const CONTRACT_ABI_PROMISE_CACHE = new Map<string, Promise<Abi | null>>();
+const FORWARD_ABI = parseAbi(['function forward(address target, bytes data)']);
 
 function getContractAbiCacheKey(target: string, chainId: number): string {
   return `${chainId}:${target.toLowerCase()}`;
@@ -151,6 +160,42 @@ async function decodeContractCall(
   return { selector, signature };
 }
 
+async function decodeForwardedContractCall(
+  calldata: string,
+  chainId: number,
+  simulation: TenderlySimulation | undefined,
+): Promise<{
+  targetAddress: `0x${string}`;
+  targetLabel?: string;
+  call?: { selector: Hex; signature?: string };
+} | null> {
+  if (!isHex(calldata)) return null;
+
+  try {
+    const decoded = decodeFunctionData({
+      abi: FORWARD_ABI,
+      data: calldata,
+    });
+    if (decoded.functionName !== 'forward') return null;
+
+    const [forwardTarget, forwardData] = decoded.args;
+    if (typeof forwardTarget !== 'string' || !isHex(forwardData)) {
+      return null;
+    }
+
+    const targetAddress = getAddress(forwardTarget);
+    const call = await decodeContractCall(targetAddress, forwardData, chainId);
+
+    return {
+      targetAddress,
+      targetLabel: getSimulationContractLabel(simulation, targetAddress),
+      call: call ?? undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function getSimulationContractLabel(
   simulation: TenderlySimulation | undefined,
   address: string | undefined,
@@ -186,6 +231,12 @@ async function buildCrossChainPreview(
         dest.job.calls.map(async (call, stepIndex) => {
           const step = dest.stepResults[stepIndex];
           const decoded = await decodeContractCall(call.l2TargetAddress, call.l2InputData, chainId);
+          const stepSimulation = step?.sim ?? dest.accumulatedSim;
+          const forwarded = await decodeForwardedContractCall(
+            call.l2InputData,
+            chainId,
+            stepSimulation,
+          );
 
           return {
             stepIndex,
@@ -194,13 +245,13 @@ async function buildCrossChainPreview(
             l2TargetAddress: call.l2TargetAddress,
             l2Value: call.l2Value,
             l2InputData: call.l2InputData,
-            targetLabel: getSimulationContractLabel(
-              step?.sim ?? dest.accumulatedSim,
-              call.l2TargetAddress,
-            ),
+            targetLabel: getSimulationContractLabel(stepSimulation, call.l2TargetAddress),
             call: decoded
               ? { selector: decoded.selector, signature: decoded.signature }
               : undefined,
+            forwardedTargetAddress: forwarded?.targetAddress,
+            forwardedTargetLabel: forwarded?.targetLabel,
+            forwardedCall: forwarded?.call,
           };
         }),
       );

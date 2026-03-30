@@ -120,6 +120,11 @@ export function CrossChainChecksSummary({ jobs, onNavigateToChain }: CrossChainC
                         {job.call}
                       </code>
                     ) : null}
+                    {job.transportLabel ? (
+                      <span>
+                        via <code className="font-mono">{job.transportLabel}</code>
+                      </span>
+                    ) : null}
                     {job.targetLabel ? <span>{job.targetLabel}</span> : null}
                     {job.target ? (
                       <a
