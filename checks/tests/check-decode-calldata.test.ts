@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { encodeFunctionData, parseAbiItem } from 'viem';
+import { tempo } from 'viem/chains';
 import type { ProposalData, ProposalEvent } from '../../types';
 import { BlockExplorerFactory } from '../../utils/clients/block-explorers/factory';
 import { CHAIN_CONFIGS } from '../../utils/clients/client';
@@ -189,7 +190,12 @@ describe('checkDecodeCalldata', () => {
     BlockExplorerFactory.decodeFunctionWithAbi = async () => null;
 
     try {
-      const result = await checkDecodeCalldata.checkProposal(proposal, sim, buildDeps(4217), []);
+      const result = await checkDecodeCalldata.checkProposal(
+        proposal,
+        sim,
+        buildDeps(tempo.id),
+        [],
+      );
 
       expect(result.warnings).toHaveLength(0);
       expect(result.info.join('\n')).toContain('receiveMessage(');
