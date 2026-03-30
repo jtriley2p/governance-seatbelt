@@ -12,9 +12,14 @@ const TARGET = '0x2222222222222222222222222222222222222222';
 const OTHER = '0x3333333333333333333333333333333333333333';
 
 function buildDeps(chainId = 1): ProposalData {
+  const chainConfig = CHAIN_CONFIGS[chainId] ?? {
+    ...CHAIN_CONFIGS[1],
+    chainId,
+  };
+
   return {
     governor: null,
-    chainConfig: CHAIN_CONFIGS[chainId],
+    chainConfig,
     timelock: { address: TIMELOCK },
     publicClient: null,
     targets: [],
