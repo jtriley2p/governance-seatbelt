@@ -273,18 +273,8 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
 
         <StatItem icon={<CheckCircleIcon className="h-4 w-4" />} label="Publish">
           {publish ? (
-            <span className="text-sm font-medium">Published</span>
-          ) : (
-            <span className="text-sm font-medium">Local only</span>
-          )}
-          {publish ? (
-            <>
-              {publish.publishId ? (
-                <span className="text-xs text-muted-foreground font-mono">
-                  {publish.publishId.slice(0, 8)}…
-                </span>
-              ) : null}
-              <div className="flex flex-col items-start gap-1.5 pt-0.5">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {authenticityBadgeLabel ? (
                   <TooltipProvider>
                     <Tooltip>
@@ -309,36 +299,34 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
                   </TooltipProvider>
                 ) : null}
                 {publishedAtLabel ? (
-                  <span className="text-xs text-muted-foreground">
-                    Published {publishedAtLabel}
-                  </span>
+                  <span className="text-xs text-muted-foreground">{publishedAtLabel}</span>
                 ) : null}
-                <div className="flex flex-wrap items-center gap-2">
-                  {artifactUrl && (
-                    <a
-                      href={artifactUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
-                    >
-                      <FileJsonIcon className="h-3.5 w-3.5" />
-                      Artifact
-                    </a>
-                  )}
-                  {metadataUrl && (
-                    <a
-                      href={metadataUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
-                    >
-                      <ExternalLinkIcon className="h-3.5 w-3.5" />
-                      Metadata
-                    </a>
-                  )}
-                </div>
               </div>
-            </>
+              <div className="flex flex-wrap items-center gap-2">
+                {artifactUrl && (
+                  <a
+                    href={artifactUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
+                  >
+                    <FileJsonIcon className="h-3.5 w-3.5" />
+                    Artifact
+                  </a>
+                )}
+                {metadataUrl && (
+                  <a
+                    href={metadataUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
+                  >
+                    <ExternalLinkIcon className="h-3.5 w-3.5" />
+                    Metadata
+                  </a>
+                )}
+              </div>
+            </div>
           ) : (
             <span className="text-xs text-muted-foreground">No publish provenance</span>
           )}
