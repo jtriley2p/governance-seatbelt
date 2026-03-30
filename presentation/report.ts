@@ -232,6 +232,7 @@ async function buildCrossChainPreview(
           const step = dest.stepResults[stepIndex];
           const decoded = await decodeContractCall(call.l2TargetAddress, call.l2InputData, chainId);
           const stepSimulation = step?.sim ?? dest.accumulatedSim;
+          const error = step ? step.error : dest.error;
           const forwarded = await decodeForwardedContractCall(
             call.l2InputData,
             chainId,
@@ -241,7 +242,7 @@ async function buildCrossChainPreview(
           return {
             stepIndex,
             status: step?.status ?? dest.status,
-            error: step?.error ?? (step ? undefined : dest.error),
+            error,
             l2TargetAddress: call.l2TargetAddress,
             l2Value: call.l2Value,
             l2InputData: call.l2InputData,
