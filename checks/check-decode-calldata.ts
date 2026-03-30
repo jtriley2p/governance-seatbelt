@@ -2,6 +2,7 @@ import {
   decodeFunctionData,
   formatUnits,
   getAddress,
+  isAddress,
   parseAbiItem,
   toFunctionSelector,
 } from 'viem';
@@ -62,6 +63,9 @@ const KNOWN_SIGNATURE_FALLBACKS: Record<string, string[]> = {
   [toFunctionSelector('sendUnsignedTransactionToFork(uint256,uint256,address,uint256,bytes)')]: [
     'function sendUnsignedTransactionToFork(uint256 gasLimit, uint256 maxFeePerGas, address destination, uint256 amount, bytes data)',
   ],
+  [toFunctionSelector('receiveMessage(bytes)')]: ['function receiveMessage(bytes whMessage)'],
+  [toFunctionSelector('parseAndVerifyVM(bytes)')]: ['function parseAndVerifyVM(bytes encodedVM)'],
+  [toFunctionSelector('forward(address,bytes)')]: ['function forward(address target, bytes data)'],
   [toFunctionSelector('setOwner(address)')]: ['function setOwner(address owner)'],
   [toFunctionSelector('setFeeTo(address)')]: ['function setFeeTo(address feeTo)'],
 };
@@ -523,6 +527,32 @@ function formatArgs(args: readonly unknown[]): string {
     .join(', ');
 }
 
+function formatTransportCallDescription(
+  functionName: string,
+  args: readonly unknown[],
+  call: DecodedCall,
+  contractIdentifier: string,
+): string | null {
+  if (functionName === 'receiveMessage') {
+    return `\`${call.from}\` calls \`receiveMessage(bytes)\` on ${contractIdentifier} (decoded from signature)`;
+  }
+
+  if (functionName === 'parseAndVerifyVM') {
+    return `\`${call.from}\` calls \`parseAndVerifyVM(bytes)\` on ${contractIdentifier} (decoded from signature)`;
+  }
+
+  if (functionName === 'forward') {
+    const [forwardTarget] = args;
+    const targetLabel =
+      typeof forwardTarget === 'string' && isAddress(forwardTarget)
+        ? getAddress(forwardTarget)
+        : 'target';
+    return `\`${call.from}\` calls \`forward(${targetLabel}, bytes)\` on ${contractIdentifier} (decoded from signature)`;
+  }
+
+  return null;
+}
+
 /**
  * Given a call, return a human-readable description of the call
  */
@@ -604,6 +634,16 @@ async function prettifyCalldata(
 
         const fnName = parsed.name;
         decodedFunctionCache[cacheKey] = { name: fnName, args: Array.from(args) };
+
+        const transportDescription = formatTransportCallDescription(
+          fnName,
+          args,
+          call,
+          contractIdentifier,
+        );
+        if (transportDescription) {
+          return { description: transportDescription, decodeSource: 'signature' };
+        }
 
         let description = `\`${call.from}\` calls \`${fnName}(`;
         const formattedArgs = formatArgs(args);

@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { encodeFunctionData, parseAbiItem } from 'viem';
+import { tempo } from 'viem/chains';
 import type { ProposalData, ProposalEvent } from '../../types';
 import { BlockExplorerFactory } from '../../utils/clients/block-explorers/factory';
+import { CHAIN_CONFIGS } from '../../utils/clients/client';
 import { checkDecodeCalldata } from '../check-decode-calldata';
 import { createMockSimulation } from './test-utils';
 
@@ -10,10 +12,39 @@ const TARGET = '0x2222222222222222222222222222222222222222';
 const OTHER = '0x3333333333333333333333333333333333333333';
 
 function buildDeps(chainId = 1): ProposalData {
+  const chainConfig = CHAIN_CONFIGS[chainId] ?? {
+    ...CHAIN_CONFIGS[1],
+    chainId,
+  };
+
   return {
-    chainConfig: { chainId },
+    governor: null,
+    chainConfig,
     timelock: { address: TIMELOCK },
-  } as ProposalData;
+    publicClient: null,
+    targets: [],
+    touchedContracts: [],
+  };
+}
+
+function buildProposalEvent({
+  signatures,
+  calldatas,
+  targets,
+  values,
+}: Pick<ProposalEvent, 'signatures' | 'calldatas' | 'targets' | 'values'>): ProposalEvent {
+  return {
+    id: 0n,
+    proposalId: 0n,
+    proposer: TIMELOCK,
+    startBlock: 0n,
+    endBlock: 0n,
+    description: '',
+    signatures,
+    calldatas,
+    targets,
+    values,
+  };
 }
 
 describe('checkDecodeCalldata', () => {
@@ -24,12 +55,12 @@ describe('checkDecodeCalldata', () => {
       args: [OTHER, '0x1234', 200000],
     });
 
-    const proposal = {
+    const proposal = buildProposalEvent({
       signatures: [''],
       calldatas: [sendMessageCall],
       targets: [TARGET],
       values: [0n],
-    } as unknown as ProposalEvent;
+    });
 
     const sim = createMockSimulation([
       {
@@ -74,12 +105,12 @@ describe('checkDecodeCalldata', () => {
       ],
     });
 
-    const proposal = {
+    const proposal = buildProposalEvent({
       signatures: [''],
       calldatas: [createRetryableTicketCall],
       targets: ['0x4Dbd4fc535Ac27206064B68FfCf827b0A60BAB3f'],
       values: [0n],
-    } as unknown as ProposalEvent;
+    });
 
     const sim = createMockSimulation([]);
 
@@ -93,6 +124,87 @@ describe('checkDecodeCalldata', () => {
       expect(result.warnings.join('\n')).not.toContain('0x679b6ded');
       expect(result.info.join('\n')).toContain('no exact trace match');
       expect(result.info.join('\n')).toContain('createRetryableTicket(');
+    } finally {
+      BlockExplorerFactory.decodeFunctionWithAbi = originalDecode;
+    }
+  });
+
+  test('decodes Wormhole forward wrapper without surfacing ABI warning noise', async () => {
+    const forwardCall = encodeFunctionData({
+      abi: [parseAbiItem('function forward(address target, bytes data)')],
+      functionName: 'forward',
+      args: [TARGET, '0x13af40350000000000000000000000003333333333333333333333333333333333333333'],
+    });
+
+    const proposal = buildProposalEvent({
+      signatures: [''],
+      calldatas: [forwardCall],
+      targets: [TARGET],
+      values: [0n],
+    });
+
+    const sim = createMockSimulation([
+      {
+        from: TIMELOCK,
+        to: TARGET,
+        input: forwardCall,
+        value: '0',
+      },
+    ]);
+
+    const originalDecode = BlockExplorerFactory.decodeFunctionWithAbi;
+    BlockExplorerFactory.decodeFunctionWithAbi = async () => null;
+
+    try {
+      const result = await checkDecodeCalldata.checkProposal(proposal, sim, buildDeps(), []);
+
+      expect(result.warnings).toHaveLength(0);
+      expect(result.info.join('\n')).toContain(
+        'forward(0x2222222222222222222222222222222222222222, bytes)',
+      );
+      expect(result.info.join('\n')).not.toContain('(not decoded)');
+    } finally {
+      BlockExplorerFactory.decodeFunctionWithAbi = originalDecode;
+    }
+  });
+
+  test('decodes Wormhole receiveMessage wrapper on L2 without raw undecoded calldata output', async () => {
+    const receiveMessageCall = encodeFunctionData({
+      abi: [parseAbiItem('function receiveMessage(bytes whMessage)')],
+      functionName: 'receiveMessage',
+      args: ['0x1234'],
+    });
+
+    const sim = createMockSimulation([
+      {
+        from: OTHER,
+        to: TARGET,
+        input: receiveMessageCall,
+        value: '0',
+      },
+    ]);
+
+    const proposal = buildProposalEvent({
+      signatures: [],
+      calldatas: [],
+      targets: [],
+      values: [],
+    });
+
+    const originalDecode = BlockExplorerFactory.decodeFunctionWithAbi;
+    BlockExplorerFactory.decodeFunctionWithAbi = async () => null;
+
+    try {
+      const result = await checkDecodeCalldata.checkProposal(
+        proposal,
+        sim,
+        buildDeps(tempo.id),
+        [],
+      );
+
+      expect(result.warnings).toHaveLength(0);
+      expect(result.info.join('\n')).toContain('receiveMessage(');
+      expect(result.info.join('\n')).not.toContain('(not decoded)');
     } finally {
       BlockExplorerFactory.decodeFunctionWithAbi = originalDecode;
     }
