@@ -163,77 +163,25 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
                 </Tooltip>
               </TooltipProvider>
             ) : null}
-            {(trust || publish) && (
+            {visibleTrust && (
               <div className="flex flex-wrap items-center gap-2 pt-1">
-                {visibleTrust && (
-                  <Badge
-                    variant="outline"
-                    className={
-                      visibleTrust.level === 'blocked'
-                        ? 'border-red-200 bg-red-50 text-red-700'
-                        : visibleTrust.level === 'warning'
-                          ? 'border-yellow-200 bg-yellow-50 text-yellow-700'
-                          : 'border-green-200 bg-green-50 text-green-700'
-                    }
-                  >
-                    {visibleTrust.label}
-                  </Badge>
-                )}
-                {authenticityBadgeLabel && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Badge
-                          variant="outline"
-                          className={
-                            authenticityStatus === 'verified'
-                              ? 'border-green-200 bg-green-50 text-green-700'
-                              : authenticityStatus === 'invalid'
-                                ? 'border-red-200 bg-red-50 text-red-700'
-                                : 'border-slate-200 bg-slate-50 text-slate-700'
-                          }
-                        >
-                          {authenticityBadgeLabel}
-                        </Badge>
-                      </TooltipTrigger>
-                      {authenticityLabel ? (
-                        <TooltipContent>{authenticityLabel}</TooltipContent>
-                      ) : null}
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
+                <Badge
+                  variant="outline"
+                  className={
+                    visibleTrust.level === 'blocked'
+                      ? 'border-red-200 bg-red-50 text-red-700'
+                      : visibleTrust.level === 'warning'
+                        ? 'border-yellow-200 bg-yellow-50 text-yellow-700'
+                        : 'border-green-200 bg-green-50 text-green-700'
+                  }
+                >
+                  {visibleTrust.label}
+                </Badge>
                 {visibleTrust?.reasons.length ? (
                   <span className="text-xs text-muted-foreground">
                     {visibleTrust.reasons.join(' ')}
                   </span>
                 ) : null}
-                {publishedAtLabel && (
-                  <span className="text-xs text-muted-foreground">
-                    Published {publishedAtLabel}
-                  </span>
-                )}
-                {artifactUrl && (
-                  <a
-                    href={artifactUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
-                  >
-                    <FileJsonIcon className="h-3.5 w-3.5" />
-                    Artifact
-                  </a>
-                )}
-                {metadataUrl && (
-                  <a
-                    href={metadataUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
-                  >
-                    <ExternalLinkIcon className="h-3.5 w-3.5" />
-                    Metadata
-                  </a>
-                )}
               </div>
             )}
           </div>
@@ -329,18 +277,71 @@ export function DecisionHeader({ report }: DecisionHeaderProps) {
           ) : (
             <span className="text-sm font-medium">Local only</span>
           )}
-          {publish?.publishId ? (
-            <span className="text-xs text-muted-foreground font-mono">
-              {publish.publishId.slice(0, 8)}…
-            </span>
+          {publish ? (
+            <>
+              {publish.publishId ? (
+                <span className="text-xs text-muted-foreground font-mono">
+                  {publish.publishId.slice(0, 8)}…
+                </span>
+              ) : null}
+              <div className="flex flex-col items-start gap-1.5 pt-0.5">
+                {authenticityBadgeLabel ? (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge
+                          variant="outline"
+                          className={
+                            authenticityStatus === 'verified'
+                              ? 'border-green-200 bg-green-50 text-green-700'
+                              : authenticityStatus === 'invalid'
+                                ? 'border-red-200 bg-red-50 text-red-700'
+                                : 'border-slate-200 bg-slate-50 text-slate-700'
+                          }
+                        >
+                          {authenticityBadgeLabel}
+                        </Badge>
+                      </TooltipTrigger>
+                      {authenticityLabel ? (
+                        <TooltipContent>{authenticityLabel}</TooltipContent>
+                      ) : null}
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : null}
+                {publishedAtLabel ? (
+                  <span className="text-xs text-muted-foreground">
+                    Published {publishedAtLabel}
+                  </span>
+                ) : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  {artifactUrl && (
+                    <a
+                      href={artifactUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
+                    >
+                      <FileJsonIcon className="h-3.5 w-3.5" />
+                      Artifact
+                    </a>
+                  )}
+                  {metadataUrl && (
+                    <a
+                      href={metadataUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
+                    >
+                      <ExternalLinkIcon className="h-3.5 w-3.5" />
+                      Metadata
+                    </a>
+                  )}
+                </div>
+              </div>
+            </>
           ) : (
-            <span className="text-xs text-muted-foreground">
-              {publish?.authenticity?.reason ?? 'No publish provenance'}
-            </span>
+            <span className="text-xs text-muted-foreground">No publish provenance</span>
           )}
-          {authenticityBadgeLabel ? (
-            <span className="text-xs text-muted-foreground">{authenticityBadgeLabel}</span>
-          ) : null}
         </StatItem>
       </div>
     </div>

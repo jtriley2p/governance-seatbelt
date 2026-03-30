@@ -88,7 +88,7 @@ export function formatAuthenticityDetails(
   if (!authenticity) return null;
 
   if (authenticity.status === 'verified') {
-    return [authenticity.algorithm, authenticity.keyId].filter(Boolean).join(' · ');
+    return 'This report matches the signed artifact that was published.';
   }
 
   return authenticity.reason;

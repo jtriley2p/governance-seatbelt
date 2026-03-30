@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { encodeFunctionData, parseAbiItem } from 'viem';
-import type { ProposalData, ProposalEvent } from '../../types';
+import type { CallTrace, ProposalData, ProposalEvent } from '../../types';
 import { BlockExplorerFactory } from '../../utils/clients/block-explorers/factory';
 import { checkDecodeCalldata } from '../check-decode-calldata';
 import { createMockSimulation } from './test-utils';
@@ -93,6 +93,82 @@ describe('checkDecodeCalldata', () => {
       expect(result.warnings.join('\n')).not.toContain('0x679b6ded');
       expect(result.info.join('\n')).toContain('no exact trace match');
       expect(result.info.join('\n')).toContain('createRetryableTicket(');
+    } finally {
+      BlockExplorerFactory.decodeFunctionWithAbi = originalDecode;
+    }
+  });
+
+  test('decodes Wormhole forward wrapper without surfacing ABI warning noise', async () => {
+    const forwardCall = encodeFunctionData({
+      abi: [parseAbiItem('function forward(address target, bytes data)')],
+      functionName: 'forward',
+      args: [TARGET, '0x13af40350000000000000000000000003333333333333333333333333333333333333333'],
+    });
+
+    const proposal = {
+      signatures: [''],
+      calldatas: [forwardCall],
+      targets: [TARGET],
+      values: [0n],
+    } as unknown as ProposalEvent;
+
+    const sim = createMockSimulation([
+      {
+        from: TIMELOCK,
+        to: TARGET,
+        input: forwardCall,
+        value: '0',
+      } as CallTrace,
+    ]);
+
+    const originalDecode = BlockExplorerFactory.decodeFunctionWithAbi;
+    BlockExplorerFactory.decodeFunctionWithAbi = async () => null;
+
+    try {
+      const result = await checkDecodeCalldata.checkProposal(proposal, sim, buildDeps(), []);
+
+      expect(result.warnings).toHaveLength(0);
+      expect(result.info.join('\n')).toContain(
+        'forward(0x2222222222222222222222222222222222222222, bytes)',
+      );
+      expect(result.info.join('\n')).not.toContain('(not decoded)');
+    } finally {
+      BlockExplorerFactory.decodeFunctionWithAbi = originalDecode;
+    }
+  });
+
+  test('decodes Wormhole receiveMessage wrapper on L2 without raw undecoded calldata output', async () => {
+    const receiveMessageCall = encodeFunctionData({
+      abi: [parseAbiItem('function receiveMessage(bytes whMessage)')],
+      functionName: 'receiveMessage',
+      args: ['0x1234'],
+    });
+
+    const sim = createMockSimulation([
+      {
+        from: OTHER,
+        to: TARGET,
+        input: receiveMessageCall,
+        value: '0',
+      } as CallTrace,
+    ]);
+
+    const proposal = {
+      signatures: [],
+      calldatas: [],
+      targets: [],
+      values: [],
+    } as unknown as ProposalEvent;
+
+    const originalDecode = BlockExplorerFactory.decodeFunctionWithAbi;
+    BlockExplorerFactory.decodeFunctionWithAbi = async () => null;
+
+    try {
+      const result = await checkDecodeCalldata.checkProposal(proposal, sim, buildDeps(4217), []);
+
+      expect(result.warnings).toHaveLength(0);
+      expect(result.info.join('\n')).toContain('receiveMessage(bytes)');
+      expect(result.info.join('\n')).not.toContain('(not decoded)');
     } finally {
       BlockExplorerFactory.decodeFunctionWithAbi = originalDecode;
     }
