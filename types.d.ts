@@ -772,7 +772,7 @@ export interface CrossChainDecodedCall {
  */
 export interface CrossChainJobStepPreview {
   stepIndex: number;
-  status: 'success' | 'failure';
+  status: 'success' | 'failure' | 'skipped';
   error?: string;
   l2TargetAddress: Address;
   l2Value: string;
