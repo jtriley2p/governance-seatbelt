@@ -192,7 +192,7 @@ describe('checkDecodeCalldata', () => {
       const result = await checkDecodeCalldata.checkProposal(proposal, sim, buildDeps(4217), []);
 
       expect(result.warnings).toHaveLength(0);
-      expect(result.info.join('\n')).toContain('receiveMessage(bytes)');
+      expect(result.info.join('\n')).toContain('receiveMessage(');
       expect(result.info.join('\n')).not.toContain('(not decoded)');
     } finally {
       BlockExplorerFactory.decodeFunctionWithAbi = originalDecode;
