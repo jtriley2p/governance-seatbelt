@@ -21,6 +21,12 @@ import {
 } from 'viem';
 import { arbitrum, base, mainnet, optimism } from 'viem/chains';
 import { ChainLogo } from './structured-report/ChainLogo';
+import {
+  formatCrossChainCall,
+  getCrossChainStepTarget,
+  getCrossChainStepTargetLabel,
+  getCrossChainTransportLabel,
+} from './structured-report/cross-chain';
 
 type RiskTag = 'Upgrade' | 'Admin/Role' | 'Token Approval' | 'Token Transfer' | 'ETH Value';
 
@@ -980,8 +986,8 @@ function CrossChainCallsSection({
 
             {chainJobs.map((job) => {
               const firstStep = job.steps[0];
-              const target = firstStep?.l2TargetAddress;
-              const targetLabel = firstStep?.targetLabel;
+              const target = firstStep ? getCrossChainStepTarget(firstStep) : undefined;
+              const targetLabel = firstStep ? getCrossChainStepTargetLabel(firstStep) : undefined;
 
               return (
                 <div
@@ -1027,9 +1033,9 @@ function CrossChainCallsSection({
 
                   <div className="space-y-2">
                     {job.steps.map((msg, index) => {
-                      const fnName =
-                        msg.call?.signature?.split('(')[0] ||
-                        (msg.l2InputData ? `0x${msg.l2InputData.slice(2, 10)}` : 'Call');
+                      const visibleSignature = formatCrossChainCall(msg);
+                      const transportLabel = getCrossChainTransportLabel(msg);
+                      const fnName = visibleSignature.split('(')[0] || 'Call';
                       const hasValue = msg.l2Value && msg.l2Value !== '0';
                       const isFailed = msg.status === 'failure';
 
@@ -1071,11 +1077,20 @@ function CrossChainCallsSection({
                               </div>
                             )}
 
-                            {msg.call?.signature && (
+                            {visibleSignature && (
                               <div className="flex items-start gap-3">
                                 <span className="text-muted-foreground w-14 shrink-0">Sig</span>
                                 <code className="font-mono text-[11px] break-all">
-                                  {msg.call.signature}
+                                  {visibleSignature}
+                                </code>
+                              </div>
+                            )}
+
+                            {transportLabel && transportLabel !== visibleSignature && (
+                              <div className="flex items-start gap-3">
+                                <span className="text-muted-foreground w-14 shrink-0">Via</span>
+                                <code className="font-mono text-[11px] break-all">
+                                  {transportLabel}
                                 </code>
                               </div>
                             )}

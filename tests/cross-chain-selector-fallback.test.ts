@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type Address, type Hex, parseAbi, zeroAddress, zeroHash } from 'viem';
+import { type Address, type Hex, encodeFunctionData, parseAbi, zeroAddress, zeroHash } from 'viem';
 import { createMockSimulation } from '../checks/tests/test-utils';
 import type { AllCheckResults, ProposalEvent, SimulationBlock, SimulationResult } from '../types';
 import { clearFunctionSignatureRegistryCache } from '../utils/clients/function-signature-registry';
@@ -265,6 +265,116 @@ describe('cross-chain selector fallback decode', () => {
       globalThis.fetch = originalFetch;
       BlockExplorerFactory.fetchContractAbi = originalFetchContractAbi;
       clearFunctionSignatureRegistryCache();
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it('does not mark conceptual forwarded calls as failed when receiver-mode job succeeded', async () => {
+    process.env.MAINNET_RPC_URL ??= 'http://localhost:8545';
+    process.env.ARBITRUM_RPC_URL ??= 'http://localhost:8545';
+    process.env.ETHERSCAN_API_KEY ??= 'test';
+    process.env.TENDERLY_ACCESS_TOKEN ??= 'test';
+    process.env.TENDERLY_USER ??= 'test';
+    process.env.TENDERLY_PROJECT_SLUG ??= 'test';
+
+    const { generateAndSaveReports } = await import('../presentation/report');
+    const outputDir = mkdtempSync(join(tmpdir(), 'seatbelt-cross-chain-forwarded-status-'));
+    const { proposal, blocks, checks } = buildFixture();
+    const forwardAbi = parseAbi(['function forward(address target, bytes data)']);
+    const ownerAbi = parseAbi(['function setOwner(address _owner)']);
+    const feeAbi = parseAbi(['function setFeeTo(address)']);
+
+    const receiverAddress = '0x0000000000000000000000000000000000000001' as Address;
+    const firstTarget = '0x00000000000000000000000000000000000000b2' as Address;
+    const secondTarget = '0x00000000000000000000000000000000000000b3' as Address;
+    const receiverSim = createMockSimulation([]);
+
+    const destinationSimulation: NonNullable<SimulationResult['destinationJobResults']>[number] = {
+      chainId: 143,
+      bridgeType: 'WormholeL1L2',
+      status: 'success',
+      job: {
+        bridgeType: 'WormholeL1L2',
+        l2FromAddress: receiverAddress,
+        destinationChainId: 143,
+        sourceOrder: 0,
+        wormholeChainId: 30,
+        calls: [
+          {
+            l2TargetAddress: receiverAddress,
+            l2InputData: encodeFunctionData({
+              abi: forwardAbi,
+              functionName: 'forward',
+              args: [
+                firstTarget,
+                encodeFunctionData({
+                  abi: ownerAbi,
+                  functionName: 'setOwner',
+                  args: ['0x1111111111111111111111111111111111111111'],
+                }),
+              ],
+            }),
+            l2Value: '0',
+          },
+          {
+            l2TargetAddress: receiverAddress,
+            l2InputData: encodeFunctionData({
+              abi: forwardAbi,
+              functionName: 'forward',
+              args: [
+                secondTarget,
+                encodeFunctionData({
+                  abi: feeAbi,
+                  functionName: 'setFeeTo',
+                  args: ['0x2222222222222222222222222222222222222222'],
+                }),
+              ],
+            }),
+            l2Value: '0',
+          },
+        ],
+      },
+      stepResults: [
+        {
+          stepIndex: 0,
+          call: {
+            l2TargetAddress: receiverAddress,
+            l2InputData: '0x12345678',
+            l2Value: '0',
+          },
+          status: 'success',
+          sim: receiverSim,
+        },
+      ],
+      accumulatedSim: receiverSim,
+    };
+
+    try {
+      await generateAndSaveReports({
+        governorType: 'bravo',
+        blocks,
+        proposal,
+        checks,
+        outputDir,
+        governorAddress: '0x9876543210fedcba9876543210fedcba98765432',
+        destinationJobResults: [destinationSimulation],
+      });
+
+      const structuredReportPath = join(outputDir, '181.json');
+      const structuredReport = JSON.parse(readFileSync(structuredReportPath, 'utf8')) as {
+        crossChain?: {
+          jobs?: Array<{
+            steps?: Array<{ status?: string; forwardedCall?: { signature?: string } }>;
+          }>;
+        };
+      };
+
+      const steps = structuredReport.crossChain?.jobs?.[0]?.steps ?? [];
+      expect(steps).toHaveLength(2);
+      expect(steps[0]?.status).toBe('success');
+      expect(steps[1]?.status).toBe('success');
+      expect(steps[1]?.forwardedCall?.signature).toBe('setFeeTo(address)');
+    } finally {
       rmSync(outputDir, { recursive: true, force: true });
     }
   }, 60000);
