@@ -164,8 +164,6 @@ describe('checkStateChanges', () => {
 
     const result = await checkStateChanges.checkProposal({} as ProposalEvent, sim, deps);
 
-    expect(result.info[0]).toBe(
-      'ExampleConfig at `0xABcdEFABcdEFabcdEfAbCdefabcdeFABcDEFabCD`',
-    );
+    expect(result.info[0]).toBe('ExampleConfig at `0xABcdEFABcdEFabcdEfAbCdefabcdeFABcDEFabCD`');
   });
 });

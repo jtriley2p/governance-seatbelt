@@ -56,8 +56,7 @@ describe('structured state change extraction', () => {
   });
 
   it('keeps raw slot changes in structured state changes', async () => {
-    const slot =
-      '0xc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b';
+    const slot = '0xc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b';
 
     const report = await generateStateChangeReport(outputDir, [
       'Franchiser at `0x3d4ACFD2C8b0641fb8db762179eE5A8dB385E573`',
