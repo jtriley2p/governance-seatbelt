@@ -460,7 +460,7 @@ interface ABI {
 
 interface SoltypeElement {
   name: string;
-  type: SoltypeType;
+  type: TenderlySoltype;
   storage_location: StorageLocation;
   components: SoltypeElement[] | null;
   offset: number;
@@ -505,6 +505,8 @@ enum SoltypeType {
   Uint56 = 'uint56',
   Uint8 = 'uint8',
 }
+
+type TenderlySoltype = SoltypeType | `mapping (${string} => ${string})` | `uint${number}`;
 
 interface Output {
   name: string;
@@ -726,6 +728,7 @@ export interface SimulationStateChange {
   contract: string;
   contractAddress?: string;
   key: string;
+  label?: string;
   oldValue: string;
   newValue: string;
 }

@@ -34,6 +34,7 @@ export function StateChangeItem({
   const newValueCleaned = cleanValue(stateChange.newValue);
 
   const isHex32 = (value: string) => /^0x[0-9a-fA-F]{64}$/.test(value);
+  const isAddress = (value: string) => /^0x[0-9a-fA-F]{40}$/.test(value);
   const isDecimalInteger = (value: string) => /^-?\d+$/.test(value);
 
   const isUniswapV3Slot0Change =
@@ -43,7 +44,7 @@ export function StateChangeItem({
     /^0x0{64}$/i.test(stateChange.key);
 
   const isNumericChange = isDecimalInteger(oldValueCleaned) && isDecimalInteger(newValueCleaned);
-  const isAddressChange = oldValueCleaned.startsWith('0x') && newValueCleaned.startsWith('0x');
+  const isAddressChange = isAddress(oldValueCleaned) && isAddress(newValueCleaned);
   const isBooleanChange =
     (oldValueCleaned === 'true' || oldValueCleaned === 'false') &&
     (newValueCleaned === 'true' || newValueCleaned === 'false');
@@ -254,7 +255,7 @@ export function StateChangeItem({
         </div>
         <div className="flex items-center gap-2">
           <code className="text-xs bg-muted-foreground/20 px-2 py-1 rounded">
-            {stateChange.key}
+            {stateChange.label ?? stateChange.key}
           </code>
           {isExpanded ? (
             <ChevronUpIcon className="h-4 w-4 text-muted-foreground" />

@@ -84,9 +84,8 @@ export const checkStateChanges: ProposalCheck = {
     // Parse state changes at each address
     // ETH balance changes are now handled by the checkEthBalanceChanges module
     for (const [address, diffs] of Object.entries(stateDiffs)) {
-      // Use contracts array to get contract name of address
-      const contract = sim.contracts.find((c) => c.address === address);
-      info.push(await getContractName(contract, deps.chainConfig?.chainId));
+      const contract = sim.contracts.find((c) => getAddress(c.address) === address);
+      info.push(await getContractName(contract ?? { address }, deps.chainConfig?.chainId));
 
       // Track processed state changes to deduplicate
       const processedChanges = new Set<string>();
@@ -121,10 +120,7 @@ export const checkStateChanges: ProposalCheck = {
             info.push(`    \`${diff.soltype.name}\` changed from \`${oldVal}\` to \`${newVal}\``);
             processedChanges.add(changeKey);
           }
-        } else if (
-          diff.soltype.type === 'mapping (address => uint256)' ||
-          diff.soltype.type === 'mapping (uint256 => uint256)'
-        ) {
+        } else if (/^mapping \((address|uint\d+) => uint\d+\)$/.test(diff.soltype.type)) {
           // This is a complex type like a mapping, which may have multiple changes. The diff.original
           // and diff.dirty fields can be strings or objects, and for complex types they are objects,
           // so we cast them as such

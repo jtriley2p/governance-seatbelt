@@ -43,6 +43,7 @@ export interface SimulationStateChange {
   contract: string;
   contractAddress?: string;
   key: string;
+  label?: string;
   oldValue: string;
   newValue: string;
 }

@@ -597,9 +597,9 @@ function extractStateChanges(checks: AllCheckResults): SimulationStateChange[] {
         continue;
       }
 
-      // Try to extract slot changes: "    Slot `0xhash` changed from `"value"` to `"newvalue"`"
+      // Try to extract slot changes: "    Slot `0xhash` changed from `value` to `newvalue`"
       const slotChangeMatch = infoMsg.match(
-        /^\s+Slot `(0x[a-fA-F0-9]+)` changed from `"(.*?)"` to `"(.*?)"`$/,
+        /^\s+Slot `(0x[a-fA-F0-9]+)` changed from `([^`]*)` to `([^`]*)`$/,
       );
       if (slotChangeMatch) {
         stateChanges.push({
@@ -612,15 +612,32 @@ function extractStateChanges(checks: AllCheckResults): SimulationStateChange[] {
         continue;
       }
 
+      const fallbackSlotChangeMatch = infoMsg.match(
+        /^\s+• Slot `(0x[a-fA-F0-9]+)`: `([^`]*)` → `([^`]*)`$/,
+      );
+      if (fallbackSlotChangeMatch) {
+        stateChanges.push({
+          contract: currentContract,
+          contractAddress: currentContractAddress,
+          key: fallbackSlotChangeMatch[1],
+          oldValue: fallbackSlotChangeMatch[2],
+          newValue: fallbackSlotChangeMatch[3],
+        });
+        continue;
+      }
+
       // Try to extract mapping state changes: "`variable` key `key` changed from `value` to `newvalue`"
       const mappingStateChangeMatch = infoMsg.match(
-        /`(.+?)`\s+key\s+`(.+?)`\s+changed\s+from\s+`(.+?)`\s+to\s+`(.+?)`/,
+        /`([^`]+)`\s+key\s+`([^`]*)`\s+changed\s+from\s+`([^`]*)`\s+to\s+`([^`]*)`/,
       );
       if (mappingStateChangeMatch) {
+        const mappingName = mappingStateChangeMatch[1];
+        const mappingKey = mappingStateChangeMatch[2];
         stateChanges.push({
-          contract: currentContract || mappingStateChangeMatch[1],
+          contract: currentContract || mappingName,
           contractAddress: currentContractAddress,
-          key: mappingStateChangeMatch[2],
+          key: mappingKey,
+          label: `${mappingName}[${mappingKey}]`,
           oldValue: mappingStateChangeMatch[3],
           newValue: mappingStateChangeMatch[4],
         });
