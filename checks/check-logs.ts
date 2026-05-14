@@ -51,9 +51,8 @@ export const checkLogs: ProposalCheck = {
 
     // Parse each event
     for (const [address, logs] of Object.entries(allEvents)) {
-      // Use contracts array to get contract name of address
-      const contract = sim.contracts.find((c) => c.address === address);
-      info.push(await getContractName(contract, deps.chainConfig?.chainId));
+      const contract = sim.contracts.find((c) => getAddress(c.address) === address);
+      info.push(await getContractName(contract ?? { address }, deps.chainConfig?.chainId));
 
       // Format log data for report
       for (const log of logs) {

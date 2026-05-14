@@ -967,13 +967,16 @@ async function findProposalCreatedEventNearBlock(params: {
   throw new Error(`Proposal creation log for #${proposalId} not found near block ${approxBlock}`);
 }
 
+type ContractNameInput = Pick<TenderlyContract, 'address'> &
+  Partial<Pick<TenderlyContract, 'contract_name' | 'token_data'>>;
+
 /**
- * @notice Given a Tenderly contract object, generates a descriptive human-friendly name for that contract
- * @param contract Tenderly contract object to generate name from
+ * @notice Generates a descriptive human-friendly name for a simulation contract address.
+ * @param contract Tenderly contract metadata, or an address-only object when Tenderly omitted metadata
  * @param chainId Optional chain ID to fetch better contract names from block explorers
  */
 export async function getContractName(
-  contract: TenderlyContract | undefined,
+  contract: ContractNameInput | undefined,
   chainId?: number,
 ): Promise<string> {
   if (!contract) return 'Unknown Contract';
@@ -1008,26 +1011,28 @@ export async function getContractName(
   // Best-effort fallback: Tenderly may not have indexed a verified contract yet, so try the
   // chain's configured block explorer for a better name when available.
   if (chainId && (contractName === 'Unknown Contract' || contractName.length === 0)) {
-    const memoryCached = CacheManager.getContractNameFromMemory(chainId, contractAddress);
-    if (memoryCached) {
-      contractName = memoryCached;
-    } else {
-      const fileCached = CacheManager.getContractNameFromFile(chainId, contractAddress);
-      if (fileCached) {
-        CacheManager.setContractNameInMemory(chainId, contractAddress, fileCached);
-        contractName = fileCached;
-      } else {
-        const fetched = await BlockExplorerFactory.fetchContractName(contractAddress, chainId);
-        if (fetched) {
-          CacheManager.setContractNameInMemory(chainId, contractAddress, fetched);
-          CacheManager.setContractNameInFile(chainId, contractAddress, fetched);
-          contractName = fetched;
-        }
-      }
-    }
+    contractName = (await fetchContractNameCached(contractAddress, chainId)) ?? contractName;
   }
 
   return `${contractName} at \`${contractAddress}\``;
+}
+
+async function fetchContractNameCached(address: Address, chainId: number): Promise<string | null> {
+  const memoryCached = CacheManager.getContractNameFromMemory(chainId, address);
+  if (memoryCached) return memoryCached;
+
+  const fileCached = CacheManager.getContractNameFromFile(chainId, address);
+  if (fileCached) {
+    CacheManager.setContractNameInMemory(chainId, address, fileCached);
+    return fileCached;
+  }
+
+  const fetched = await BlockExplorerFactory.fetchContractName(address, chainId);
+  if (!fetched) return null;
+
+  CacheManager.setContractNameInMemory(chainId, address, fetched);
+  CacheManager.setContractNameInFile(chainId, address, fetched);
+  return fetched;
 }
 
 /**
