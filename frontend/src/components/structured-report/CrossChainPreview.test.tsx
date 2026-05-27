@@ -8,6 +8,11 @@ function makeJob(
   overrides: Partial<CrossChainJobPreview> = {},
   stepCount = 1,
 ): CrossChainJobPreview {
+  const targets = [
+    '0x2222222222222222222222222222222222222222',
+    '0x3333333333333333333333333333333333333333',
+  ] as const;
+
   return {
     chainId: 42161,
     chainName: 'Arbitrum',
@@ -19,10 +24,10 @@ function makeJob(
     steps: Array.from({ length: stepCount }, (_, index) => ({
       stepIndex: index,
       status: 'success',
-      l2TargetAddress: '0x2222222222222222222222222222222222222222',
+      l2TargetAddress: targets[index] ?? targets[0],
       l2Value: '0',
       l2InputData: '0x12345678',
-      targetLabel: 'Arbitrum target',
+      targetLabel: `Arbitrum target ${index + 1}`,
       call: {
         selector: '0x12345678',
         signature: `bridgeAction${index + 1}()`,
@@ -33,7 +38,7 @@ function makeJob(
 }
 
 describe('CrossChainPreview', () => {
-  it('omits step-count copy while preserving destination action content', () => {
+  it('renders every destination step without aggregate action labels', () => {
     const html = renderToStaticMarkup(
       createElement(CrossChainPreview, {
         jobs: [makeJob({}, 1), makeJob({ sourceOrder: 1 }, 2)],
@@ -41,8 +46,13 @@ describe('CrossChainPreview', () => {
     );
 
     expect(html).toContain('Arbitrum');
-    expect(html).toContain('Arbitrum target');
+    expect(html).toContain('Arbitrum target 1');
+    expect(html).toContain('Arbitrum target 2');
     expect(html).toContain('bridgeAction1()');
+    expect(html).toContain('bridgeAction2()');
+    expect(html).toContain('0x2222222222222222222222222222222222222222');
+    expect(html).toContain('0x3333333333333333333333333333333333333333');
+    expect(html).toContain('2 destination calls');
     expect(html).not.toContain('Action 1');
     expect(html).not.toContain('Action 2');
     expect(html).not.toContain('Execution 2');

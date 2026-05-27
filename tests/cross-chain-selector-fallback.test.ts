@@ -2,7 +2,16 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type Address, type Hex, encodeFunctionData, parseAbi, zeroAddress, zeroHash } from 'viem';
+import {
+  type Address,
+  type Hex,
+  encodeAbiParameters,
+  encodeFunctionData,
+  getAddress,
+  parseAbi,
+  zeroAddress,
+  zeroHash,
+} from 'viem';
 import { createMockSimulation } from '../checks/tests/test-utils';
 import type { AllCheckResults, ProposalEvent, SimulationBlock, SimulationResult } from '../types';
 import { clearFunctionSignatureRegistryCache } from '../utils/clients/function-signature-registry';
@@ -92,7 +101,7 @@ describe('cross-chain selector fallback decode', () => {
     const destinationSimulation: NonNullable<SimulationResult['destinationJobResults']>[number] = {
       chainId: 196,
       bridgeType: 'OptimismL1L2',
-      status: 'success' as const,
+      status: 'success',
       job: {
         bridgeType: 'OptimismL1L2' as const,
         l2FromAddress,
@@ -269,6 +278,136 @@ describe('cross-chain selector fallback decode', () => {
     }
   }, 60000);
 
+  it('expands Polygon Fx batch previews into inner destination calls', async () => {
+    process.env.MAINNET_RPC_URL ??= 'http://localhost:8545';
+    process.env.ARBITRUM_RPC_URL ??= 'http://localhost:8545';
+    process.env.ETHERSCAN_API_KEY ??= 'test';
+    process.env.TENDERLY_ACCESS_TOKEN ??= 'test';
+    process.env.TENDERLY_USER ??= 'test';
+    process.env.TENDERLY_PROJECT_SLUG ??= 'test';
+
+    const { generateAndSaveReports } = await import('../presentation/report');
+    const { BlockExplorerFactory } = await import('../utils/clients/block-explorers/factory');
+
+    const outputDir = mkdtempSync(join(tmpdir(), 'seatbelt-polygon-fx-preview-'));
+    const originalFetchContractAbi = BlockExplorerFactory.fetchContractAbi;
+
+    const receiver = getAddress('0x8a1B966aC46F42275860f905dbC75EfBfDC12374');
+    const v2Factory = getAddress('0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C');
+    const v3Factory = getAddress('0x1F98431c8aD98523631AE4a59f267346ea31F984');
+    const feeTo = getAddress('0xc6ae6373cecc9e595a6c8b9fe581925a8c84f70a');
+    const owner = getAddress('0x3f07f08b45912dcd6691c5b9412975d5113b2910');
+
+    const processMessageAbi = parseAbi([
+      'function processMessageFromRoot(uint256 stateId, address rootMessageSender, bytes data)',
+    ]);
+    const v2Abi = parseAbi(['function setFeeTo(address)']);
+    const v3Abi = parseAbi(['function setOwner(address)']);
+    const batchData = encodeAbiParameters(
+      [{ type: 'address[]' }, { type: 'bytes[]' }],
+      [
+        [v2Factory, v3Factory],
+        [
+          encodeFunctionData({ abi: v2Abi, functionName: 'setFeeTo', args: [feeTo] }),
+          encodeFunctionData({ abi: v3Abi, functionName: 'setOwner', args: [owner] }),
+        ],
+      ],
+    );
+    const l2InputData = encodeFunctionData({
+      abi: processMessageAbi,
+      functionName: 'processMessageFromRoot',
+      args: [1n, '0x1a9C8182C09F50C8318d769245beA52c32BE35BC', batchData],
+    });
+
+    const { proposal, blocks, checks } = buildFixture(receiver);
+    const stepSim = createMockSimulation([]);
+    stepSim.contracts = [
+      makeTenderlyContract(receiver, 'EthereumProxy'),
+      makeTenderlyContract(v2Factory, 'UniswapV2Factory'),
+      makeTenderlyContract(v3Factory, 'UniswapV3Factory'),
+    ];
+    stepSim.transaction.transaction_info.logs = [];
+
+    const destinationSimulation: NonNullable<SimulationResult['destinationJobResults']>[number] = {
+      chainId: 137,
+      bridgeType: 'PolygonFxL1L2',
+      status: 'success' as const,
+      job: {
+        bridgeType: 'PolygonFxL1L2',
+        l2FromAddress: '0x8397259c983751DAf40400790063935a11afa28a',
+        destinationChainId: 137,
+        sourceOrder: 0,
+        calls: [
+          {
+            l2TargetAddress: receiver,
+            l2InputData,
+            l2Value: '0',
+          },
+        ],
+      },
+      stepResults: [
+        {
+          stepIndex: 0,
+          call: {
+            l2TargetAddress: receiver,
+            l2InputData,
+            l2Value: '0',
+          },
+          status: 'success',
+          sim: stepSim,
+        },
+      ],
+      accumulatedSim: stepSim,
+    };
+
+    BlockExplorerFactory.fetchContractAbi = async (target) => {
+      const address = getAddress(target);
+      if (address === receiver) return processMessageAbi;
+      if (address === v2Factory) return v2Abi;
+      if (address === v3Factory) return v3Abi;
+      return null;
+    };
+
+    try {
+      await generateAndSaveReports({
+        governorType: 'bravo',
+        blocks,
+        proposal,
+        checks,
+        outputDir,
+        governorAddress: '0x9876543210fedcba9876543210fedcba98765432',
+        destinationJobResults: [destinationSimulation],
+      });
+
+      const structuredReportPath = join(outputDir, '181.json');
+      const structuredReport = JSON.parse(readFileSync(structuredReportPath, 'utf8')) as {
+        crossChain?: {
+          jobs?: Array<{
+            steps?: Array<{
+              forwardedTargetAddress?: string;
+              forwardedTargetLabel?: string;
+              forwardedCall?: { signature?: string };
+              call?: { signature?: string };
+            }>;
+          }>;
+        };
+      };
+
+      const steps = structuredReport.crossChain?.jobs?.[0]?.steps ?? [];
+      expect(steps).toHaveLength(2);
+      expect(steps[0]?.call?.signature).toBe('processMessageFromRoot(uint256,address,bytes)');
+      expect(steps[0]?.forwardedTargetAddress).toBe(v2Factory);
+      expect(steps[0]?.forwardedTargetLabel).toBe('UniswapV2Factory');
+      expect(steps[0]?.forwardedCall?.signature).toBe('setFeeTo(address)');
+      expect(steps[1]?.forwardedTargetAddress).toBe(v3Factory);
+      expect(steps[1]?.forwardedTargetLabel).toBe('UniswapV3Factory');
+      expect(steps[1]?.forwardedCall?.signature).toBe('setOwner(address)');
+    } finally {
+      BlockExplorerFactory.fetchContractAbi = originalFetchContractAbi;
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
   it('does not mark conceptual forwarded calls as failed when receiver-mode job succeeded', async () => {
     process.env.MAINNET_RPC_URL ??= 'http://localhost:8545';
     process.env.ARBITRUM_RPC_URL ??= 'http://localhost:8545';
@@ -278,7 +417,9 @@ describe('cross-chain selector fallback decode', () => {
     process.env.TENDERLY_PROJECT_SLUG ??= 'test';
 
     const { generateAndSaveReports } = await import('../presentation/report');
+    const { BlockExplorerFactory } = await import('../utils/clients/block-explorers/factory');
     const outputDir = mkdtempSync(join(tmpdir(), 'seatbelt-cross-chain-forwarded-status-'));
+    const originalFetchContractAbi = BlockExplorerFactory.fetchContractAbi;
     const { proposal, blocks, checks } = buildFixture();
     const forwardAbi = parseAbi(['function forward(address target, bytes data)']);
     const ownerAbi = parseAbi(['function setOwner(address _owner)']);
@@ -349,6 +490,14 @@ describe('cross-chain selector fallback decode', () => {
       accumulatedSim: receiverSim,
     };
 
+    BlockExplorerFactory.fetchContractAbi = async (target) => {
+      const address = getAddress(target);
+      if (address === receiverAddress) return forwardAbi;
+      if (address === firstTarget) return ownerAbi;
+      if (address === secondTarget) return feeAbi;
+      return null;
+    };
+
     try {
       await generateAndSaveReports({
         governorType: 'bravo',
@@ -375,6 +524,7 @@ describe('cross-chain selector fallback decode', () => {
       expect(steps[1]?.status).toBe('success');
       expect(steps[1]?.forwardedCall?.signature).toBe('setFeeTo(address)');
     } finally {
+      BlockExplorerFactory.fetchContractAbi = originalFetchContractAbi;
       rmSync(outputDir, { recursive: true, force: true });
     }
   }, 60000);

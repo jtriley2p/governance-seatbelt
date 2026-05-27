@@ -15,6 +15,11 @@ function makeJob(
   overrides: Partial<CrossChainJobPreview> = {},
   signatures: string[] = ['bridgeAction()'],
 ): CrossChainJobPreview {
+  const targets = [
+    '0x2222222222222222222222222222222222222222',
+    '0x3333333333333333333333333333333333333333',
+  ] as const;
+
   return {
     chainId: 42161,
     chainName: 'Arbitrum',
@@ -26,10 +31,10 @@ function makeJob(
     steps: signatures.map((signature, index) => ({
       stepIndex: index,
       status: 'success',
-      l2TargetAddress: '0x2222222222222222222222222222222222222222',
+      l2TargetAddress: targets[index] ?? targets[0],
       l2Value: '0',
       l2InputData: `0x${String(index + 1).padStart(8, '0')}`,
-      targetLabel: 'Arbitrum target',
+      targetLabel: `Arbitrum target ${index + 1}`,
       call: {
         selector: `0x${String(index + 1).padStart(8, '0')}`,
         signature,
@@ -119,6 +124,12 @@ describe('CallGroupedView cross-chain summary headers', () => {
     expect(html).toContain('bridgeFirst');
     expect(html).toContain('bridgeSecond');
     expect(html).toContain('cleanup');
+    expect(html).toContain('3 cross-chain destination calls');
+    expect(html).toContain('2 destination calls');
+    expect(html).toContain('Arbitrum target 1');
+    expect(html).toContain('Arbitrum target 2');
+    expect(html).toContain('0x2222222222222222222222222222222222222222');
+    expect(html).toContain('0x3333333333333333333333333333333333333333');
     expect(html).toContain(
       'inline-flex items-center justify-center h-5 w-5 rounded bg-muted text-[10px] font-semibold text-muted-foreground shrink-0',
     );

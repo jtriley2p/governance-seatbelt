@@ -16,6 +16,7 @@ import type { Visitor } from 'unist-util-visit';
 import {
   type Abi,
   type Hex,
+  decodeAbiParameters,
   decodeFunctionData,
   getAddress,
   isHex,
@@ -25,6 +26,7 @@ import {
 import type {
   AllCheckResults,
   CoverageData,
+  CrossChainJobStepPreview,
   DerivedSimulationDependency,
   GenerateReportsParams,
   GovernorType,
@@ -96,6 +98,9 @@ const KNOWN_FUNCTION_SELECTORS: Record<string, string> = {
 const CONTRACT_ABI_CACHE = new Map<string, Abi | null>();
 const CONTRACT_ABI_PROMISE_CACHE = new Map<string, Promise<Abi | null>>();
 const FORWARD_ABI = parseAbi(['function forward(address target, bytes data)']);
+const POLYGON_FX_PROCESS_MESSAGE_ABI = parseAbi([
+  'function processMessageFromRoot(uint256 stateId, address rootMessageSender, bytes data)',
+]);
 
 function getContractAbiCacheKey(target: string, chainId: number): string {
   return `${chainId}:${target.toLowerCase()}`;
@@ -196,6 +201,44 @@ async function decodeForwardedContractCall(
   }
 }
 
+async function expandPolygonFxBatchPreviewStep(
+  step: CrossChainJobStepPreview,
+  chainId: number,
+  simulation: TenderlySimulation | undefined,
+): Promise<CrossChainJobStepPreview[]> {
+  try {
+    const decoded = decodeFunctionData({
+      abi: POLYGON_FX_PROCESS_MESSAGE_ABI,
+      data: step.l2InputData,
+    });
+    if (decoded.functionName !== 'processMessageFromRoot') return [step];
+
+    const [, , messageData] = decoded.args;
+    const [targets, calldatas] = decodeAbiParameters(
+      [{ type: 'address[]' }, { type: 'bytes[]' }],
+      messageData,
+    );
+    if (targets.length === 0 || targets.length !== calldatas.length) return [step];
+
+    return await Promise.all(
+      targets.map(async (target, index) => {
+        const calldata = calldatas[index];
+        const targetAddress = getAddress(target);
+        const forwardedCall = await decodeContractCall(targetAddress, calldata, chainId);
+
+        return {
+          ...step,
+          forwardedTargetAddress: targetAddress,
+          forwardedTargetLabel: getSimulationContractLabel(simulation, targetAddress),
+          forwardedCall: forwardedCall ?? undefined,
+        };
+      }),
+    );
+  } catch {
+    return [step];
+  }
+}
+
 function getSimulationContractLabel(
   simulation: TenderlySimulation | undefined,
   address: string | undefined,
@@ -227,7 +270,7 @@ async function buildCrossChainPreview(
     destinationJobResults.map(async (dest) => {
       const chainId = dest.chainId;
       const blockExplorerBaseUrl = getBlockExplorerBaseUrlForChain(chainId);
-      const steps = await Promise.all(
+      const previewStepGroups = await Promise.all(
         dest.job.calls.map(async (call, stepIndex) => {
           const step = dest.stepResults[stepIndex];
           const decoded = await decodeContractCall(call.l2TargetAddress, call.l2InputData, chainId);
@@ -239,7 +282,7 @@ async function buildCrossChainPreview(
             stepSimulation,
           );
 
-          return {
+          const previewStep: CrossChainJobStepPreview = {
             stepIndex,
             status: step?.status ?? dest.status,
             error,
@@ -254,8 +297,11 @@ async function buildCrossChainPreview(
             forwardedTargetLabel: forwarded?.targetLabel,
             forwardedCall: forwarded?.call,
           };
+
+          return await expandPolygonFxBatchPreviewStep(previewStep, chainId, stepSimulation);
         }),
       );
+      const steps = previewStepGroups.flat().map((step, stepIndex) => ({ ...step, stepIndex }));
 
       return {
         chainId,

@@ -677,9 +677,12 @@ export function CallGroupedView({
 
   // Summary stats
   const crossChainJobs = report.crossChain?.jobs ?? [];
+  const crossChainDestinationCalls = crossChainJobs.reduce(
+    (total, job) => total + job.steps.length,
+    0,
+  );
   const totalMainnetCalls = calls.length;
-  const totalCrossChainCalls = crossChainJobs.length;
-  const totalCalls = totalMainnetCalls + totalCrossChainCalls;
+  const totalCalls = totalMainnetCalls + crossChainDestinationCalls;
   const totalEthValue = calls.reduce((sum, c) => sum + c.value, 0n);
   const allTags = calls.flatMap((c) => c.tags);
   const tagCounts = allTags.reduce<Record<RiskTag, number>>(
@@ -717,9 +720,10 @@ export function CallGroupedView({
           {totalEthValue > 0n && (
             <span className="text-muted-foreground">{formatEthValue(totalEthValue)} total</span>
           )}
-          {totalCrossChainCalls > 0 && (
+          {crossChainJobs.length > 0 && (
             <span className="text-muted-foreground">
-              {totalCrossChainCalls} cross-chain ({crossChainChains.size} chain
+              {crossChainDestinationCalls} cross-chain destination call
+              {crossChainDestinationCalls === 1 ? '' : 's'} ({crossChainChains.size} chain
               {crossChainChains.size === 1 ? '' : 's'})
               {crossChainFailures > 0 && (
                 <Badge variant="destructive" className="ml-1 text-[10px] px-1.5">
@@ -1008,9 +1012,7 @@ function CrossChainCallsSection({
             </div>
 
             {chainJobs.map((job) => {
-              const firstStep = job.steps[0];
-              const target = firstStep ? getCrossChainStepTarget(firstStep) : undefined;
-              const targetLabel = firstStep ? getCrossChainStepTargetLabel(firstStep) : undefined;
+              const stepCount = job.steps.length;
 
               return (
                 <div
@@ -1019,22 +1021,9 @@ function CrossChainCallsSection({
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      {target ? (
-                        <AddressValue
-                          address={target}
-                          baseUrl={explorerBaseUrl}
-                          labels={labels}
-                          chainId={chainId}
-                          variant="header"
-                        />
-                      ) : (
-                        <span className="text-sm text-muted-foreground">Unknown target</span>
-                      )}
-                      {target && targetLabel && !getAddressLabelFor(target, labels) && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                          {targetLabel}
-                        </Badge>
-                      )}
+                      <span className="text-sm font-medium">
+                        {stepCount} destination call{stepCount === 1 ? '' : 's'}
+                      </span>
                       {job.status === 'skipped' && (
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                           Skipped
@@ -1055,121 +1044,166 @@ function CrossChainCallsSection({
                   )}
 
                   <div className="space-y-2">
-                    {job.steps.map((msg, index) => {
-                      const visibleSignature = formatCrossChainCall(msg);
-                      const transportLabel = getCrossChainTransportLabel(msg);
-                      const fnName = visibleSignature.split('(')[0] || 'Call';
-                      const hasValue = msg.l2Value && msg.l2Value !== '0';
-                      const isFailed = msg.status === 'failure';
+                    {stepCount ? (
+                      job.steps.map((msg, index) => {
+                        const visibleSignature = formatCrossChainCall(msg);
+                        const transportLabel = getCrossChainTransportLabel(msg);
+                        const stepTarget = getCrossChainStepTarget(msg);
+                        const stepTargetLabel = getCrossChainStepTargetLabel(msg);
+                        const fnName = visibleSignature.split('(')[0] || 'Call';
+                        const hasValue = msg.l2Value && msg.l2Value !== '0';
+                        const isFailed = msg.status === 'failure';
 
-                      return (
-                        <details
-                          key={`${chainId}-${job.sourceOrder}-${index}`}
-                          className={`group border rounded ${isFailed ? 'border-red-200 bg-red-50/50' : 'border-muted/60'}`}
-                        >
-                          <summary className="cursor-pointer select-none px-2.5 py-1.5 flex items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
-                            <div className="min-w-0 flex items-baseline gap-2">
-                              <span className="inline-flex items-center justify-center h-5 w-5 rounded bg-muted text-[10px] font-semibold text-muted-foreground shrink-0">
-                                {index + 1}
-                              </span>
-                              <span className="text-sm font-medium">{fnName}</span>
-                              {hasValue && (
-                                <span className="text-xs text-muted-foreground">
-                                  {msg.l2Value} wei
+                        return (
+                          <details
+                            key={`${chainId}-${job.sourceOrder}-${index}`}
+                            className={`group border rounded ${isFailed ? 'border-red-200 bg-red-50/50' : 'border-muted/60'}`}
+                          >
+                            <summary className="cursor-pointer select-none px-2.5 py-1.5 flex items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
+                              <div className="min-w-0 flex items-center gap-2">
+                                <span className="inline-flex items-center justify-center h-5 w-5 rounded bg-muted text-[10px] font-semibold text-muted-foreground shrink-0">
+                                  {index + 1}
                                 </span>
-                              )}
-                              {isFailed && (
-                                <Badge variant="destructive" className="text-[10px] px-1.5">
-                                  Failed
-                                </Badge>
-                              )}
-                            </div>
-                            <ChevronDownIcon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-180 shrink-0" />
-                          </summary>
-
-                          <div className="px-3 pb-3 pt-1 space-y-1.5 text-xs">
-                            {job.l2FromAddress && (
-                              <div className="flex items-center gap-3">
-                                <span className="text-muted-foreground w-14 shrink-0">From</span>
-                                <AddressValue
-                                  address={job.l2FromAddress}
-                                  baseUrl={explorerBaseUrl}
-                                  labels={labels}
-                                  chainId={chainId}
-                                />
-                              </div>
-                            )}
-
-                            {visibleSignature && (
-                              <div className="flex items-start gap-3">
-                                <span className="text-muted-foreground w-14 shrink-0">Sig</span>
-                                <code className="font-mono text-[11px] break-all">
-                                  {visibleSignature}
-                                </code>
-                              </div>
-                            )}
-
-                            {transportLabel && transportLabel !== visibleSignature && (
-                              <div className="flex items-start gap-3">
-                                <span className="text-muted-foreground w-14 shrink-0">Via</span>
-                                <code className="font-mono text-[11px] break-all">
-                                  {transportLabel}
-                                </code>
-                              </div>
-                            )}
-
-                            {msg.call?.args && msg.call.args.length > 0 && (
-                              <div className="space-y-1">
-                                {msg.call.args.map((arg, argIndex) => {
-                                  const raw = stringifyDecodedValue(arg);
-                                  const looksLikeAddress = isHexAddress(raw);
-
-                                  return (
-                                    <div
-                                      key={`${chainId}-${job.sourceOrder}-${index}-arg-${argIndex}`}
-                                      className="flex items-center gap-3"
-                                    >
-                                      <span className="text-muted-foreground w-14 shrink-0 truncate">
-                                        arg{argIndex}
+                                <span className="text-sm font-medium truncate">{fnName}</span>
+                                {stepTarget ? (
+                                  <span className="inline-flex items-center gap-1 min-w-0">
+                                    {stepTargetLabel ? (
+                                      <span className="text-xs text-muted-foreground truncate">
+                                        {stepTargetLabel}
                                       </span>
-                                      {looksLikeAddress ? (
-                                        <AddressValue
-                                          address={raw}
-                                          baseUrl={explorerBaseUrl}
-                                          labels={labels}
-                                          chainId={chainId}
-                                        />
-                                      ) : (
-                                        <ValueWithCopy value={raw} />
-                                      )}
-                                    </div>
-                                  );
-                                })}
+                                    ) : null}
+                                    <ExplorerAddressLink
+                                      address={stepTarget}
+                                      baseUrl={explorerBaseUrl}
+                                      className="text-xs font-mono text-muted-foreground hover:underline shrink-0"
+                                    >
+                                      {stepTarget.slice(0, 6)}...{stepTarget.slice(-4)}
+                                    </ExplorerAddressLink>
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">
+                                    Unknown target
+                                  </span>
+                                )}
+                                {hasValue && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {msg.l2Value} wei
+                                  </span>
+                                )}
+                                {isFailed && (
+                                  <Badge variant="destructive" className="text-[10px] px-1.5">
+                                    Failed
+                                  </Badge>
+                                )}
                               </div>
-                            )}
+                              <ChevronDownIcon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-180 shrink-0" />
+                            </summary>
 
-                            {msg.error && (
-                              <div className="mt-2 p-2 bg-red-100 border border-red-200 rounded text-red-800 text-[11px]">
-                                {msg.error}
-                              </div>
-                            )}
+                            <div className="px-3 pb-3 pt-1 space-y-1.5 text-xs">
+                              {stepTarget && (
+                                <div className="flex items-center gap-3">
+                                  <span className="text-muted-foreground w-14 shrink-0">To</span>
+                                  <AddressValue
+                                    address={stepTarget}
+                                    baseUrl={explorerBaseUrl}
+                                    labels={labels}
+                                    chainId={chainId}
+                                  />
+                                  {stepTargetLabel && !getAddressLabelFor(stepTarget, labels) ? (
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                      {stepTargetLabel}
+                                    </Badge>
+                                  ) : null}
+                                </div>
+                              )}
 
-                            {msg.l2InputData && (
-                              <details className="mt-2">
-                                <summary className="cursor-pointer text-muted-foreground hover:text-foreground text-[11px]">
-                                  Raw data
-                                </summary>
-                                <div className="mt-1 pl-2 border-l border-muted">
-                                  <code className="font-mono text-[11px] break-all text-muted-foreground">
-                                    {msg.l2InputData}
+                              {job.l2FromAddress && (
+                                <div className="flex items-center gap-3">
+                                  <span className="text-muted-foreground w-14 shrink-0">From</span>
+                                  <AddressValue
+                                    address={job.l2FromAddress}
+                                    baseUrl={explorerBaseUrl}
+                                    labels={labels}
+                                    chainId={chainId}
+                                  />
+                                </div>
+                              )}
+
+                              {visibleSignature && (
+                                <div className="flex items-start gap-3">
+                                  <span className="text-muted-foreground w-14 shrink-0">Sig</span>
+                                  <code className="font-mono text-[11px] break-all">
+                                    {visibleSignature}
                                   </code>
                                 </div>
-                              </details>
-                            )}
-                          </div>
-                        </details>
-                      );
-                    })}
+                              )}
+
+                              {transportLabel && transportLabel !== visibleSignature && (
+                                <div className="flex items-start gap-3">
+                                  <span className="text-muted-foreground w-14 shrink-0">Via</span>
+                                  <code className="font-mono text-[11px] break-all">
+                                    {transportLabel}
+                                  </code>
+                                </div>
+                              )}
+
+                              {msg.call?.args && msg.call.args.length > 0 && (
+                                <div className="space-y-1">
+                                  {msg.call.args.map((arg, argIndex) => {
+                                    const raw = stringifyDecodedValue(arg);
+                                    const looksLikeAddress = isHexAddress(raw);
+
+                                    return (
+                                      <div
+                                        key={`${chainId}-${job.sourceOrder}-${index}-arg-${argIndex}`}
+                                        className="flex items-center gap-3"
+                                      >
+                                        <span className="text-muted-foreground w-14 shrink-0 truncate">
+                                          arg{argIndex}
+                                        </span>
+                                        {looksLikeAddress ? (
+                                          <AddressValue
+                                            address={raw}
+                                            baseUrl={explorerBaseUrl}
+                                            labels={labels}
+                                            chainId={chainId}
+                                          />
+                                        ) : (
+                                          <ValueWithCopy value={raw} />
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {msg.error && (
+                                <div className="mt-2 p-2 bg-red-100 border border-red-200 rounded text-red-800 text-[11px]">
+                                  {msg.error}
+                                </div>
+                              )}
+
+                              {msg.l2InputData && (
+                                <details className="mt-2">
+                                  <summary className="cursor-pointer text-muted-foreground hover:text-foreground text-[11px]">
+                                    Raw data
+                                  </summary>
+                                  <div className="mt-1 pl-2 border-l border-muted">
+                                    <code className="font-mono text-[11px] break-all text-muted-foreground">
+                                      {msg.l2InputData}
+                                    </code>
+                                  </div>
+                                </details>
+                              )}
+                            </div>
+                          </details>
+                        );
+                      })
+                    ) : (
+                      <div className="rounded border border-muted/60 px-2.5 py-2 text-xs text-muted-foreground">
+                        No destination calls decoded
+                      </div>
+                    )}
                   </div>
                 </div>
               );
